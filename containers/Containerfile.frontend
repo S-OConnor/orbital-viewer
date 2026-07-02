@@ -1,0 +1,23 @@
+# Containerfile.frontend — static file server for frontend/ (plain HTML/JS,
+# zero third-party code; nothing is compiled or installed).
+#
+# Build:
+#   podman build -f containers/Containerfile.frontend -t olv-frontend .
+# Run:
+#   podman run --rm -p 8000:80 olv-frontend
+#   # then open http://localhost:8000 (Settings -> WS host/port -> backend)
+#
+# Air-gap notes:
+#   - The only external dependency is the base image itself
+#     (docker.io/library/nginx:alpine-slim); pre-pull it or mirror it into a
+#     local registry ahead of time. No packages are installed and no network
+#     access is required at build or run time beyond that.
+
+FROM docker.io/library/nginx:alpine-slim
+
+COPY frontend/ /usr/share/nginx/html/
+# The About modal links to ../docs/PROTOCOL_*.md; browsers normalize that to
+# /docs/..., so ship the protocol docs alongside the app.
+COPY docs/ /usr/share/nginx/html/docs/
+
+EXPOSE 80

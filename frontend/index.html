@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbital LOS Viewer</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="viewport">
+  <canvas id="glcanvas"></canvas>
+  <canvas id="overlay"></canvas>
+</div>
+
+<aside id="panel" class="panel">
+
+  <section class="panel-section" id="section-connection">
+    <h2>Connection</h2>
+    <div class="conn-row">
+      <span id="statusDot" class="status-dot status-closed" aria-hidden="true"></span>
+      <span id="statusText">closed</span>
+    </div>
+    <div class="kv"><span class="k">URL</span><span class="v" id="wsUrl">&mdash;</span></div>
+    <div class="kv"><span class="k">Latest data</span><span class="v" id="lastDataTime">&mdash;</span></div>
+    <div class="kv"><span class="k"></span><span class="v muted" id="lastDataRelative"></span></div>
+    <div id="staleWarning" class="warning hidden">No data received recently &mdash; check the backend connection.</div>
+  </section>
+
+  <section class="panel-section" id="section-stats">
+    <h2>Stats</h2>
+    <div class="kv"><span class="k">UDP received</span><span class="v" id="statUdpReceived">&mdash;</span></div>
+    <div class="kv"><span class="k">UDP accepted</span><span class="v" id="statUdpAccepted">&mdash;</span></div>
+    <div class="kv"><span class="k">UDP dropped</span><span class="v" id="statUdpDropped">&mdash;</span></div>
+    <div class="kv"><span class="k">UDP rate (Hz)</span><span class="v" id="statUdpRateHz">&mdash;</span></div>
+    <div class="kv"><span class="k">WS clients</span><span class="v" id="statWsClients">&mdash;</span></div>
+    <div class="kv"><span class="k">Objects</span><span class="v" id="statObjectCount">&mdash;</span></div>
+    <div class="kv"><span class="k">Broadcast seq</span><span class="v" id="statBroadcastSeq">&mdash;</span></div>
+  </section>
+
+  <section class="panel-section" id="section-satellite">
+    <h2>Satellite</h2>
+    <div class="kv"><span class="k">ID</span><span class="v" id="satId">&mdash;</span></div>
+    <div class="kv"><span class="k">Seq</span><span class="v" id="satSeq">&mdash;</span></div>
+    <div class="kv"><span class="k">X (km)</span><span class="v" id="satX">&mdash;</span></div>
+    <div class="kv"><span class="k">Y (km)</span><span class="v" id="satY">&mdash;</span></div>
+    <div class="kv"><span class="k">Z (km)</span><span class="v" id="satZ">&mdash;</span></div>
+    <div class="kv"><span class="k">Speed (km/s)</span><span class="v" id="satSpeed">&mdash;</span></div>
+    <div class="kv"><span class="k">Altitude (km)</span><span class="v" id="satAlt">&mdash;</span></div>
+  </section>
+
+  <section class="panel-section" id="section-objects">
+    <h2>Objects</h2>
+    <div id="categoryChips" class="chips">
+      <button type="button" class="chip chip-all active" data-filter="">All <span class="chip-count" id="countAll">0</span></button>
+      <button type="button" class="chip" data-filter="debris"><span class="swatch" style="background:#aab2bd"></span>Debris <span class="chip-count" id="countDebris">0</span></button>
+      <button type="button" class="chip" data-filter="star"><span class="swatch" style="background:#ffffff"></span>Star <span class="chip-count" id="countStar">0</span></button>
+      <button type="button" class="chip" data-filter="comet"><span class="swatch" style="background:#6fd3ff"></span>Comet <span class="chip-count" id="countComet">0</span></button>
+      <button type="button" class="chip" data-filter="satellite"><span class="swatch" style="background:#58d68d"></span>Satellite <span class="chip-count" id="countSatellite">0</span></button>
+      <button type="button" class="chip" data-filter="groundHot"><span class="swatch" style="background:#ff7040"></span>Ground hot <span class="chip-count" id="countGroundHot">0</span></button>
+    </div>
+    <table class="object-table">
+      <thead><tr><th>ID</th><th>Category</th><th>Conf%</th></tr></thead>
+      <tbody id="objectRows"></tbody>
+    </table>
+    <div class="table-footer" id="objectTableFooter">showing 0 of 0</div>
+  </section>
+
+</aside>
+
+<button id="panelToggle" class="panel-toggle" type="button" aria-label="Toggle panel" aria-expanded="true">&#10216;</button>
+
+<div class="topright">
+  <button id="btnSettings" class="icon-btn" type="button" aria-label="Settings">&#9881;</button>
+  <button id="btnAbout" class="icon-btn" type="button" aria-label="About">&#8505;</button>
+</div>
+
+<div id="settingsModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="settingsTitle">
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-content">
+    <button class="modal-close" data-close type="button" aria-label="Close">&#10005;</button>
+    <h2 id="settingsTitle">Settings</h2>
+
+    <label class="field-row">
+      <input type="checkbox" id="settingShowTrails">
+      Show trails
+    </label>
+
+    <label class="field-row">
+      Trail duration: <span id="trailSecondsValue">30</span> s
+      <input type="range" id="settingTrailSeconds" min="0" max="60" step="1" value="30">
+    </label>
+
+    <label class="field-row">
+      <input type="checkbox" id="settingShowLabels">
+      Show labels
+    </label>
+
+    <fieldset class="category-fields">
+      <legend>Categories</legend>
+      <label><input type="checkbox" id="catDebris"> Debris</label>
+      <label><input type="checkbox" id="catStar"> Star</label>
+      <label><input type="checkbox" id="catComet"> Comet</label>
+      <label><input type="checkbox" id="catSatellite"> Satellite</label>
+      <label><input type="checkbox" id="catGroundHot"> Ground hot</label>
+    </fieldset>
+
+    <div class="field-row">
+      <label for="settingHost">WS host <input type="text" id="settingHost" placeholder="(page host)"></label>
+      <label for="settingPort">Port <input type="number" id="settingPort" min="1" max="65535"></label>
+      <button id="btnReconnect" type="button">Reconnect</button>
+    </div>
+
+    <div class="modal-actions">
+      <button id="btnResetDefaults" type="button">Reset to defaults</button>
+    </div>
+  </div>
+</div>
+
+<div id="aboutModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="aboutTitle">
+  <div class="modal-backdrop" data-close></div>
+  <div class="modal-content">
+    <button class="modal-close" data-close type="button" aria-label="Close">&#10005;</button>
+    <h2 id="aboutTitle">Orbital LOS Viewer v0.1.0</h2>
+    <p>
+      Visualizes a satellite in Earth orbit plus up to 5,000 tracked objects
+      in ECEF coordinates. Data flows UDP &rarr; C++ Boost backend &rarr;
+      WebSocket &rarr; plain-WebGL frontend, with no internet access
+      required at runtime.
+    </p>
+    <p>Protocol version: 1</p>
+    <p>
+      <a href="../docs/PROTOCOL_UDP.md">UDP protocol</a>
+      &middot;
+      <a href="../docs/PROTOCOL_WS.md">WebSocket protocol</a>
+    </p>
+    <p class="muted">Note: Sun position is approximate (low-precision almanac formula).</p>
+  </div>
+</div>
+
+<div id="fatalError" class="fatal-error hidden"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

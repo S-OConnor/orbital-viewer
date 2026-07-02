@@ -1,0 +1,18 @@
+# .clang-tidy — run via IDE integration or `clang-tidy -p build <file>`.
+# Not wired into the CMake `lint` target (that uses cppcheck, see
+# CMakeLists.txt); clang-tidy needs a compile_commands.json (generate with
+# -DCMAKE_EXPORT_COMPILE_COMMANDS=ON).
+Checks: >
+  bugprone-*,
+  performance-*,
+  portability-*,
+  modernize-*,
+  readability-*,
+  -modernize-use-trailing-return-type,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-implicit-bool-conversion,
+  -bugprone-easily-swappable-parameters,
+  -readability-function-cognitive-complexity
+HeaderFilterRegex: '(backend|simulator)/(src|include|tools)/'
+WarningsAsErrors: ''

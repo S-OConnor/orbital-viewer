@@ -1,0 +1,41 @@
+# config.toml — optional site-wide defaults for Orbital LOS Viewer.
+#
+# This file is fetched by the frontend (frontend/js/site_config.js) relative
+# to the page at startup, i.e. as "config.toml" next to index.html. It is
+# entirely OPTIONAL: if the file is missing (404, network error) or fails to
+# parse, the frontend silently falls back to its own built-in defaults —
+# there is no requirement to ship a config.toml at all.
+#
+# These are *site* defaults, not the final word: a user's own choices made
+# in the in-browser Settings panel are saved to localStorage and always
+# override the values below on every subsequent page load. Clicking
+# "Reset to defaults" in Settings does not go back to the frontend's
+# hard-coded built-ins — it returns to exactly the values configured here.
+#
+# Only the keys below are recognized; unknown keys and invalid/out-of-range
+# values are ignored with a console.warn (see site_config.js), never a hard
+# failure. The syntax is a small TOML subset — see backend/include/olv/toml.hpp
+# for the authoritative grammar shared with the backend/simulator config
+# files (this file uses the same parser, mirrored in frontend/js/toml.js).
+#
+# Values shown below are the built-in defaults themselves, i.e. this example
+# is a no-op as written; edit the values to actually change site behavior.
+
+[websocket]
+# Hostname of the olv_backend WebSocket server. Leave as "" to use the
+# page's own hostname (window.location.hostname) — the common case when the
+# frontend is served from the same host as the backend.
+host = ""
+
+# TCP port the olv_backend WebSocket server listens on.
+port = 8765
+
+[display]
+# Whether per-object trails are drawn by default.
+show_trails = false
+
+# Trail length in seconds (0-60) when show_trails is enabled.
+trail_seconds = 30
+
+# Whether object labels are drawn by default.
+show_labels = false

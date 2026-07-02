@@ -1,0 +1,23 @@
+# Build outputs (top-level build/, standalone build-backend/, build-sim/, etc.)
+build*/
+
+# Logs
+*.log
+
+# Generated SBOMs (regenerate with scripts/gen_sbom.py)
+sbom/
+
+# Node.js (dev-only test runner deps, if any get installed)
+node_modules/
+
+# Python
+__pycache__/
+
+# Misc caches
+.cache/
+
+# Integration-test / manual capture artifacts
+frames.jsonl
+
+# macOS
+.DS_Store

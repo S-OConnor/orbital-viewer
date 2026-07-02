@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<!--
+  smoke.html — DEV EYEBALL TOOL, NOT PART OF THE APP.
+
+  This standalone page exists so a human can visually verify the custom WebGL
+  renderer (frontend/js/renderer.js) in isolation. It imports the renderer
+  modules with relative paths and feeds them a SYNTHETIC snapshot once per
+  second: one satellite in LEO plus ~300 fake objects across all five
+  categories (debris, star, comet, satellite, groundHot), including distant
+  clamped "stars" and moving debris/comets so trails are visible. Trails and
+  labels are enabled by default. The real application wires the renderer to the
+  live WebSocket feed via net.js / model.js — this page does none of that.
+
+  Serve from the repo root (module imports need HTTP, not file://), e.g.:
+    python3 -m http.server 8000
+    open http://localhost:8000/frontend/dev/smoke.html
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orbital LOS Viewer — renderer smoke test (dev)</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #05070d; overflow: hidden; }
+    #stage { position: absolute; inset: 0; }
+    /* Both canvases fill the stage; the overlay sits on top and receives input. */
+    #gl, #overlay { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    #overlay { touch-action: none; cursor: grab; }
+    #overlay:active { cursor: grabbing; }
+    #hud {
+      position: absolute; left: 10px; top: 10px; z-index: 10;
+      font: 12px/1.5 monospace; color: #9fb0c8; pointer-events: none;
+      text-shadow: 0 1px 2px #000; max-width: 46ch;
+    }
+    #hud b { color: #ffd54a; }
+  </style>
+</head>
+<body>
+  <div id="stage">
+    <canvas id="gl"></canvas>
+    <canvas id="overlay"></canvas>
+  </div>
+  <div id="hud">
+    <b>renderer smoke test (dev tool)</b><br />
+    drag = orbit · wheel = zoom · click = select<br />
+    synthetic feed @ 1 Hz · <span id="count">0</span> objects · trails+labels on
+  </div>
+
+  <script type="module">
+    import { createRenderer } from '../js/renderer.js';
+
+    const glCanvas = document.getElementById('gl');
+    const overlay = document.getElementById('overlay');
+    const countEl = document.getElementById('count');
+
+    const renderer = createRenderer(glCanvas, overlay);
+    renderer.resize();
+    renderer.setSettings({
+      showTrails: true,
+      trailSeconds: 30,
+      showLabels: true,
+      categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
+    });
+
+    window.addEventListener('resize', () => renderer.resize());
+
+    // --- Synthetic world ---------------------------------------------------
+    const N_OBJECTS = 300;
+    const EARTH_R_M = 6.371e6;
+    const DEG = Math.PI / 180;
+
+    // Deterministic pseudo-random so the scene is stable across reloads.
+    function rng(seed) {
+      let s = seed >>> 0;
+      return () => {
+        s = (s * 1664525 + 1013904223) >>> 0;
+        return s / 4294967296;
+      };
+    }
+
+    // Fixed per-object descriptors; positions are recomputed each tick.
+    const rand = rng(1234567);
+    const objs = [];
+    const cats = ['debris', 'star', 'comet', 'satellite', 'groundHot'];
+    for (let i = 0; i < N_OBJECTS; i++) {
+      // Roughly even spread across the five categories.
+      const cat = cats[i % 5];
+      objs.push({
+        id: 1000 + i,
+        cat,
+        // orbital elements for movers
+        radius: EARTH_R_M * (1.05 + rand() * 4.0),   // 1.05 .. ~5 Earth radii
+        incl: (rand() - 0.5) * Math.PI,
+        node: rand() * 2 * Math.PI,
+        phase: rand() * 2 * Math.PI,
+        rate: (0.15 + rand() * 0.6) * (rand() < 0.5 ? 1 : -1), // rad/s of anim time
+        // for stars: a fixed sky direction (given as a huge ECEF radius)
+        dir: [rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1],
+        // for groundHot: a fixed surface lat/lon + temperature
+        lat: (rand() - 0.5) * Math.PI,
+        lon: rand() * 2 * Math.PI,
+        tempK: 300 + rand() * 1700,
+        conf: Math.floor(50 + rand() * 50),
+      });
+    }
+
+    function orbitPos(o, tSec) {
+      const a = o.phase + o.rate * tSec;
+      // circle in orbital plane then rotate by inclination about x and node about z
+      const xo = Math.cos(a) * o.radius;
+      const yo = Math.sin(a) * o.radius;
+      const ci = Math.cos(o.incl), si = Math.sin(o.incl);
+      const y1 = yo * ci, z1 = yo * si;
+      const cn = Math.cos(o.node), sn = Math.sin(o.node);
+      return [xo * cn - y1 * sn, xo * sn + y1 * cn, z1];
+    }
+
+    function buildSnapshot(tSec) {
+      // Primary satellite in LEO (~500 km altitude), moving.
+      const satR = EARTH_R_M + 5.0e5;
+      const satA = tSec * 0.0011; // ~93 min period-ish, sped up for visibility
+      const incl = 51.6 * DEG;
+      const px = Math.cos(satA) * satR;
+      const py = Math.sin(satA) * satR * Math.cos(incl);
+      const pz = Math.sin(satA) * satR * Math.sin(incl);
+      const vSpeed = 7660; // m/s
+      const vx = -Math.sin(satA) * vSpeed;
+      const vy = Math.cos(satA) * vSpeed * Math.cos(incl);
+      const vz = Math.cos(satA) * vSpeed * Math.sin(incl);
+      const satellite = { id: 1, seq: Math.floor(tSec), pos: [px, py, pz], vel: [vx, vy, vz] };
+
+      const objects = [];
+      for (const o of objs) {
+        let pos, vel = null;
+        if (o.cat === 'star') {
+          // Distant direction marker (~1e12 m) — the renderer clamps to the shell.
+          const L = Math.hypot(o.dir[0], o.dir[1], o.dir[2]) || 1;
+          pos = [(o.dir[0] / L) * 1e12, (o.dir[1] / L) * 1e12, (o.dir[2] / L) * 1e12];
+        } else if (o.cat === 'groundHot') {
+          const cl = Math.cos(o.lat);
+          pos = [
+            EARTH_R_M * cl * Math.cos(o.lon),
+            EARTH_R_M * cl * Math.sin(o.lon),
+            EARTH_R_M * Math.sin(o.lat),
+          ];
+        } else {
+          // debris / comet / satellite: on animated orbits (so trails move).
+          pos = orbitPos(o, tSec);
+          const nxt = orbitPos(o, tSec + 1);
+          vel = [nxt[0] - pos[0], nxt[1] - pos[1], nxt[2] - pos[2]]; // ~m/s
+        }
+        objects.push({
+          id: o.id,
+          cat: o.cat,
+          pos,
+          vel,
+          conf: o.conf,
+          intensity: o.cat === 'groundHot' ? o.tempK : o.cat === 'star' ? 3.0 : 0,
+          flags: 0,
+        });
+      }
+      countEl.textContent = String(objects.length + 1);
+      return { satellite, objects, lastDataTime: new Date().toISOString() };
+    }
+
+    // Feed a fresh synthetic snapshot once per second.
+    const startMs = Date.now();
+    function pushSnapshot() {
+      const now = Date.now();
+      const tSec = (now - startMs) / 1000;
+      renderer.setSnapshot(buildSnapshot(tSec), now);
+    }
+    pushSnapshot();
+    setInterval(pushSnapshot, 1000);
+
+    // Click to select the nearest object under the cursor.
+    overlay.addEventListener('click', (e) => {
+      const rect = overlay.getBoundingClientRect();
+      const id = renderer.pick(e.clientX - rect.left, e.clientY - rect.top);
+      renderer.setSelected(id);
+    });
+
+    // Continuous render loop (cheap when only the camera moves).
+    function loop(t) {
+      renderer.frame(Date.now());
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+# .clang-format — see docs/PLAN.md §10 and CMakeLists.txt (format/format-check
+# targets). Based on Google style; verified compatible with the frozen
+# headers under backend/include and backend/src (2-space indent, left-aligned
+# pointers/references, lines up to ~98 columns already in use).
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 100
+PointerAlignment: Left
+DerivePointerAlignment: false
+AllowShortFunctionsOnASingleLine: Inline
+IncludeBlocks: Preserve
+SortIncludes: false

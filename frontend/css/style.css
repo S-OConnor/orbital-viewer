@@ -1,0 +1,404 @@
+/* Orbital LOS Viewer — dark theme, plain CSS, no build step. */
+
+:root {
+  --bg: #0a0e14;
+  --bg-alt: #0f141d;
+  --panel-bg: rgba(13, 18, 27, 0.90);
+  --border: #232c3a;
+  --text: #e6edf3;
+  --text-muted: #93a1b4;
+  --accent: #58d68d;
+  --amber: #ffc773;
+  --danger: #ff7a7a;
+  --panel-width: 300px;
+  --radius: 6px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  overflow: hidden;
+}
+
+button, input {
+  font-family: inherit;
+}
+
+/* Numeric telemetry should not jitter in width as digits change. */
+.v, .kv, .chip-count, .object-table td, #trailSecondsValue {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 3D viewport ---- */
+
+#viewport {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+}
+
+#glcanvas, #overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+#glcanvas { z-index: 1; }
+
+#overlay {
+  z-index: 2;
+  touch-action: none;
+  cursor: grab;
+}
+
+/* ---- Left panel ---- */
+
+.panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--panel-width);
+  max-width: 90vw;
+  background: var(--panel-bg);
+  border-right: 1px solid var(--border);
+  backdrop-filter: blur(6px);
+  overflow-y: auto;
+  z-index: 10;
+  padding: 14px 16px 28px;
+  transition: transform 0.15s ease;
+}
+
+.panel.collapsed {
+  transform: translateX(-100%);
+}
+
+.panel-toggle {
+  position: fixed;
+  top: 12px;
+  left: calc(var(--panel-width) + 8px);
+  z-index: 11;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  transition: left 0.15s ease;
+}
+
+.panel.collapsed + .panel-toggle {
+  left: 8px;
+}
+
+.panel-section {
+  margin-bottom: 20px;
+}
+
+.panel-section h2 {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 5px;
+}
+
+.kv {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 10px;
+  padding: 2px 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.kv .k { color: var(--text-muted); white-space: nowrap; }
+.kv .v { text-align: right; }
+.v.muted { color: var(--text-muted); font-size: 11px; }
+
+.conn-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 12.5px;
+}
+
+.status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: none;
+}
+.status-dot.status-open { background: #3fd67d; }
+.status-dot.status-connecting { background: var(--amber); }
+.status-dot.status-closed { background: var(--danger); }
+
+.warning {
+  margin-top: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--amber);
+  color: var(--amber);
+  background: rgba(255, 199, 115, 0.10);
+  border-radius: var(--radius);
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+.warning.hidden { display: none; }
+.hidden { display: none !important; }
+
+/* ---- Category chips ---- */
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.chip.active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(88, 214, 141, 0.14);
+}
+
+.chip .swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.chip-count { color: var(--text-muted); }
+.chip.active .chip-count { color: var(--text); }
+
+.object-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11.5px;
+}
+
+.object-table th, .object-table td {
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.object-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.object-table tbody tr { cursor: pointer; }
+.object-table tbody tr:hover { background: rgba(255, 255, 255, 0.05); }
+.object-table tbody tr.selected { background: rgba(88, 214, 141, 0.20); }
+
+.table-footer {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ---- Top-right buttons ---- */
+
+.topright {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 11;
+  display: flex;
+  gap: 8px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.icon-btn:hover { border-color: var(--accent); }
+
+/* ---- Modals ---- */
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal.hidden { display: none; }
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+}
+
+.modal-content {
+  position: relative;
+  background: #0e1420f2;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 22px 24px;
+  width: min(440px, 92vw);
+  max-height: 85vh;
+  overflow-y: auto;
+  z-index: 1;
+}
+
+.modal-content h2 {
+  margin-top: 0;
+  font-size: 16px;
+}
+
+.modal-content p {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+.modal-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 26px;
+  height: 26px;
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+}
+.modal-close:hover { color: var(--text); }
+
+.field-row {
+  display: block;
+  margin: 14px 0;
+  font-size: 13px;
+}
+
+.field-row input[type="range"] {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.field-row input[type="text"],
+.field-row input[type="number"] {
+  background: var(--bg-alt);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin-left: 6px;
+  width: 110px;
+}
+
+.category-fields {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+  margin: 14px 0;
+}
+
+.category-fields legend {
+  color: var(--text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0 4px;
+}
+
+.category-fields label {
+  display: inline-block;
+  width: 48%;
+  font-size: 12.5px;
+  margin: 4px 0;
+}
+
+.modal-actions {
+  margin-top: 18px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.muted { color: var(--text-muted); }
+
+a { color: #8fd8ff; }
+a:hover { color: #b7e7ff; }
+
+/* ---- Fatal error (no WebGL, etc.) ---- */
+
+.fatal-error {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* ---- Small screens: panel overlays the viewport, toggle still works ---- */
+
+@media (max-width: 700px) {
+  :root { --panel-width: 84vw; }
+
+  .panel {
+    box-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
+  }
+
+  .category-fields label {
+    width: 100%;
+  }
+
+  .field-row input[type="text"],
+  .field-row input[type="number"] {
+    width: 90px;
+  }
+}

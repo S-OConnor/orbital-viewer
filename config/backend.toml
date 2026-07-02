@@ -1,0 +1,41 @@
+# Orbital LOS Viewer backend configuration — pass with:
+#   olv_backend --config config/backend.toml
+#
+# Schema is strict: unknown keys, wrong value types, and out-of-range values
+# are all rejected (see backend/src/config.hpp for the normative schema and
+# backend/include/olv/toml.hpp for the supported TOML subset).
+#
+# Precedence (lowest to highest): built-in defaults < this file (applied via
+# --config) < explicit command-line flags — regardless of where --config
+# appears relative to the other flags on the command line.
+#
+# Every value below is the built-in default, so running with this file
+# unmodified is a no-op. Edit values below to override, or delete lines to
+# fall back to the default for that field.
+
+[network]
+# UDP listen address for incoming state packets (dotted IPv4/IPv6 literal).
+udp_bind = "0.0.0.0"
+# UDP listen port. Range: 1-65535.
+udp_port = 47000
+# WebSocket listen address for viewer clients (dotted IPv4/IPv6 literal).
+ws_bind = "0.0.0.0"
+# WebSocket listen port. Range: 1-65535.
+ws_port = 8765
+
+[broadcast]
+# WebSocket broadcast rate in Hz. Range: greater than 0, up to and
+# including 60. May be written as an integer (e.g. 2) or a float (e.g. 2.5).
+hz = 1.0
+
+[state]
+# Object expiry window, in seconds. Range: 1-3600.
+expiry_seconds = 15
+
+[logging]
+# Log file path (must be non-empty).
+file = "olv_backend.log"
+# Log level: debug|info|warn|error.
+level = "info"
+# Mirror log lines at level >= info to stderr in addition to the log file.
+stderr = true

@@ -1,0 +1,65 @@
+# compose.yaml — run backend + frontend + simulator together.
+#
+# Usage (from the repo root):
+#   podman-compose -f containers/compose.yaml up --build
+#   docker compose  -f containers/compose.yaml up --build
+#
+# Then open http://localhost:8000 in a browser. The frontend's default
+# Settings -> WS host/port already points at localhost:8765, which is
+# published by the backend service below, so no configuration is needed.
+#
+# Build contexts are the repo root (".."), since both Containerfiles COPY
+# repo-relative paths (the whole tree for Containerfile.cpp, frontend/ for
+# Containerfile.frontend).
+#
+# Networking: compose creates an internal network for these services by
+# default; the simulator reaches the backend by its service name ("backend")
+# on that internal network — no host networking or port mapping is needed
+# between simulator and backend, only backend<->host and frontend<->host are
+# published below.
+#
+# Air-gap: all three images must be built (or already present) locally first
+# — see containers/Containerfile.cpp and containers/Containerfile.frontend
+# for their base-image/apt-mirror notes. No service reaches the internet at
+# runtime.
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: containers/Containerfile.cpp
+      target: backend
+    ports:
+      - "8765:8765"
+      - "47000:47000/udp"
+    networks:
+      - olv-net
+    # To configure via TOML instead of the CMD flags, mount a config file and
+    # point the entrypoint at it (same pattern works for the simulator):
+    #   volumes:
+    #     - ../config/backend.toml:/app/backend.toml:ro,Z
+    #   command: ["--config", "/app/backend.toml"]
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: containers/Containerfile.frontend
+    ports:
+      - "8000:80"
+    networks:
+      - olv-net
+
+  simulator:
+    build:
+      context: ..
+      dockerfile: containers/Containerfile.cpp
+      target: simulator
+    depends_on:
+      - backend
+    command: ["--generate", "1000", "--dest", "backend", "--port", "47000", "--rate", "1", "--duration", "0"]
+    networks:
+      - olv-net
+
+networks:
+  olv-net:
+    driver: bridge
