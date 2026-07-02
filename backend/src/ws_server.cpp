@@ -4,6 +4,8 @@
 
 #include "ws_server.hpp"
 
+#include <utility>  // std::exchange, needed before Boost.Beast on Boost 1.74
+
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>
 

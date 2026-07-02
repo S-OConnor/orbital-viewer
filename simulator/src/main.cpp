@@ -13,6 +13,8 @@
 // dev/load-test tool per the spec. Each per-cycle status line is flushed
 // immediately so output isn't lost if the process is signaled mid-run.
 
+#include <utility>  // std::exchange, needed before Boost.Asio on Boost 1.74
+
 #include <boost/asio.hpp>
 
 #include <chrono>
@@ -87,15 +89,27 @@ int main(int argc, char** argv) {
   }
 
   // ---- UDP socket (connected, so each cycle is a plain send()). ----------
+  // Resolve --dest, which may be a numeric IP literal (e.g. 127.0.0.1) or a
+  // hostname (e.g. a container/compose service name such as "backend"). Prefer
+  // an IPv4 result since the backend binds 0.0.0.0 (IPv4) by default.
   boost::asio::io_context ioc;
   boost::asio::ip::udp::socket socket(ioc);
   boost::system::error_code ec;
-  const boost::asio::ip::address addr = boost::asio::ip::make_address(cfg.dest_host, ec);
-  if (ec) {
-    std::cerr << "error: --dest: invalid address: " << cfg.dest_host << "\n";
+  boost::asio::ip::udp::resolver resolver(ioc);
+  const auto results = resolver.resolve(cfg.dest_host, std::to_string(cfg.dest_port), ec);
+  if (ec || results.empty()) {
+    std::cerr << "error: --dest: cannot resolve " << cfg.dest_host << ":" << cfg.dest_port;
+    if (ec) std::cerr << ": " << ec.message();
+    std::cerr << "\n";
     return 1;
   }
-  const boost::asio::ip::udp::endpoint endpoint(addr, cfg.dest_port);
+  boost::asio::ip::udp::endpoint endpoint = results.begin()->endpoint();
+  for (const auto& entry : results) {
+    if (entry.endpoint().address().is_v4()) {
+      endpoint = entry.endpoint();
+      break;
+    }
+  }
   socket.open(endpoint.protocol(), ec);
   if (!ec) socket.connect(endpoint, ec);
   if (ec) {

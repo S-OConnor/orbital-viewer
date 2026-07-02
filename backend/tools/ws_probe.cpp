@@ -8,6 +8,8 @@
 //
 //   ws_probe --host H --port P --count N --timeout SECONDS --out FILE
 
+#include <utility>  // std::exchange, needed before Boost.Asio/Beast on Boost 1.74
+
 #include <boost/asio.hpp>
 #include <boost/beast/core.hpp>
 #include <boost/beast/websocket.hpp>

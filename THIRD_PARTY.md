@@ -3,7 +3,8 @@
 Orbital LOS Viewer is designed to be air-gap friendly: it has exactly one
 runtime third-party dependency (Boost, header-only), plus a small,
 build-time-only toolchain and a handful of optional developer tools. The
-frontend ships **zero** third-party code.
+frontend ships **zero** third-party code (it does vendor two public-domain
+NASA image assets — see [Third-party assets](#third-party-assets)).
 
 | Dependency | Role | License | Notes |
 |---|---|---|---|
@@ -15,6 +16,21 @@ frontend ships **zero** third-party code.
 | clang-format (optional) | Dev-only | [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | `cmake --build build --target format` / `format-check`; no-op with a notice if not installed. |
 | clang-tidy (optional) | Dev-only | [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | Not wired into a CMake target (needs `compile_commands.json`); run manually, see `.clang-tidy` / README §8. |
 | cppcheck (optional) | Dev-only | [GPLv3](https://cppcheck.sourceforge.io/) | `cmake --build build --target lint`; no-op with a notice if not installed. |
+
+## Third-party assets
+
+The frontend's WebGL Earth globe uses two vendored, public-domain NASA Earth
+imagery textures as static image assets (`frontend/assets/`). These are data,
+not code: no third-party JS/CSS/frameworks are introduced by them, and they
+are served same-origin like any other static frontend file.
+
+| Dependency | Role | License | Notes |
+|---|---|---|---|
+| [NASA Blue Marble: Next Generation](https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg) (`frontend/assets/earth_day.jpg`) | Runtime (static image asset, frontend) | Public domain (NASA Media Usage Guidelines) | Dec 2004 composite, 5400×2700 equirectangular. Credit: NASA Earth Observatory / Reto Stöckli. Downsized to power-of-two texture dimensions in the browser at load time; not processed in-repo. Full provenance (retrieval date, SHA-256, byte size): [`frontend/assets/README.md`](frontend/assets/README.md). |
+| [NASA Black Marble — "Earth at Night 2012"](https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/dnb_land_ocean_ice.2012.3600x1800.jpg) (`frontend/assets/earth_night.jpg`) | Runtime (static image asset, frontend) | Public domain (NASA Media Usage Guidelines) | Suomi NPP VIIRS, 3600×1800 equirectangular. Credit: NASA Earth Observatory / NOAA NGDC. Downsized to power-of-two texture dimensions in the browser at load time; not processed in-repo. Full provenance: [`frontend/assets/README.md`](frontend/assets/README.md). |
+
+Both are also recorded as `file`-type components (with computed SHA-256
+hashes) in the frontend SBOM — see `docs/SBOM.md`.
 
 ## First-party code that looks like a dependency
 

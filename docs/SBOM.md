@@ -19,11 +19,34 @@ network access, no pip packages, air-gap friendly).
   the script records version `"unknown"` and prints a warning to stderr
   (never fails the run). The purl is `pkg:generic/boost@<version>`.
 - **`sbom/frontend.cdx.json`** covers the static frontend:
-  `metadata.component` is `olv-frontend@0.1.0` (MIT), and `components` is an
-  empty array — the frontend has **zero third-party runtime code** (no
-  frameworks, no bundler, no vendored JS). `metadata.properties` carries a
-  note that Node.js is a development-only test runner
-  (`node --test frontend/tests/`), never a runtime dependency.
+  `metadata.component` is `olv-frontend@0.1.0` (MIT). `components` lists
+  **zero third-party code** (no frameworks, no bundler, no vendored JS) but
+  **up to two `file`-type components** for the vendored NASA Earth imagery
+  textures in `frontend/assets/` (`earth_day.jpg`, `earth_night.jpg`) used by
+  the WebGL globe. These are data, not code, but are still tracked in the
+  BOM for license/provenance visibility. Each asset component has:
+  - `version` — the imagery vintage (`"2004.12"` / `"2012"`), not a software
+    release, since a static image has no other natural version axis;
+  - `description` — the NASA product name and source URL;
+  - `licenses` — `{"license": {"name": "Public domain (NASA Media Usage
+    Guidelines)", "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"}}`
+    (not an SPDX id, since this isn't an SPDX-listed license);
+  - `hashes` — a `SHA-256` digest computed from the actual file in the
+    working tree **at generation time** (`hashlib`, streamed in 64 KiB
+    chunks), so the BOM always reflects what's really on disk, not a
+    hardcoded value;
+  - `externalReferences` — a `distribution`-type reference to the original
+    NASA source URL.
+
+  If an asset file is missing at generation time (e.g. not yet vendored, or
+  deleted), `scripts/gen_sbom.py` prints a warning to stderr and omits that
+  component rather than failing the run — mirroring the tolerance for a
+  missing Boost install below. `metadata.properties` carries a note
+  clarifying that these are vendored static assets, not code, and that
+  Node.js is a development-only test runner (`node --test
+  frontend/tests/`), never a runtime dependency. Full provenance (retrieval
+  date, dimensions, credit) lives in `frontend/assets/README.md`; the
+  dependency/license table entry is in `THIRD_PARTY.md`.
 
 Both BOMs get a deterministic `serialNumber` (`urn:uuid:...`), computed with
 stdlib `uuid.uuid5` over a fixed project namespace UUID plus
@@ -60,11 +83,11 @@ Every run also prints a one-line license summary per BOM, e.g.:
 wrote sbom/backend.cdx.json
 wrote sbom/frontend.cdx.json
 license report: backend: olv-backend@0.1.0 (MIT); boost@1.90.0 (BSL-1.0)
-license report: frontend: olv-frontend@0.1.0 (MIT); 0 third-party components
+license report: frontend: olv-frontend@0.1.0 (MIT); 0 third-party code components; 2 vendored asset component(s) (public domain)
 ```
 
-Exit code is `0` on success (including the "Boost not found" case, which is
-a warning, not an error).
+Exit code is `0` on success (including the "Boost not found" and "frontend
+asset not found" cases, both of which are warnings, not errors).
 
 ## Sample output (backend BOM, abridged)
 
@@ -91,6 +114,31 @@ a warning, not an error).
       "licenses": [{ "license": { "id": "BSL-1.0" } }],
       "purl": "pkg:generic/boost@1.90.0"
     }
+  ]
+}
+```
+
+## Sample output (frontend BOM, one asset component, abridged)
+
+```json
+{
+  "type": "file",
+  "name": "frontend/assets/earth_day.jpg",
+  "version": "2004.12",
+  "description": "NASA Blue Marble: Next Generation. Source: https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg",
+  "licenses": [
+    {
+      "license": {
+        "name": "Public domain (NASA Media Usage Guidelines)",
+        "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+      }
+    }
+  ],
+  "hashes": [
+    { "alg": "SHA-256", "content": "a9f0088972dee0254610af851c4d6838ca3f2cf79176987e0a5713e2c15ec042" }
+  ],
+  "externalReferences": [
+    { "type": "distribution", "url": "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg" }
   ]
 }
 ```
@@ -124,6 +172,11 @@ Regenerate (`python3 scripts/gen_sbom.py`) whenever:
   simulator, or frontend) — update `build_backend_bom()` /
   `build_frontend_bom()` in `scripts/gen_sbom.py` and `THIRD_PARTY.md`
   together.
+- A vendored frontend asset changes on disk, is added, or is removed
+  (`_FRONTEND_ASSETS` in `scripts/gen_sbom.py`) — the `hashes` entry is
+  computed from the working tree at generation time, so it goes stale the
+  moment the file content changes; update `_FRONTEND_ASSETS`,
+  `frontend/assets/README.md`, and `THIRD_PARTY.md` together.
 - Before a release/tag, so the committed (or attached) SBOMs match what's
   shipped.
 

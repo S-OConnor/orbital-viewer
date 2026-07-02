@@ -1,6 +1,8 @@
 // main.cpp — olv_backend entry point. Wires config -> logger -> StateStore ->
 // UdpReceiver (thread 1) -> WsServer (thread 2, the main io_context).
 
+#include <utility>  // std::exchange, needed before Boost.Asio on Boost 1.74
+
 #include <boost/asio.hpp>
 
 #include <chrono>

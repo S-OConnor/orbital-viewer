@@ -92,7 +92,7 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 ├── README.md
 ├── LICENSE                         # MIT
 ├── THIRD_PARTY.md                  # dependency & license report
-├── .clang-format / .clang-tidy / .editorconfig / .gitignore
+├── .clang-format / .clang-tidy / .editorconfig / .gitignore / .dockerignore
 ├── docs/
 │   ├── PLAN.md                     # this file
 │   ├── PROTOCOL_UDP.md             # binary wire format (normative)

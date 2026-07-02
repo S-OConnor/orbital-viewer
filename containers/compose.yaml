@@ -1,12 +1,20 @@
 # compose.yaml — run backend + frontend + simulator together.
 #
 # Usage (from the repo root):
-#   podman-compose -f containers/compose.yaml up --build
-#   docker compose  -f containers/compose.yaml up --build
+#   podman compose -f containers/compose.yaml up --build
+#   docker compose -f containers/compose.yaml up --build
+#   # or the wrapper, which also waits for readiness and tears down on Ctrl-C:
+#   scripts/run_all.sh
 #
-# Then open http://localhost:8000 in a browser. The frontend's default
+# Then open http://localhost:8000/ in a browser. The frontend's default
 # Settings -> WS host/port already points at localhost:8765, which is
 # published by the backend service below, so no configuration is needed.
+#
+# Published host ports can be overridden without touching the containers'
+# internal ports (which stay 8765/47000/80) via environment variables:
+#   OLV_WS_PORT (default 8765), OLV_UDP_PORT (default 47000),
+#   OLV_HTTP_PORT (default 8000). scripts/run_all.sh sets these from its
+#   --ws-port / --udp-port / --http-port flags.
 #
 # Build contexts are the repo root (".."), since both Containerfiles COPY
 # repo-relative paths (the whole tree for Containerfile.cpp, frontend/ for
@@ -30,8 +38,8 @@ services:
       dockerfile: containers/Containerfile.cpp
       target: backend
     ports:
-      - "8765:8765"
-      - "47000:47000/udp"
+      - "${OLV_WS_PORT:-8765}:8765"
+      - "${OLV_UDP_PORT:-47000}:47000/udp"
     networks:
       - olv-net
     # To configure via TOML instead of the CMD flags, mount a config file and
@@ -45,7 +53,7 @@ services:
       context: ..
       dockerfile: containers/Containerfile.frontend
     ports:
-      - "8000:80"
+      - "${OLV_HTTP_PORT:-8000}:80"
     networks:
       - olv-net
 
@@ -56,7 +64,12 @@ services:
       target: simulator
     depends_on:
       - backend
-    command: ["--generate", "1000", "--dest", "backend", "--port", "47000", "--rate", "1", "--duration", "0"]
+    # Replay the bundled example mission on loop (the CSV is baked into the
+    # image at /app/data). The simulator tolerates the backend not being ready
+    # yet (it warns and retries), so no healthcheck gate is needed. For a
+    # 5,000-object load test instead, swap this for:
+    #   ["--generate", "5000", "--dest", "backend", "--port", "47000", "--rate", "1", "--duration", "0"]
+    command: ["--csv", "/app/data/example_mission.csv", "--loop", "--rate", "1", "--dest", "backend", "--port", "47000"]
     networks:
       - olv-net
 

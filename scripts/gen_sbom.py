@@ -18,6 +18,7 @@ to scanners, when to regenerate).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -26,6 +27,43 @@ import uuid
 from datetime import datetime, timezone
 
 OLV_VERSION = "0.1.0"
+
+# Vendored frontend image assets (frontend/assets/), added to the frontend
+# BOM as CycloneDX "file" components. `version` here is the imagery vintage
+# (the NASA product's acquisition/composite date), not a software release —
+# there is no other natural version axis for a static image. Paths are
+# relative to the repo root, matching how CycloneDX component "name" is
+# conventionally rendered for file-type components.
+_FRONTEND_ASSETS = [
+    {
+        "path": "frontend/assets/earth_day.jpg",
+        "version": "2004.12",  # NASA Blue Marble: Next Generation, Dec 2004 composite
+        "product": "NASA Blue Marble: Next Generation",
+        "source_url": (
+            "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/"
+            "world.topo.bathy.200412.3x5400x2700.jpg"
+        ),
+    },
+    {
+        "path": "frontend/assets/earth_night.jpg",
+        "version": "2012",  # Suomi NPP VIIRS "Earth at Night 2012"
+        "product": 'NASA Black Marble / Suomi NPP VIIRS -- "Earth at Night 2012"',
+        "source_url": (
+            "https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/"
+            "dnb_land_ocean_ice.2012.3600x1800.jpg"
+        ),
+    },
+]
+
+# NASA imagery license: US-government-produced, generally not subject to
+# copyright; not an SPDX-identified license, so this uses license.name (not
+# license.id) per the CycloneDX schema.
+_ASSET_LICENSE = {
+    "license": {
+        "name": "Public domain (NASA Media Usage Guidelines)",
+        "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/",
+    }
+}
 
 # Fixed namespace UUID for this project's deterministic serialNumbers. Any
 # stable constant works here; it only needs to be reused across runs so the
@@ -96,6 +134,51 @@ def _license(license_id: str) -> dict:
     return {"license": {"id": license_id}}
 
 
+def _sha256_file(path: str) -> str:
+    """Streams the file in 64 KiB chunks to compute its SHA-256 hex digest
+    (avoids loading whole images into memory)."""
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _repo_root() -> str:
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def frontend_asset_components() -> list[dict]:
+    """Builds one CycloneDX "file" component per vendored frontend image
+    asset in _FRONTEND_ASSETS, hashing each file at generation time. If an
+    asset is missing on disk, it's skipped with a warning to stderr rather
+    than failing the run -- mirroring detect_boost_version()'s tolerance for
+    a missing dependency."""
+    repo_root = _repo_root()
+    components = []
+    for asset in _FRONTEND_ASSETS:
+        abs_path = os.path.join(repo_root, asset["path"])
+        if not os.path.isfile(abs_path):
+            print(
+                f"gen_sbom.py: warning: frontend asset not found: {asset['path']} "
+                "-- omitting from frontend BOM",
+                file=sys.stderr,
+            )
+            continue
+        components.append({
+            "type": "file",
+            "name": asset["path"],
+            "version": asset["version"],
+            "description": f"{asset['product']}. Source: {asset['source_url']}",
+            "licenses": [_ASSET_LICENSE],
+            "hashes": [{"alg": "SHA-256", "content": _sha256_file(abs_path)}],
+            "externalReferences": [
+                {"type": "distribution", "url": asset["source_url"]},
+            ],
+        })
+    return components
+
+
 def build_backend_bom() -> tuple[dict, str]:
     boost_version, boost_header = detect_boost_version()
     bom = {
@@ -133,6 +216,7 @@ def build_backend_bom() -> tuple[dict, str]:
 
 
 def build_frontend_bom() -> tuple[dict, str]:
+    components = frontend_asset_components()
     bom = {
         "bomFormat": "CycloneDX",
         "specVersion": "1.5",
@@ -150,15 +234,21 @@ def build_frontend_bom() -> tuple[dict, str]:
                 {
                     "name": "olv:notes",
                     "value": (
-                        "no third-party runtime dependencies; Node.js is a "
-                        "development-only test runner (node --test frontend/tests/)"
+                        "no third-party runtime code dependencies; Node.js is a "
+                        "development-only test runner (node --test frontend/tests/). "
+                        "Two public-domain NASA image assets are vendored as static "
+                        "files (frontend/assets/) -- see the 'file'-type components "
+                        "below, not third-party code."
                     ),
                 }
             ],
         },
-        "components": [],
+        "components": components,
     }
-    summary = f"frontend: olv-frontend@{OLV_VERSION} (MIT); 0 third-party components"
+    summary = (
+        f"frontend: olv-frontend@{OLV_VERSION} (MIT); 0 third-party code components; "
+        f"{len(components)} vendored asset component(s) (public domain)"
+    )
     return bom, summary
 
 

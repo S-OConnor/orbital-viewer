@@ -9,6 +9,8 @@
 
 #pragma once
 
+#include <utility>  // std::exchange, needed before Boost.Asio on Boost 1.74
+
 #include <boost/asio.hpp>
 
 #include <array>

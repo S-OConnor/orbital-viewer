@@ -1,8 +1,10 @@
 // renderer.js — custom minimal WebGL 1 renderer for the Orbital LOS Viewer.
 //
-// Draws: a shaded lat/lon Earth globe + 15-degree graticule, an approximate Sun
-// billboard (which also lights the globe), all tracked objects as a single
-// GL_POINTS draw, the primary satellite marker + 60 s velocity vector, age-faded
+// Draws: a textured lat/lon Earth globe (NASA day/night imagery via textures.js
+// with a procedural fallback until it loads) + 15-degree graticule, an
+// approximate Sun billboard (which also lights the globe), all tracked objects
+// as a single textured GL_POINTS draw of atlas icon sprites, the primary
+// satellite marker (satMarker atlas art) + 60 s velocity vector, age-faded
 // GL_LINES trails, and 2D-canvas labels / selection ring on the overlay.
 //
 // Public API (frozen — docs/PLAN.md section 6):
@@ -19,6 +21,10 @@
 import { perspective, multiply, transform, normalize } from './math3.js';
 import { createCamera } from './camera.js';
 import { sunDirectionEcef } from './sun.js';
+// Sibling modules on frozen interfaces (v0.2). Both are IMPORT-SAFE: their
+// exports are only *called* inside createRenderer(), never at import time.
+import { ATLAS_GRID, CELL, ICONS, paintAtlas, iconUV } from './atlas.js';
+import { createEarthTextures } from './textures.js';
 
 const DEG = Math.PI / 180;
 const SCALE = 1e-6;      // metres -> scene units (1 unit = 1,000 km)
@@ -33,12 +39,15 @@ const NEAR = 0.5;
 const FAR = 1000;
 
 // Category appearance. groundHot colour is computed per-object from intensity.
+// size is in CSS px (multiplied by DPR in the points shader, then clamped to the
+// GPU point-size cap). icon selects the atlas cell (ICONS.*); cells 0..4 are
+// white masks that get tinted by the per-object colour in the fragment shader.
 const CAT = {
-  debris:    { color: [0xaa / 255, 0xb2 / 255, 0xbd / 255], size: 3 },   // #aab2bd
-  star:      { color: [1, 1, 1],                             size: 2.5 }, // #ffffff
-  comet:     { color: [0x6f / 255, 0xd3 / 255, 0xff / 255], size: 5 },   // #6fd3ff
-  satellite: { color: [0x58 / 255, 0xd6 / 255, 0x8d / 255], size: 5 },   // #58d68d
-  groundHot: { color: [1, 0.5647, 0.251],                   size: 5 },   // base (unused directly)
+  debris:    { color: [0xaa / 255, 0xb2 / 255, 0xbd / 255], size: 10, icon: ICONS.debris },    // #aab2bd
+  star:      { color: [1, 1, 1],                             size: 9,  icon: ICONS.star },      // #ffffff
+  comet:     { color: [0x6f / 255, 0xd3 / 255, 0xff / 255], size: 14, icon: ICONS.comet },     // #6fd3ff
+  satellite: { color: [0x58 / 255, 0xd6 / 255, 0x8d / 255], size: 14, icon: ICONS.satellite }, // #58d68d
+  groundHot: { color: [1, 0.5647, 0.251],                   size: 13, icon: ICONS.groundHot },  // base (unused directly)
 };
 const SAT_COLOR = [1, 0.8353, 0.2902]; // #ffd54a primary satellite
 const SUN_COLOR = [1.0, 0.93, 0.7];    // warm white/yellow disc
@@ -60,32 +69,69 @@ function groundHotColor(k) {
 // Shader sources
 // ---------------------------------------------------------------------------
 
+// UV is precomputed CPU-side (exact, seam-safe) and carried through a HIGHP
+// varying: a 4096-wide equirect texture needs more than mediump interpolation to
+// avoid visible banding, so we resolve it in the vertex shader and pass highp.
 const EARTH_VS = `
 attribute vec3 aPos;
 attribute vec3 aNormal;
+attribute vec2 aUV;
 uniform mat4 uMVP;
 varying vec3 vNormal;
 varying vec3 vPos;
+varying highp vec2 vUV;
 void main() {
   vNormal = aNormal;
   vPos = aPos;
+  vUV = aUV;
   gl_Position = uMVP * vec4(aPos, 1.0);
 }`;
 
+// Textured Earth with a graceful fallback. When the async day texture is ready
+// (uHasDay) we shade it Lambert-style; when the night-lights texture is also
+// ready (uHasNight) we add emissive city lights on the anti-solar hemisphere and
+// a faint blue atmospheric fresnel rim. Until then — first frames, or a texture
+// load failure — we reproduce the EXACT v0.1 procedural deep-blue + latitude-band
+// look so nothing regresses visually.
 const EARTH_FS = `
 precision mediump float;
 varying vec3 vNormal;
 varying vec3 vPos;
+varying highp vec2 vUV;
 uniform vec3 uSunDir;
 uniform float uAmbient;
+uniform vec3 uEye;
+uniform bool uHasDay;
+uniform bool uHasNight;
+uniform sampler2D uDay;
+uniform sampler2D uNight;
 void main() {
   vec3 N = normalize(vNormal);
-  float diff = max(dot(N, normalize(uSunDir)), 0.0);
+  vec3 L = normalize(uSunDir);
+  float ndl = dot(N, L);
+  float diff = max(ndl, 0.0);
   float light = uAmbient + (1.0 - uAmbient) * diff;
-  float lat = vPos.z / 6.371;                 // -1 (south) .. +1 (north)
-  vec3 base = vec3(0.05, 0.19, 0.44);         // deep blue
-  base += vec3(0.015, 0.03, 0.05) * cos(lat * 9.0); // subtle latitude bands
-  gl_FragColor = vec4(base * light, 1.0);
+  vec3 color;
+  if (uHasDay) {
+    color = texture2D(uDay, vUV).rgb * light;
+    if (uHasNight) {
+      // City lights ramp across the terminator: 0 on the lit side (ndl >= 0.05),
+      // full on the deep night side (ndl <= -0.18). Both edges tuned to taste.
+      float nightMix = smoothstep(0.05, -0.18, ndl);
+      color += texture2D(uNight, vUV).rgb * nightMix;
+    }
+    // Subtle blue atmospheric rim: brightest at the silhouette, additive.
+    vec3 V = normalize(uEye - vPos);
+    float rim = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+    color += vec3(0.20, 0.38, 0.66) * rim * 0.55;
+  } else {
+    // Procedural fallback — byte-for-byte identical to the v0.1 shading.
+    float lat = vPos.z / 6.371;                 // -1 (south) .. +1 (north)
+    vec3 base = vec3(0.05, 0.19, 0.44);         // deep blue
+    base += vec3(0.015, 0.03, 0.05) * cos(lat * 9.0); // subtle latitude bands
+    color = base * light;
+  }
+  gl_FragColor = vec4(color, 1.0);
 }`;
 
 const LINE_VS = `
@@ -103,28 +149,46 @@ precision mediump float;
 varying vec4 vColor;
 void main() { gl_FragColor = vColor; }`;
 
+// Object sprites. aIcon selects the atlas cell; the VS derives that cell's UV
+// rect using the SAME 4x4 grid + inset math as atlas.js iconUV() (which cannot be
+// called from GLSL). ATLAS_GRID and INSET below MUST stay in lockstep with
+// atlas.js — if the frozen inset fraction changes there, change it here too.
 const POINTS_VS = `
 attribute vec3 aPos;
 attribute vec3 aColor;
 attribute float aSize;
+attribute float aIcon;
 uniform mat4 uMVP;
 uniform float uDpr;
+uniform float uMaxPoint;                       // ALIASED_POINT_SIZE_RANGE[1] cap
 varying vec3 vColor;
+varying vec2 vUv0;
+varying vec2 vUv1;
+const float ATLAS_GRID = 4.0;                  // == atlas.js ATLAS_GRID
+const float INSET = 0.04;                      // == atlas.js iconUV inset (~4%)
 void main() {
   vColor = aColor;
+  float cell = 1.0 / ATLAS_GRID;
+  vec2 rc = vec2(mod(aIcon, ATLAS_GRID), floor(aIcon / ATLAS_GRID)); // col,row
+  vUv0 = (rc + INSET) * cell;                  // image-space rect min (v=0 = top)
+  vUv1 = (rc + 1.0 - INSET) * cell;            // image-space rect max
   gl_Position = uMVP * vec4(aPos, 1.0);
-  gl_PointSize = aSize * uDpr;               // CSS px -> device px
+  gl_PointSize = min(aSize * uDpr, uMaxPoint); // CSS px -> device px, clamped
 }`;
 
 const POINTS_FS = `
 precision mediump float;
 varying vec3 vColor;
+varying vec2 vUv0;
+varying vec2 vUv1;
+uniform sampler2D uAtlas;
 void main() {
-  vec2 c = gl_PointCoord - 0.5;
-  float r = dot(c, c);
-  if (r > 0.25) discard;                      // round point
-  float a = smoothstep(0.25, 0.12, r);        // soft edge
-  gl_FragColor = vec4(vColor, a);
+  // gl_PointCoord origin is top-left in WebGL, matching image-space v=0 = top,
+  // so no flip is needed (atlas uploaded with UNPACK_FLIP_Y false).
+  vec2 uv = mix(vUv0, vUv1, gl_PointCoord);
+  vec4 t = texture2D(uAtlas, uv);
+  if (t.a < 0.05) discard;                     // trim transparent icon margin
+  gl_FragColor = vec4(t.rgb * vColor, t.a);    // white mask * category tint
 }`;
 
 // Single-point billboard used for the Sun disc and the satellite marker.
@@ -140,21 +204,29 @@ void main() {
   gl_PointSize = uSize + aVertex; // aVertex is 0, keeps the attribute live
 }`;
 
+// The Sun keeps the soft procedural disc (uUseAtlas 0); the primary satellite
+// samples the full-colour satMarker art from the atlas (uUseAtlas 1), untinted,
+// replacing the old disc+ring blob. uUv0/uUv1 are the satMarker cell rect from
+// atlas.js iconUV() (image space, v=0 = top — matches gl_PointCoord's top-left).
 const MARKER_FS = `
 precision mediump float;
 uniform vec3 uColor;
-uniform float uRing;                          // 0 = soft disc (Sun), 1 = disc+ring (satellite)
+uniform bool uUseAtlas;
+uniform sampler2D uAtlas;
+uniform vec2 uUv0;
+uniform vec2 uUv1;
 void main() {
-  vec2 c = gl_PointCoord - 0.5;
-  float r = length(c) * 2.0;                   // 0 centre .. ~1 edge
-  if (uRing > 0.5) {
-    if (r < 0.42) { gl_FragColor = vec4(uColor, 1.0); }
-    else if (r > 0.72 && r < 0.95) { gl_FragColor = vec4(uColor, 0.9); }
-    else discard;
+  if (uUseAtlas) {
+    vec2 uv = mix(uUv0, uUv1, gl_PointCoord);
+    vec4 t = texture2D(uAtlas, uv);
+    if (t.a < 0.05) discard;
+    gl_FragColor = t;                          // full-colour art, sampled untinted
   } else {
+    vec2 c = gl_PointCoord - 0.5;
+    float r = length(c) * 2.0;                 // 0 centre .. ~1 edge
     if (r > 1.0) discard;
     float a = smoothstep(1.0, 0.0, r);
-    gl_FragColor = vec4(uColor, a);
+    gl_FragColor = vec4(uColor, a);            // soft disc (Sun)
   }
 }`;
 
@@ -165,11 +237,14 @@ void main() {
 function buildSphere(R, stacks, slices) {
   const positions = [];
   const normals = [];
+  const uvs = [];
   const indices = [];
   for (let i = 0; i <= stacks; i++) {
     const phi = (i / stacks) * Math.PI - Math.PI / 2; // -pi/2 .. +pi/2 latitude
     const cp = Math.cos(phi);
     const sp = Math.sin(phi);
+    // Equirect v: phi=+pi/2 (north pole) -> 0 (image top); -pi/2 (south) -> 1.
+    const v = 0.5 - phi / Math.PI;
     for (let j = 0; j <= slices; j++) {
       const theta = (j / slices) * 2 * Math.PI;       // 0 .. 2pi longitude
       const nx = cp * Math.cos(theta);
@@ -177,6 +252,10 @@ function buildSphere(R, stacks, slices) {
       const nz = sp;                                   // +Z north pole
       positions.push(nx * R, ny * R, nz * R);
       normals.push(nx, ny, nz);
+      // Equirect u: Greenwich (theta=0) -> 0.5, monotonic 0.5 -> 1.5 per ring.
+      // WRAP_S=REPEAT makes the fract() step at the antimeridian seamless; the
+      // duplicated last column (j==slices, u=1.5) closes the mesh at Greenwich.
+      uvs.push(0.5 + theta / (2 * Math.PI), v);
     }
   }
   const stride = slices + 1;
@@ -192,6 +271,7 @@ function buildSphere(R, stacks, slices) {
   return {
     positions: new Float32Array(positions),
     normals: new Float32Array(normals),
+    uvs: new Float32Array(uvs),
     indices: new Uint16Array(indices),
   };
 }
@@ -199,7 +279,7 @@ function buildSphere(R, stacks, slices) {
 // Interleaved [x,y,z, r,g,b,a] line vertices for a 15-degree graticule.
 function buildGraticule(R) {
   const r = R * 1.003; // slightly raised to avoid z-fighting with the globe
-  const col = [0.55, 0.72, 1.0, 0.22];
+  const col = [0.55, 0.72, 1.0, 0.14]; // subtle reference grid over the texture (was 0.22)
   const v = [];
   const step = 6;
   const push = (x, y, z) => v.push(x, y, z, col[0], col[1], col[2], col[3]);
@@ -239,8 +319,10 @@ function buildGraticule(R) {
 // ---------------------------------------------------------------------------
 
 export function createRenderer(glCanvas, overlayCanvas) {
+  const glAttrs = { antialias: true }; // MSAA on the default framebuffer (anti-pixelation)
   const gl =
-    glCanvas.getContext('webgl') || glCanvas.getContext('experimental-webgl');
+    glCanvas.getContext('webgl', glAttrs) ||
+    glCanvas.getContext('experimental-webgl', glAttrs);
   if (!gl) {
     throw new Error(
       'WebGL is not available: getContext("webgl") returned null. ' +
@@ -285,37 +367,52 @@ export function createRenderer(glCanvas, overlayCanvas) {
     return p;
   }
 
-  const earthProg = program(EARTH_VS, EARTH_FS, { aPos: 0, aNormal: 1 });
+  const earthProg = program(EARTH_VS, EARTH_FS, { aPos: 0, aNormal: 1, aUV: 2 });
   const lineProg = program(LINE_VS, LINE_FS, { aPos: 0, aColor: 1 });
-  const pointsProg = program(POINTS_VS, POINTS_FS, { aPos: 0, aColor: 1, aSize: 2 });
+  const pointsProg = program(POINTS_VS, POINTS_FS, { aPos: 0, aColor: 1, aSize: 2, aIcon: 3 });
   const markerProg = program(MARKER_VS, MARKER_FS, { aVertex: 0 });
 
   const earthU = {
     mvp: gl.getUniformLocation(earthProg, 'uMVP'),
     sun: gl.getUniformLocation(earthProg, 'uSunDir'),
     ambient: gl.getUniformLocation(earthProg, 'uAmbient'),
+    eye: gl.getUniformLocation(earthProg, 'uEye'),
+    hasDay: gl.getUniformLocation(earthProg, 'uHasDay'),
+    hasNight: gl.getUniformLocation(earthProg, 'uHasNight'),
+    day: gl.getUniformLocation(earthProg, 'uDay'),
+    night: gl.getUniformLocation(earthProg, 'uNight'),
   };
   const lineU = { mvp: gl.getUniformLocation(lineProg, 'uMVP') };
   const pointsU = {
     mvp: gl.getUniformLocation(pointsProg, 'uMVP'),
     dpr: gl.getUniformLocation(pointsProg, 'uDpr'),
+    maxPoint: gl.getUniformLocation(pointsProg, 'uMaxPoint'),
+    atlas: gl.getUniformLocation(pointsProg, 'uAtlas'),
   };
   const markerU = {
     mvp: gl.getUniformLocation(markerProg, 'uMVP'),
     pos: gl.getUniformLocation(markerProg, 'uWorldPos'),
     size: gl.getUniformLocation(markerProg, 'uSize'),
     color: gl.getUniformLocation(markerProg, 'uColor'),
-    ring: gl.getUniformLocation(markerProg, 'uRing'),
+    useAtlas: gl.getUniformLocation(markerProg, 'uUseAtlas'),
+    atlas: gl.getUniformLocation(markerProg, 'uAtlas'),
+    uv0: gl.getUniformLocation(markerProg, 'uUv0'),
+    uv1: gl.getUniformLocation(markerProg, 'uUv1'),
   };
 
   // --- Static geometry buffers -------------------------------------------
-  const sphere = buildSphere(EARTH_R, 32, 48);
+  // 64x96 tessellation -> 65*97 = 6305 verts, 64*96*6 = 36864 indices (< 65536,
+  // safe for Uint16). Higher than v0.1's 32x48 to smooth the textured silhouette.
+  const sphere = buildSphere(EARTH_R, 64, 96);
   const earthPosBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, earthPosBuf);
   gl.bufferData(gl.ARRAY_BUFFER, sphere.positions, gl.STATIC_DRAW);
   const earthNrmBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, earthNrmBuf);
   gl.bufferData(gl.ARRAY_BUFFER, sphere.normals, gl.STATIC_DRAW);
+  const earthUvBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, earthUvBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, sphere.uvs, gl.STATIC_DRAW);
   const earthIdxBuf = gl.createBuffer();
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, earthIdxBuf);
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, sphere.indices, gl.STATIC_DRAW);
@@ -331,6 +428,7 @@ export function createRenderer(glCanvas, overlayCanvas) {
   const posArr = new Float32Array(MAX_OBJECTS * 3);
   const colArr = new Float32Array(MAX_OBJECTS * 3);
   const sizeArr = new Float32Array(MAX_OBJECTS);
+  const iconArr = new Float32Array(MAX_OBJECTS); // atlas cell index per object
   const objPosBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, objPosBuf);
   gl.bufferData(gl.ARRAY_BUFFER, posArr, gl.DYNAMIC_DRAW);
@@ -340,6 +438,9 @@ export function createRenderer(glCanvas, overlayCanvas) {
   const objSizeBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, objSizeBuf);
   gl.bufferData(gl.ARRAY_BUFFER, sizeArr, gl.DYNAMIC_DRAW);
+  const objIconBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, objIconBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, iconArr, gl.DYNAMIC_DRAW);
   let objCount = 0;
 
   // --- Trail + velocity buffers -------------------------------------------
@@ -353,6 +454,55 @@ export function createRenderer(glCanvas, overlayCanvas) {
   const markerBuf = gl.createBuffer();
   gl.bindBuffer(gl.ARRAY_BUFFER, markerBuf);
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0]), gl.STATIC_DRAW);
+
+  // --- Textures -----------------------------------------------------------
+  // Icon atlas (SYNCHRONOUS): a power-of-two canvas painted by atlas.js and
+  // uploaded once with mipmaps. atlasScale keeps the canvas POT — 256 px at
+  // DPR < 1.5, 512 px otherwise (ATLAS_GRID*CELL == 256; scale 1 or 2 only) — so
+  // generateMipmap + LINEAR_MIPMAP_LINEAR are valid. UNPACK_FLIP_Y is left false
+  // so the uploaded texture's v=0 row is the image top, matching iconUV()/
+  // gl_PointCoord. We are inside createRenderer (a real GL canvas is required),
+  // so document.createElement is safe to assume here.
+  const atlasDpr =
+    typeof window !== 'undefined' && window.devicePixelRatio ? window.devicePixelRatio : 1;
+  const atlasScale = Math.round(Math.min(atlasDpr, 2)); // 1 or 2 -> 256 or 512 px (POT)
+  const atlasCanvas = document.createElement('canvas');
+  atlasCanvas.width = ATLAS_GRID * CELL * atlasScale;
+  atlasCanvas.height = ATLAS_GRID * CELL * atlasScale;
+  paintAtlas(atlasCanvas.getContext('2d'), CELL * atlasScale);
+  const atlasTex = gl.createTexture();
+  gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, atlasCanvas);
+  gl.generateMipmap(gl.TEXTURE_2D);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  const satUV = iconUV(ICONS.satMarker); // fixed satellite-art cell (source of truth)
+
+  // Equirectangular Earth day/night textures (ASYNC). textures.js resolves the
+  // vendored NASA assets relative to itself and uploads them mipmapped; the
+  // handle's day/night fields (and version counter) stay null/0 until the images
+  // arrive, so frame() polls them and drawEarth switches shader paths on the fly.
+  const earthTex = createEarthTextures(gl);
+
+  // gl_PointSize is capped by the GPU (commonly 63/64 device px). Query once and
+  // clamp every point draw (uMaxPoint in the VS; Math.min for the marker).
+  const psRange = gl.getParameter(gl.ALIASED_POINT_SIZE_RANGE);
+  const maxPointSize = psRange && psRange[1] ? psRange[1] : 64;
+
+  // Fixed sampler -> texture-unit bindings, set once after link (persist per
+  // program): earth day = unit 0, night = unit 1, atlas = unit 2.
+  gl.useProgram(earthProg);
+  gl.uniform1i(earthU.day, 0);
+  gl.uniform1i(earthU.night, 1);
+  gl.useProgram(pointsProg);
+  gl.uniform1i(pointsU.atlas, 2);
+  gl.uniform1f(pointsU.maxPoint, maxPointSize);
+  gl.useProgram(markerProg);
+  gl.uniform1i(markerU.atlas, 2);
 
   // --- Renderer state -----------------------------------------------------
   let settings = normalizeSettings(null);
@@ -438,6 +588,7 @@ export function createRenderer(glCanvas, overlayCanvas) {
         posArr[n * 3] = w[0]; posArr[n * 3 + 1] = w[1]; posArr[n * 3 + 2] = w[2];
         colArr[n * 3] = col[0]; colArr[n * 3 + 1] = col[1]; colArr[n * 3 + 2] = col[2];
         sizeArr[n] = def.size;
+        iconArr[n] = def.icon;
         renderObjects.push({ id: o.id, cat: o.cat, x: w[0], y: w[1], z: w[2] });
         n++;
       }
@@ -449,6 +600,8 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, colArr.subarray(0, n * 3));
     gl.bindBuffer(gl.ARRAY_BUFFER, objSizeBuf);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, sizeArr.subarray(0, n));
+    gl.bindBuffer(gl.ARRAY_BUFFER, objIconBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, iconArr.subarray(0, n));
   }
 
   function rebuildSatellite() {
@@ -571,18 +724,25 @@ export function createRenderer(glCanvas, overlayCanvas) {
     for (let i = 0; i < 4; i++) gl.disableVertexAttribArray(i);
   }
 
-  function drawEarth(mvp, sunDir) {
+  function drawEarth(mvp, sunDir, eye) {
     gl.useProgram(earthProg);
     disableAttribs();
     gl.uniformMatrix4fv(earthU.mvp, false, mvp);
     gl.uniform3fv(earthU.sun, sunDir);
     gl.uniform1f(earthU.ambient, 0.25);
+    gl.uniform3fv(earthU.eye, eye);
+    // Poll async texture readiness each frame; false -> procedural fallback path.
+    gl.uniform1i(earthU.hasDay, earthTex.day ? 1 : 0);
+    gl.uniform1i(earthU.hasNight, earthTex.night ? 1 : 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, earthPosBuf);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ARRAY_BUFFER, earthNrmBuf);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, earthUvBuf);
+    gl.enableVertexAttribArray(2);
+    gl.vertexAttribPointer(2, 2, gl.FLOAT, false, 0, 0);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, earthIdxBuf);
     gl.disable(gl.BLEND);
     gl.depthMask(true);
@@ -619,19 +779,27 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.bindBuffer(gl.ARRAY_BUFFER, objSizeBuf);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, objIconBuf);
+    gl.enableVertexAttribArray(3);
+    gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND);
     gl.depthMask(false);
     gl.drawArrays(gl.POINTS, 0, objCount);
   }
 
-  function drawMarker(worldPos, sizePx, color, ring, mvp) {
+  function drawMarker(worldPos, sizePx, color, useAtlas, mvp) {
     gl.useProgram(markerProg);
     disableAttribs();
     gl.uniformMatrix4fv(markerU.mvp, false, mvp);
     gl.uniform3fv(markerU.pos, worldPos);
-    gl.uniform1f(markerU.size, sizePx * dpr);
+    gl.uniform1f(markerU.size, Math.min(sizePx * dpr, maxPointSize)); // clamp to GPU cap
     gl.uniform3fv(markerU.color, color);
-    gl.uniform1f(markerU.ring, ring ? 1 : 0);
+    gl.uniform1i(markerU.useAtlas, useAtlas ? 1 : 0);
+    if (useAtlas) {
+      // satMarker cell rect (image space); the atlas is bound on unit 2 in frame().
+      gl.uniform2f(markerU.uv0, satUV.u0, satUV.v0);
+      gl.uniform2f(markerU.uv1, satUV.u1, satUV.v1);
+    }
     gl.bindBuffer(gl.ARRAY_BUFFER, markerBuf);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 1, gl.FLOAT, false, 0, 0);
@@ -773,13 +941,29 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.depthMask(true);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-    drawEarth(mvp, sunDir);
+    // Bind textures to their fixed units. Earth day/night stay null until
+    // textures.js finishes loading; drawEarth polls their readiness. Rebinding
+    // each frame is cheap and keeps state robust against the async uploads that
+    // textures.js performs between frames on whatever unit is active. While a
+    // texture is still loading, the always-ready atlas is bound as a placeholder:
+    // the shader never samples that unit (uHasDay/uHasNight gate it), but leaving
+    // an incomplete (null) texture on a statically-referenced sampler makes
+    // browsers log per-draw "incomplete texture" warnings during the load window.
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, earthTex.day || atlasTex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, earthTex.night || atlasTex);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, atlasTex);
+    gl.activeTexture(gl.TEXTURE0);
+
+    drawEarth(mvp, sunDir, eye);
     drawLines(gratBuf, gratVertCount, mvp);
-    drawMarker(sunPos, 42, SUN_COLOR, false, mvp);
+    drawMarker(sunPos, 42, SUN_COLOR, false, mvp);          // Sun: soft procedural disc
     if (settings.showTrails) drawLines(trailBuf, trailVertCount, mvp);
     drawPoints(mvp);
     if (velActive) drawLines(velBuf, 2, mvp);
-    if (satRender) drawMarker([satRender.x, satRender.y, satRender.z], 24, SAT_COLOR, true, mvp);
+    if (satRender) drawMarker([satRender.x, satRender.y, satRender.z], 30, SAT_COLOR, true, mvp); // sat art
 
     drawOverlay(mvp, eye, sunPos);
   }

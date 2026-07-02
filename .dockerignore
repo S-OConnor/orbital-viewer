@@ -1,0 +1,15 @@
+# Files excluded from the container build context. Containerfile.cpp does
+# `COPY . .` over the repo root, so host-only artifacts must be kept out of
+# the image. Most important: a host `build/` dir carries a CMakeCache.txt with
+# absolute host paths, which breaks the in-image `cmake` configure. Honored by
+# both podman (.containerignore falls back to this) and docker.
+build*/
+sbom/
+node_modules/
+__pycache__/
+.cache/
+*.log
+frames*.jsonl
+.git/
+.ffprofile-tmp/
+*.png

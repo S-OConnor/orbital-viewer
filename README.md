@@ -8,10 +8,15 @@ a C++/Boost backend, which validates, aggregates, and rebroadcasts the world
 state as WebSocket JSON to a dependency-free WebGL frontend. The whole stack
 targets localhost/LAN use with no runtime internet access.
 
+![alt text](<Screenshot From 2026-07-02 06-49-04.png>)
+
 ## Features
 
 - Simplified Earth globe (graticule, Sun-lit shading) with an approximate
-  Sun position computed from the client clock.
+  Sun position computed from the client clock, textured with vendored
+  public-domain NASA Blue Marble (day) and Black Marble (night) imagery —
+  see [frontend/assets/README.md](frontend/assets/README.md) and
+  [THIRD_PARTY.md](THIRD_PARTY.md).
 - All five tracked-object categories: debris, stars, comets, other
   satellites, and hot ground objects (rendered with distinct colors/sizes).
 - Per-object trails, 0–60 s configurable, age-faded.
@@ -90,16 +95,28 @@ Binaries land at `build/backend/olv_backend`, `build/backend/olv_ws_probe`,
 and `build/simulator/olv_sim` (each target's default per-subdirectory output
 directory; no `CMAKE_RUNTIME_OUTPUT_DIRECTORY` override is configured).
 
-### One-liner
+### One-liner (containers)
 
 ```sh
 scripts/run_all.sh
 ```
 
-Builds (only if the binaries are missing), then starts the backend, the
-simulator (replaying `simulator/data/example_mission.csv` on loop at 1 Hz),
-and the frontend static server together, printing every URL/port. A single
-Ctrl-C stops all three processes.
+Brings up the whole stack as containers via `containers/compose.yaml` — the
+backend, the simulator (replaying `simulator/data/example_mission.csv` on loop
+at 1 Hz), and the frontend served by nginx. It auto-detects a compose engine
+(`podman compose`, `docker compose`, `podman-compose`, or `docker-compose`;
+override with `OLV_COMPOSE`), builds images on first run, waits for the
+backend to accept connections, prints the URLs, then streams logs. A single
+Ctrl-C stops and removes the whole stack.
+
+```sh
+scripts/run_all.sh --build                 # force an image rebuild after code changes
+scripts/run_all.sh --http-port 9000        # remap a published host port (also --ws-port/--udp-port)
+```
+
+Then open <http://localhost:8000/>. (To run the binaries directly without
+containers instead, see the three-process commands above and
+`scripts/serve_frontend.sh`.)
 
 ## Configuration files
 
@@ -225,14 +242,20 @@ podman build -f containers/Containerfile.cpp --target backend   -t olv-backend .
 podman build -f containers/Containerfile.cpp --target simulator -t olv-sim .
 podman build -f containers/Containerfile.frontend -t olv-frontend .
 
-# or all three together:
-podman-compose -f containers/compose.yaml up --build
-# (docker compose -f containers/compose.yaml up --build works identically)
+# or all three together (podman compose / docker compose are equivalent):
+podman compose -f containers/compose.yaml up --build
+# or, with readiness wait + one-Ctrl-C teardown, the wrapper:
+scripts/run_all.sh
 ```
 
-Then open <http://localhost:8000/frontend/> — the frontend's default WebSocket setting
-(`localhost:8765`) matches the backend's published port, so no
-configuration is needed.
+Then open <http://localhost:8000/> — in the container image nginx serves the
+frontend at the root (the compose file also mounts `docs/` there so the About
+modal's protocol links resolve). The frontend's default WebSocket setting
+(`localhost:8765`) matches the backend's published port, so no configuration
+is needed. Published host ports can be remapped without touching the
+containers' internal ports via `OLV_WS_PORT` / `OLV_UDP_PORT` /
+`OLV_HTTP_PORT` (which `scripts/run_all.sh` sets from its `--*-port` flags);
+the build context excludes host artifacts via `.dockerignore`.
 
 ## SBOM & licenses
 
@@ -242,9 +265,10 @@ python3 scripts/gen_sbom.py --out sbom/
 
 Generates CycloneDX 1.5 SBOMs for the backend (`sbom/backend.cdx.json`,
 records the detected Boost version) and the frontend
-(`sbom/frontend.cdx.json`, zero third-party components), plus a one-line
-license summary per component. Full strategy and sample output:
-[`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
+(`sbom/frontend.cdx.json`, zero third-party *code* components, plus two
+`file`-type components for the vendored public-domain NASA image assets),
+plus a one-line license summary per component. Full strategy and sample
+output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
 ## Security scope
