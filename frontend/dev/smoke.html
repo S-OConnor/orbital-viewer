@@ -7,9 +7,11 @@
   modules with relative paths and feeds them a SYNTHETIC snapshot once per
   second: one satellite in LEO plus ~300 fake objects across all five
   categories (debris, star, comet, satellite, groundHot), including distant
-  clamped "stars" and moving debris/comets so trails are visible. Trails and
-  labels are enabled by default. The real application wires the renderer to the
-  live WebSocket feed via net.js / model.js — this page does none of that.
+  clamped "stars" and moving debris/comets so trails are visible. Trails,
+  labels and the celestial-background sky (stars/Moon/planets, from the
+  synthetic snapshot's serverTime) are enabled by default; press S to toggle
+  the sky. The real application wires the renderer to the live WebSocket feed
+  via net.js / model.js — this page does none of that.
 
   Serve from the repo root (module imports need HTTP, not file://), e.g.:
     python3 -m http.server 8000
@@ -42,9 +44,10 @@
   </div>
   <div id="hud">
     <b>renderer smoke test (dev tool)</b><br />
-    drag = orbit · wheel = zoom · click = select · <b>V</b> = 3D/sat view<br />
+    drag = orbit · wheel = zoom · click = select · <b>V</b> = 3D/sat view ·
+    <b>S</b> = sky<br />
     synthetic feed @ 1 Hz · <span id="count">0</span> objects · trails+labels on ·
-    view: <span id="viewMode">orbit</span>
+    view: <span id="viewMode">orbit</span> · sky: <span id="skyMode">on</span>
   </div>
 
   <script type="module">
@@ -57,23 +60,30 @@
     const renderer = createRenderer(glCanvas, overlay);
     renderer.resize();
     let viewMode = 'orbit';
+    let showSky = true;
     function applySettings() {
       renderer.setSettings({
         showTrails: true,
         trailSeconds: 30,
         showLabels: true,
+        showSky,
         categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
         viewMode,
       });
       document.getElementById('viewMode').textContent = viewMode;
+      document.getElementById('skyMode').textContent = showSky ? 'on' : 'off';
     }
     applySettings();
 
     // 'v' toggles the satellite-POV fisheye view (FEATURE_SATVIEW.md) so the
-    // sat render path can be eyeballed against the same synthetic feed.
+    // sat render path can be eyeballed against the same synthetic feed; 's'
+    // toggles the celestial-background sky (FEATURE_SKY.md).
     window.addEventListener('keydown', (e) => {
       if (e.key === 'v' || e.key === 'V') {
         viewMode = viewMode === 'orbit' ? 'sat' : 'orbit';
+        applySettings();
+      } else if (e.key === 's' || e.key === 'S') {
+        showSky = !showSky;
         applySettings();
       }
     });
@@ -176,7 +186,11 @@
         });
       }
       countEl.textContent = String(objects.length + 1);
-      return { satellite, objects, lastDataTime: new Date().toISOString() };
+      // serverTime drives the celestial background (stars/Moon/planets) and the
+      // Sun position, exactly as the live backend does — use the real wall clock
+      // so the sky renders at the correct current sidereal time.
+      const nowIso = new Date().toISOString();
+      return { satellite, objects, lastDataTime: nowIso, serverTime: nowIso };
     }
 
     // Feed a fresh synthetic snapshot once per second.

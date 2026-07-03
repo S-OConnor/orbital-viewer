@@ -32,6 +32,7 @@ function applyRendererSettings(renderer, s) {
     showTrails: s.showTrails,
     trailSeconds: s.trailSeconds,
     showLabels: s.showLabels,
+    showSky: s.showSky,
     categories: s.categories,
     viewMode: s.viewMode,
   });

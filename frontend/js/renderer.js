@@ -39,6 +39,19 @@ import { createEarthTextures } from './textures.js';
 // IMPORT-SAFE pure-logic sibling: its exports are only *called* inside
 // createRenderer()/frame()/pick(), never at import time.
 import { SAT_FOV_DEG, SAT_NEAR, SAT_FAR, satViewMatrix, fisheyeProjectNdc } from './sat_camera.js';
+// Celestial background ephemerides + catalog (frozen interface — docs/
+// FEATURE_SKY.md §4). IMPORT-SAFE pure math: STAR_COUNT/STAR_MAGS are filled
+// at import, but the direction functions are only *called* inside
+// createRenderer()/rebuildSky(), never at import time.
+import {
+  moonDirectionEcef,
+  moonIlluminatedFraction,
+  planetsEcef,
+  starsEcefInto,
+  STAR_COUNT,
+  STAR_MAGS,
+  PLANET_NAMES,
+} from './sky.js';
 
 const DEG = Math.PI / 180;
 const SCALE = 1e-6;      // metres -> scene units (1 unit = 1,000 km)
@@ -47,6 +60,7 @@ const SHELL = 120;       // distant objects (stars) clamp onto this radius
 const MAX_OBJECTS = 5000;
 const TRAIL_CAP = 64;    // ring-buffer samples kept per object
 const SUN_DIST = 150;    // Sun billboard distance in units
+const SKY_DIST = 300;    // celestial-background shell (stars/Moon/planets), < FAR
 
 const FOV = 45 * DEG;
 const NEAR = 0.5;
@@ -71,6 +85,20 @@ const CAT = {
 const SAT_COLOR = [1, 0.8353, 0.2902]; // #ffd54a primary satellite
 const SUN_COLOR = [1.0, 0.93, 0.7];    // warm white/yellow disc
 
+// Celestial-background appearance (docs/FEATURE_SKY.md §8.2). Planet tints keyed
+// by sky.js PLANET_NAMES; each is a white-mask skyDot sprite multiplied by this
+// [r,g,b] so the dot reads as the planet's characteristic colour. The Moon is a
+// grey-white soft marker disc (like the Sun, uUseAtlas 0).
+const PLANET_TINT = {
+  mercury: [0xc9 / 255, 0xb8 / 255, 0xa0 / 255], // #c9b8a0
+  venus:   [0xf5 / 255, 0xf3 / 255, 0xe0 / 255], // #f5f3e0
+  mars:    [0xe0 / 255, 0x66 / 255, 0x3c / 255], // #e0663c
+  jupiter: [0xe3 / 255, 0xd2 / 255, 0xa8 / 255], // #e3d2a8
+  saturn:  [0xe6 / 255, 0xcf / 255, 0x8f / 255], // #e6cf8f
+};
+const MOON_COLOR = [0xd8 / 255, 0xd8 / 255, 0xd0 / 255]; // #d8d8d0 grey-white
+const MOON_SIZE_PX = 26;                                 // Moon disc size (CSS px)
+
 // groundHot temperature -> colour: lerp #ff9040 (300 K) -> #ff3020 (2000 K).
 const GH_LO = [1, 0.5647, 0.251];  // #ff9040
 const GH_HI = [1, 0.1882, 0.1255]; // #ff3020
@@ -83,6 +111,16 @@ function groundHotColor(k) {
     GH_LO[2] + (GH_HI[2] - GH_LO[2]) * t,
   ];
 }
+
+// Apparent magnitude -> on-screen appearance for the celestial background
+// (cosmetic, renderer-owned). Astronomy convention: LOWER (more negative)
+// magnitude == brighter, so brighter bodies map to bigger + whiter. All values
+// are tuned to taste for a legible background, not photometric accuracy.
+function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+function starSizeForMag(mag) { return clamp(5.6 - 0.85 * mag, 2.2, 7.0); }   // CSS px
+function starBrightness(mag) { return clamp(1.3 - 0.16 * mag, 0.5, 1.0); }   // grey level
+function planetSizeForMag(mag) { return clamp(7.5 - 0.7 * mag, 4.5, 11); }  // CSS px, > stars
+function planetTintScale(mag) { return clamp(0.7 - 0.05 * mag, 0.5, 1.0); }  // keep planets vivid
 
 // ---------------------------------------------------------------------------
 // Shader sources
@@ -537,6 +575,71 @@ export function createRenderer(glCanvas, overlayCanvas) {
   gl.bufferData(gl.ARRAY_BUFFER, iconArr, gl.DYNAMIC_DRAW);
   let objCount = 0;
 
+  // --- Sky buffers (stars, Moon, planets) ---------------------------------
+  // The celestial background reuses EXISTING programs so it needs no new GLSL
+  // (and stays lockstep-safe with the sat-view fisheye path, docs/FEATURE_SKY.md
+  // §2): stars and planets draw through pointsProg as GL_POINTS with
+  // aIcon = ICONS.skyDot (the soft round dot), and the Moon reuses drawMarker()'s
+  // soft-disc path — exactly like the Sun.
+  //
+  // Star colour + size depend ONLY on magnitude, so they are built ONCE here
+  // from STAR_MAGS; only the star POSITIONS change with time (the sky wheels by
+  // GMST), rebuilt each setSnapshot in rebuildSky(). A single per-star aIcon
+  // buffer holds ICONS.skyDot for every star.
+  const starColArr = new Float32Array(STAR_COUNT * 3);
+  const starSizeArr = new Float32Array(STAR_COUNT);
+  const starIconArr = new Float32Array(STAR_COUNT);
+  for (let i = 0; i < STAR_COUNT; i++) {
+    const b = starBrightness(STAR_MAGS[i]);
+    starColArr[i * 3] = b;                 // greyish-white: dimmer stars -> greyer
+    starColArr[i * 3 + 1] = b;
+    starColArr[i * 3 + 2] = Math.min(1, b * 1.05); // a hair cooler than neutral
+    starSizeArr[i] = starSizeForMag(STAR_MAGS[i]);
+    starIconArr[i] = ICONS.skyDot;
+  }
+  const starColBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, starColBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, starColArr, gl.STATIC_DRAW);
+  const starSizeBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, starSizeBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, starSizeArr, gl.STATIC_DRAW);
+  const starIconBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, starIconBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, starIconArr, gl.STATIC_DRAW);
+
+  // Star positions: scratch (unit ECEF from sky.js, then scaled to SKY_DIST)
+  // and a DYNAMIC_DRAW GL buffer refilled each setSnapshot — no per-call heap
+  // allocation (starsEcefInto writes straight into starUnit).
+  const starUnit = new Float32Array(STAR_COUNT * 3);
+  const starPos = new Float32Array(STAR_COUNT * 3);
+  const starPosBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, starPosBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, starPos, gl.DYNAMIC_DRAW);
+
+  // Planets: up to PLANET_NAMES.length points. pos/colour/size are rebuilt each
+  // setSnapshot from planetsEcef(); aIcon is a constant skyDot per planet.
+  const PLANET_CAP = PLANET_NAMES.length;
+  const planetPosArr = new Float32Array(PLANET_CAP * 3);
+  const planetColArr = new Float32Array(PLANET_CAP * 3);
+  const planetSizeArr = new Float32Array(PLANET_CAP);
+  const planetIconArr = new Float32Array(PLANET_CAP);
+  for (let i = 0; i < PLANET_CAP; i++) planetIconArr[i] = ICONS.skyDot;
+  const planetPosBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, planetPosBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, planetPosArr, gl.DYNAMIC_DRAW);
+  const planetColBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, planetColBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, planetColArr, gl.DYNAMIC_DRAW);
+  const planetSizeBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, planetSizeBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, planetSizeArr, gl.DYNAMIC_DRAW);
+  const planetIconBuf = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, planetIconBuf);
+  gl.bufferData(gl.ARRAY_BUFFER, planetIconArr, gl.STATIC_DRAW);
+  let planetCount = 0;
+  const planetRender = []; // [{name, x, y, z}] for the overlay labels
+  let moonRender = null;   // {x, y, z, fraction} in scene units, or null
+
   // --- Trail + velocity buffers -------------------------------------------
   const trailBuf = gl.createBuffer();
   let trailArr = new Float32Array(4096);
@@ -603,6 +706,15 @@ export function createRenderer(glCanvas, overlayCanvas) {
   let snapshot = null;
   let selectedId = null;
   let lastSnapNow = 0;
+  // Scene epoch (docs/FEATURE_SKY.md §8.1): one wall-clock time source for the
+  // Sun, Moon, planets and star GMST, derived from the state message's
+  // serverTime. sceneEpochMs is the epoch as Unix ms; sceneEpochBaseNow is the
+  // frame/snapshot clock value it was anchored at (NaN until the first frame
+  // anchors it), so sceneNowMs() can advance the epoch smoothly between the
+  // ~1 Hz snapshots. Defaults to Date.now() so the sky still renders (and the
+  // Sun is placed correctly) before any snapshot arrives.
+  let sceneEpochMs = Date.now();
+  let sceneEpochBaseNow = NaN;
   let cssW = 1;
   let cssH = 1;
   let dpr = 1;
@@ -635,6 +747,9 @@ export function createRenderer(glCanvas, overlayCanvas) {
       showTrails: !!s.showTrails,
       trailSeconds: ts,
       showLabels: !!s.showLabels,
+      // Celestial background toggle (docs/FEATURE_SKY.md §8.2). Default ON:
+      // absent/undefined -> true, only an explicit false disables the sky.
+      showSky: s.showSky !== false,
       // Additive per FEATURE_SATVIEW.md §5.1: anything not exactly 'sat' is
       // 'orbit'. Drives the active-view decision + the sat-trail skip below.
       viewMode: s.viewMode === 'sat' ? 'sat' : 'orbit',
@@ -660,6 +775,19 @@ export function createRenderer(glCanvas, overlayCanvas) {
       x *= s; y *= s; z *= s;
     }
     return [x, y, z];
+  }
+
+  // Current scene epoch (Unix ms) for frame `frameNow`. On the very first call
+  // it anchors the epoch's base to the frame clock; thereafter it advances the
+  // stored epoch by the elapsed frame-clock delta, so the Sun (and any epoch
+  // consumer) ticks smoothly between the ~1 Hz serverTime snapshots instead of
+  // snapping once per second.
+  function sceneNowMs(frameNow) {
+    if (Number.isNaN(sceneEpochBaseNow)) {
+      sceneEpochBaseNow = frameNow;
+      return sceneEpochMs;
+    }
+    return sceneEpochMs + (frameNow - sceneEpochBaseNow);
   }
 
   function catVisible(cat) {
@@ -727,6 +855,58 @@ export function createRenderer(glCanvas, overlayCanvas) {
       gl.bufferData(gl.ARRAY_BUFFER, arr, gl.DYNAMIC_DRAW);
       velActive = true;
     }
+  }
+
+  // Rebuild the celestial background (star positions, planets, Moon) for the
+  // current scene epoch. Only POSITIONS/colours that move with time are rebuilt
+  // here — star colour/size are static (built at setup). Driven by the raw
+  // sceneEpochMs (NOT sceneNowMs): this runs at the ~1 Hz setSnapshot cadence,
+  // and every body shares the Sun's single time source so the whole sky stays
+  // mutually consistent. Also called once at setup so the sky exists before the
+  // first snapshot.
+  function rebuildSky() {
+    // Stars: unit ECEF directions (already GMST-rotated by sky.js) scaled onto
+    // the SKY_DIST shell, then uploaded to the dynamic star position buffer.
+    starsEcefInto(sceneEpochMs, starUnit);
+    for (let i = 0; i < STAR_COUNT * 3; i++) starPos[i] = starUnit[i] * SKY_DIST;
+    gl.bindBuffer(gl.ARRAY_BUFFER, starPosBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, starPos);
+
+    // Planets: dir*SKY_DIST; colour = characteristic tint scaled by magnitude;
+    // size by magnitude (larger than stars). planetRender feeds overlay labels.
+    const ps = planetsEcef(sceneEpochMs);
+    planetRender.length = 0;
+    let pc = 0;
+    for (let i = 0; i < ps.length && pc < PLANET_CAP; i++) {
+      const p = ps[i];
+      const tint = PLANET_TINT[p.name] || [1, 1, 1];
+      const scale = planetTintScale(p.mag);
+      const x = p.dir[0] * SKY_DIST, y = p.dir[1] * SKY_DIST, z = p.dir[2] * SKY_DIST;
+      planetPosArr[pc * 3] = x; planetPosArr[pc * 3 + 1] = y; planetPosArr[pc * 3 + 2] = z;
+      planetColArr[pc * 3] = tint[0] * scale;
+      planetColArr[pc * 3 + 1] = tint[1] * scale;
+      planetColArr[pc * 3 + 2] = tint[2] * scale;
+      planetSizeArr[pc] = planetSizeForMag(p.mag);
+      planetRender.push({ name: p.name, x, y, z });
+      pc++;
+    }
+    planetCount = pc;
+    gl.bindBuffer(gl.ARRAY_BUFFER, planetPosBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, planetPosArr.subarray(0, pc * 3));
+    gl.bindBuffer(gl.ARRAY_BUFFER, planetColBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, planetColArr.subarray(0, pc * 3));
+    gl.bindBuffer(gl.ARRAY_BUFFER, planetSizeBuf);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, planetSizeArr.subarray(0, pc));
+
+    // Moon: unit ECEF direction scaled onto the shell, plus the illuminated
+    // fraction (used only in the label). Drawn via the marker soft-disc path.
+    const md = moonDirectionEcef(sceneEpochMs);
+    moonRender = {
+      x: md[0] * SKY_DIST,
+      y: md[1] * SKY_DIST,
+      z: md[2] * SKY_DIST,
+      fraction: moonIlluminatedFraction(sceneEpochMs),
+    };
   }
 
   function appendTrails(nowMs) {
@@ -889,27 +1069,37 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.drawArrays(gl.LINES, 0, vertCount);
   }
 
-  function drawPoints() {
-    if (objCount <= 0) return;
+  // Draw an arbitrary textured-sprite point set through pointsProg. This is the
+  // generalized body of the object draw: the tracked objects and the sky's
+  // stars/planets are all skyDot/icon GL_POINTS, so they share this program
+  // verbatim — no new GLSL, and the fisheye branch is applied in sat mode
+  // automatically by setTransformUniforms(). Depth-tested with depthMask(false)
+  // so nearer geometry (Sun, tracked objects) correctly paints over them.
+  function drawPointset(posBuf, colBuf, sizeBuf, iconBuf, count) {
+    if (count <= 0) return;
     gl.useProgram(pointsProg);
     disableAttribs();
     setTransformUniforms(pointsU);
     gl.uniform1f(pointsU.dpr, dpr);
-    gl.bindBuffer(gl.ARRAY_BUFFER, objPosBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, posBuf);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, objColBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, colBuf);
     gl.enableVertexAttribArray(1);
     gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, objSizeBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, sizeBuf);
     gl.enableVertexAttribArray(2);
     gl.vertexAttribPointer(2, 1, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, objIconBuf);
+    gl.bindBuffer(gl.ARRAY_BUFFER, iconBuf);
     gl.enableVertexAttribArray(3);
     gl.vertexAttribPointer(3, 1, gl.FLOAT, false, 0, 0);
     gl.enable(gl.BLEND);
     gl.depthMask(false);
-    gl.drawArrays(gl.POINTS, 0, objCount);
+    gl.drawArrays(gl.POINTS, 0, count);
+  }
+
+  function drawPoints() {
+    drawPointset(objPosBuf, objColBuf, objSizeBuf, objIconBuf, objCount);
   }
 
   function drawMarker(worldPos, sizePx, color, useAtlas) {
@@ -1019,12 +1209,84 @@ export function createRenderer(glCanvas, overlayCanvas) {
       }
     }
 
-    // Sun label near the disc if on-screen (always, independent of labels).
+    const onScreen = (p) =>
+      p && p.sx > -20 && p.sx < cssW + 20 && p.sy > -20 && p.sy < cssH + 20;
+
+    // Off-screen locator: the Sun and Moon are single points on the sky, easily
+    // lost in the 45-deg FOV, so when one is out of frame (or behind the
+    // camera, where projectToScreen is invalid) we pin a labelled chevron to
+    // the viewport edge pointing toward it. The bearing comes from the body's
+    // VIEW-space (x,y) via the active view matrix — valid in both the orbit and
+    // sat-fisheye modes, and even when the body is behind the eye. No-op when
+    // the body already projects inside the viewport (its disc/label show it).
+    const drawBodyLocator = (world, label, color) => {
+      const p = projectToScreen(world[0], world[1], world[2]);
+      if (p && p.sx >= 0 && p.sx <= cssW && p.sy >= 0 && p.sy <= cssH) return;
+      const v = transform(activeView.view, [world[0], world[1], world[2], 1]);
+      let dx = v[0];
+      let dy = -v[1]; // view +y is up; canvas +y is down
+      const dl = Math.hypot(dx, dy);
+      if (dl < 1e-6) { dx = 0; dy = 1; } else { dx /= dl; dy /= dl; }
+      const cx = cssW / 2;
+      const cy = cssH / 2;
+      const margin = 30;
+      const s = Math.min(
+        dx !== 0 ? (cx - margin) / Math.abs(dx) : Infinity,
+        dy !== 0 ? (cy - margin) / Math.abs(dy) : Infinity,
+      );
+      const ex = cx + dx * s;
+      const ey = cy + dy * s;
+      ctx.save();
+      ctx.translate(ex, ey);
+      ctx.rotate(Math.atan2(dy, dx));
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.moveTo(7, 0);
+      ctx.lineTo(-4, -5);
+      ctx.lineTo(-4, 5);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+      ctx.font = '11px monospace';
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.fillText(label, cx + dx * (s - 20), cy + dy * (s - 20));
+      ctx.textAlign = 'start';
+    };
+
+    // Sun (always, independent of the sky toggle): label near the disc when
+    // on-screen, else an edge locator.
     const sp = projectToScreen(sunPos[0], sunPos[1], sunPos[2]);
-    if (sp && sp.sx > -20 && sp.sx < cssW + 20 && sp.sy > -20 && sp.sy < cssH + 20) {
+    if (onScreen(sp)) {
       ctx.font = '11px monospace';
       ctx.fillStyle = 'rgba(255,235,180,0.95)';
       ctx.fillText('Sun ●', sp.sx + 8, sp.sy);
+    } else {
+      drawBodyLocator(sunPos, 'Sun', 'rgba(255,220,140,0.95)');
+    }
+
+    // Sky labels (docs/FEATURE_SKY.md §8.3): subtle, muted names for the Moon
+    // (with its illuminated fraction) and each on-screen planet. The Moon also
+    // gets an edge locator when off-screen (it is often on the far side of the
+    // sky from the planets); planets keep on-screen-only labels.
+    if (settings.showSky) {
+      ctx.font = '11px monospace';
+      ctx.fillStyle = 'rgba(210,214,224,0.80)';
+      if (moonRender) {
+        const mp = projectToScreen(moonRender.x, moonRender.y, moonRender.z);
+        const moonLabel = `Moon ${Math.round(moonRender.fraction * 100)}%`;
+        if (onScreen(mp)) {
+          ctx.fillText(moonLabel, mp.sx + 8, mp.sy);
+        } else {
+          drawBodyLocator([moonRender.x, moonRender.y, moonRender.z], moonLabel, 'rgba(214,214,208,0.95)');
+        }
+      }
+      for (const pr of planetRender) {
+        const pp = projectToScreen(pr.x, pr.y, pr.z);
+        if (onScreen(pp)) {
+          ctx.fillText(pr.name.charAt(0).toUpperCase() + pr.name.slice(1), pp.sx + 8, pp.sy);
+        }
+      }
     }
   }
 
@@ -1052,10 +1314,21 @@ export function createRenderer(glCanvas, overlayCanvas) {
   function setSnapshot(snap, nowMs) {
     snapshot = snap || null;
     lastSnapNow = typeof nowMs === 'number' ? nowMs : Date.now();
+    // Anchor the scene epoch to the state message's serverTime (docs/
+    // FEATURE_SKY.md §8.1) when present and parseable. This is what fixes the
+    // latent Sun bug — the renderer used to feed a since-page-load clock into
+    // sunDirectionEcef(), freezing the Sun near 1970. sceneNowMs() advances
+    // this epoch smoothly between snapshots; if serverTime is absent/invalid
+    // the previous epoch (default Date.now()) is kept.
+    if (snap && snap.serverTime && Number.isFinite(Date.parse(snap.serverTime))) {
+      sceneEpochMs = Date.parse(snap.serverTime);
+      sceneEpochBaseNow = lastSnapNow;
+    }
     appendTrails(lastSnapNow);
     rebuildObjectBuffer();
     rebuildSatellite();
     rebuildTrailBuffer();
+    rebuildSky();
   }
 
   function setSettings(s) {
@@ -1105,7 +1378,12 @@ export function createRenderer(glCanvas, overlayCanvas) {
     const now = typeof nowMs === 'number' ? nowMs : Date.now();
     activeView = computeActiveView();
     const eye = activeView.eye;
-    const sunDir = normalize(sunDirectionEcef(now));
+    // Sun from the scene epoch (docs/FEATURE_SKY.md §8.1), NOT the raw frame
+    // clock: sceneNowMs() maps performance.now() into serverTime-based wall
+    // time so the Sun sits at the real subsolar point and stays consistent with
+    // the Moon/planets/stars (which share the same epoch via rebuildSky()).
+    const sceneMs = sceneNowMs(now);
+    const sunDir = normalize(sunDirectionEcef(sceneMs));
     const sunPos = [sunDir[0] * SUN_DIST, sunDir[1] * SUN_DIST, sunDir[2] * SUN_DIST];
 
     gl.viewport(0, 0, glCanvas.width, glCanvas.height);
@@ -1134,6 +1412,22 @@ export function createRenderer(glCanvas, overlayCanvas) {
 
     drawEarth(sunDir, eye);
     drawLines(gratBuf, gratVertCount);
+    // Celestial background (docs/FEATURE_SKY.md §8.2): stars, then the Moon,
+    // then planets — drawn AFTER the Earth + graticule but BEFORE the Sun and
+    // tracked objects, so nearer bodies paint over the sky. Every draw here is
+    // depth-tested with depthMask(false): the Earth's limb (drawn first, with
+    // depth writes) correctly occludes bodies behind it, and the objects below
+    // still paint over the sky. Reuses setTransformUniforms() so the fisheye
+    // path applies in sat mode too. Whole block gated on settings.showSky.
+    if (settings.showSky) {
+      drawPointset(starPosBuf, starColBuf, starSizeBuf, starIconBuf, STAR_COUNT);
+      if (moonRender) {
+        drawMarker([moonRender.x, moonRender.y, moonRender.z], MOON_SIZE_PX, MOON_COLOR, false);
+      }
+      if (planetCount > 0) {
+        drawPointset(planetPosBuf, planetColBuf, planetSizeBuf, planetIconBuf, planetCount);
+      }
+    }
     drawMarker(sunPos, 42, SUN_COLOR, false);               // Sun: soft procedural disc (both modes)
     if (settings.showTrails) drawLines(trailBuf, trailVertCount);
     drawPoints();
@@ -1174,6 +1468,10 @@ export function createRenderer(glCanvas, overlayCanvas) {
   function dispose() {
     camera.dispose();
   }
+
+  // Build the sky once up front (epoch defaults to Date.now()) so stars, Moon
+  // and planets are present from the very first frame(), before any snapshot.
+  rebuildSky();
 
   return { resize, setSnapshot, setSettings, setSelected, frame, pick, dispose };
 }

@@ -4,8 +4,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { ATLAS_GRID, CELL, ICONS, paintAtlas, iconUV } from '../js/atlas.js';
 
-// The 6 defined icon cell indices, per the frozen ICONS map.
-const DEFINED_INDICES = [0, 1, 2, 3, 4, 5];
+// The 7 defined icon cell indices, per the frozen ICONS map.
+const DEFINED_INDICES = [0, 1, 2, 3, 4, 5, 6];
 const CATEGORY_INDICES = [ICONS.debris, ICONS.star, ICONS.comet, ICONS.satellite, ICONS.groundHot];
 
 const CELL_PX = 64;
@@ -76,24 +76,25 @@ test('frozen constants match the interface exactly', () => {
   assert.equal(CELL, 64);
   assert.deepEqual(ICONS, {
     debris: 0, star: 1, comet: 2, satellite: 3, groundHot: 4, satMarker: 5,
+    skyDot: 6,
   });
 });
 
-test('paintAtlas draws into exactly the 6 defined cells, save/restore balanced', () => {
+test('paintAtlas draws into exactly the 7 defined cells, save/restore balanced', () => {
   const { ctx, log } = createRecorder();
   paintAtlas(ctx, CELL_PX);
 
   const saves = log.filter((e) => e.m === 'save').length;
   const restores = log.filter((e) => e.m === 'restore').length;
-  assert.equal(saves, 6, 'expected exactly 6 save() calls, one per defined icon');
-  assert.equal(restores, 6, 'expected exactly 6 restore() calls, one per defined icon');
+  assert.equal(saves, 7, 'expected exactly 7 save() calls, one per defined icon');
+  assert.equal(restores, 7, 'expected exactly 7 restore() calls, one per defined icon');
 
   const blocks = splitByCell(log);
-  assert.equal(blocks.length, 6);
+  assert.equal(blocks.length, 7);
 
-  // Each block's translate() must land on exactly one of the 6 defined
+  // Each block's translate() must land on exactly one of the 7 defined
   // cells' top-left corner, and every defined cell must be hit exactly
-  // once (i.e. cells 6-15 are never targeted).
+  // once (i.e. cells 7-15 are never targeted).
   const expectedOrigins = DEFINED_INDICES.map((index) => [
     (index % ATLAS_GRID) * CELL_PX,
     Math.floor(index / ATLAS_GRID) * CELL_PX,
@@ -145,10 +146,10 @@ test('satMarker sets at least 3 distinct non-white colors', () => {
   );
 });
 
-test('cells 6-15 stay empty: only 6 cell blocks are ever produced', () => {
+test('cells 7-15 stay empty: only 7 cell blocks are ever produced', () => {
   const { ctx, log } = createRecorder();
   paintAtlas(ctx, CELL_PX);
-  assert.equal(splitByCell(log).length, 6);
+  assert.equal(splitByCell(log).length, 7);
   // No drawing call should reference geometry beyond the occupied region
   // (cols 0-3 in row 0, cols 0-1 in row 1) once cell-local coordinates are
   // added back to their block's translate origin.
@@ -194,7 +195,7 @@ test('paintAtlas is deterministic: two independent runs produce identical call l
   assert.deepEqual(a.log, b.log);
 });
 
-test('iconUV: rects for the 6 defined icons are within [0,1] and inset from cell edges', () => {
+test('iconUV: rects for the 7 defined icons are within [0,1] and inset from cell edges', () => {
   const cellFrac = 1 / ATLAS_GRID;
   for (const index of DEFINED_INDICES) {
     const { u0, v0, u1, v1 } = iconUV(index);
@@ -213,7 +214,7 @@ test('iconUV: rects for the 6 defined icons are within [0,1] and inset from cell
   }
 });
 
-test('iconUV: rects for the 6 defined icons are pairwise non-overlapping', () => {
+test('iconUV: rects for the 7 defined icons are pairwise non-overlapping', () => {
   const rects = DEFINED_INDICES.map((index) => iconUV(index));
   const overlaps = (a, b) => a.u0 < b.u1 && b.u0 < a.u1 && a.v0 < b.v1 && b.v0 < a.v1;
   for (let i = 0; i < rects.length; i++) {

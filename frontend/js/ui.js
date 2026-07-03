@@ -82,6 +82,7 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
     settingTrailSeconds: byId('settingTrailSeconds'),
     trailSecondsValue: byId('trailSecondsValue'),
     settingShowLabels: byId('settingShowLabels'),
+    settingShowSky: byId('settingShowSky'),
     settingHost: byId('settingHost'),
     settingPort: byId('settingPort'),
     btnReconnect: byId('btnReconnect'),
@@ -223,6 +224,7 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
     if (nodes.settingTrailSeconds) nodes.settingTrailSeconds.value = String(s.trailSeconds);
     if (nodes.trailSecondsValue) nodes.trailSecondsValue.textContent = String(s.trailSeconds);
     if (nodes.settingShowLabels) nodes.settingShowLabels.checked = s.showLabels;
+    if (nodes.settingShowSky) nodes.settingShowSky.checked = s.showSky;
     for (const cat of CATEGORY_LIST) {
       const cb = nodes[`cat_${cat}`];
       if (cb) cb.checked = !!s.categories[cat];
@@ -245,6 +247,11 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
   if (nodes.settingShowLabels) {
     nodes.settingShowLabels.addEventListener('change', (e) => {
       settingsStore.update({ showLabels: e.target.checked });
+    });
+  }
+  if (nodes.settingShowSky) {
+    nodes.settingShowSky.addEventListener('change', (e) => {
+      settingsStore.update({ showSky: e.target.checked });
     });
   }
   for (const cat of CATEGORY_LIST) {

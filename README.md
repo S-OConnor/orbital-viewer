@@ -13,12 +13,16 @@ targets localhost/LAN use with no runtime internet access.
 ## Features
 
 - Simplified Earth globe (graticule, Sun-lit shading) with an approximate
-  Sun position computed from the client clock, textured with vendored
-  public-domain NASA Blue Marble (day) and Black Marble (night) imagery —
-  see [frontend/assets/README.md](frontend/assets/README.md) and
+  Sun position computed from the state message's timestamp, textured with
+  vendored public-domain NASA Blue Marble (day) and Black Marble (night)
+  imagery — see [frontend/assets/README.md](frontend/assets/README.md) and
   [THIRD_PARTY.md](THIRD_PARTY.md).
 - All five tracked-object categories: debris, stars, comets, other
   satellites, and hot ground objects (rendered with distinct colors/sizes).
+- Optional time-accurate celestial background: the ~180 brightest stars, the
+  Moon (with an illuminated-fraction readout), and the five naked-eye planets,
+  all positioned from the state message's `serverTime` and drawn in both view
+  modes (see [docs/FEATURE_SKY.md](docs/FEATURE_SKY.md)).
 - Per-object trails, 0–60 s configurable, age-faded.
 - Optional on-screen labels (nearest objects + satellite + current selection;
   capped for readability).
@@ -31,8 +35,8 @@ targets localhost/LAN use with no runtime internet access.
   space around Earth's limb (see
   [docs/FEATURE_SATVIEW.md](docs/FEATURE_SATVIEW.md)).
 - Settings menu (persisted to `localStorage`): trails on/off + duration,
-  labels on/off, per-category visibility toggles, view mode, and WebSocket
-  host/port with a reconnect button.
+  labels on/off, sky (stars/Moon/planets) on/off, per-category visibility
+  toggles, view mode, and WebSocket host/port with a reconnect button.
 
 ## Architecture
 

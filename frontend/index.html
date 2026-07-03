@@ -101,6 +101,11 @@
       Show labels
     </label>
 
+    <label class="field-row">
+      <input type="checkbox" id="settingShowSky">
+      Show sky (stars, Moon, planets)
+    </label>
+
     <fieldset class="category-fields">
       <legend>Categories</legend>
       <label><input type="checkbox" id="catDebris"> Debris</label>
@@ -144,6 +149,11 @@
       <a href="../docs/PROTOCOL_UDP.md">UDP protocol</a>
       &middot;
       <a href="../docs/PROTOCOL_WS.md">WebSocket protocol</a>
+    </p>
+    <p>
+      A time-accurate background of stars, the Moon and the naked-eye
+      planets can be enabled in Settings, positioned from the state
+      message&rsquo;s <code>serverTime</code>.
     </p>
     <p class="muted">Earth imagery: NASA Blue Marble &amp; Black Marble (public domain).</p>
     <p class="muted">Note: Sun position is approximate (low-precision almanac formula).</p>

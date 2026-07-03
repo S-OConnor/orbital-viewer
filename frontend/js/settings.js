@@ -10,6 +10,7 @@ const DEFAULTS = {
   showTrails: false,
   trailSeconds: 30,
   showLabels: false,
+  showSky: true,
   viewMode: 'orbit',
   categories: {
     debris: true,
@@ -54,6 +55,7 @@ function loadStored(storage) {
 function applyPatch(base, patch) {
   if ('showTrails' in patch) base.showTrails = Boolean(patch.showTrails);
   if ('showLabels' in patch) base.showLabels = Boolean(patch.showLabels);
+  if ('showSky' in patch) base.showSky = Boolean(patch.showSky);
   if ('viewMode' in patch && (patch.viewMode === 'orbit' || patch.viewMode === 'sat')) {
     base.viewMode = patch.viewMode;
   }
@@ -86,7 +88,8 @@ function normalize(raw, base) {
 
 // Recognized siteDefaults keys, same set update()/applyPatch() accept (minus
 // `categories` and `viewMode`, which config.toml does not configure — see
-// FEATURE_SATVIEW.md §6). siteDefaults values
+// FEATURE_SATVIEW.md §6): host, port, showTrails, trailSeconds, showLabels,
+// showSky. siteDefaults values
 // are merged over the built-in DEFAULTS using the same clamping rules as
 // update(), so an out-of-range site value (e.g. trailSeconds: 99) clamps
 // exactly like a user update would rather than propagating invalid state.
@@ -102,8 +105,8 @@ function mergeSiteDefaults(siteDefaults) {
  * createSettings(storage, siteDefaults = {}) → {get(), update(patch), onChange(cb), resetDefaults()}
  *
  * Effective defaults are the built-in DEFAULTS with siteDefaults' recognized
- * keys (host, port, showTrails, trailSeconds, showLabels — loaded from
- * config.toml via site_config.js) merged over them; stored user settings
+ * keys (host, port, showTrails, trailSeconds, showLabels, showSky — loaded
+ * from config.toml via site_config.js) merged over them; stored user settings
  * (localStorage) still load on top of that, so a user's own choices always
  * win over site defaults. resetDefaults() resets to this merged baseline.
  */

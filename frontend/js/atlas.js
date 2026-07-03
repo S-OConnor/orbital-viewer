@@ -14,7 +14,10 @@
 // the shader (this is also how groundHot gets its per-object heat color).
 // satMarker is the one full-color cell: detailed satellite artwork that
 // replaces the plain yellow-blob primary-satellite marker; it is drawn with
-// its own fixed palette and is never tinted by the renderer.
+// its own fixed palette and is never tinted by the renderer. skyDot follows
+// the same "white, alpha varies" scheme as the category icons (so the
+// renderer can tint it per star/planet) but is not itself a category icon —
+// it is the shared background-sky sprite for stars and planets.
 //
 // IMPORT-SAFE: this module touches no DOM/canvas/WebGL at import time.
 // paintAtlas() only ever calls methods on the ctx passed in by its caller;
@@ -26,6 +29,7 @@ export const CELL = 64;        // base cell size in px (callers scale by DPR)
 // Cell indices, row-major, row 0 at the TOP of the image.
 export const ICONS = {
   debris: 0, star: 1, comet: 2, satellite: 3, groundHot: 4, satMarker: 5,
+  skyDot: 6,
 };
 
 // Fractional padding kept empty on each side of a cell before an icon's
@@ -300,7 +304,39 @@ function drawSatMarker(ctx, cellPx) {
   ctx.stroke();
 }
 
-// Cell index -> drawing helper, for the 6 defined icons. Cells 6-15 are left
+/**
+ * skyDot (index 6): a crisp round dot used to draw background stars and
+ * planets — a LARGE solid-white core (out to ~60% of the cell diameter) with
+ * a short soft antialiased edge. The big solid core is deliberate: stars are
+ * drawn as tiny 2-7 px GL_POINTS, and the atlas is mip-mapped, so a dot with
+ * only a small opaque centre and a wide faint halo averages down to near-zero
+ * alpha when minified — i.e. the stars vanish. Keeping most of the dot opaque
+ * preserves brightness at small point sizes. Built from concentric white
+ * circles of decreasing alpha painted outer-to-inner (same "no gradient
+ * object" trick as the comet tail) so it stays strictly "white, alpha varies"
+ * and the renderer can tint it per body (star brightness / planet color) via
+ * the fragment shader's whiteMask.rgb * vertexColor multiply.
+ */
+function drawSkyDot(ctx, cellPx) {
+  const c = cellPx / 2;
+  // Radii as fractions of the cell; ordered outer (faint edge) to inner
+  // (solid core) so the last, opaque fill lands on top. The r=0.30 core is
+  // fully opaque, giving a high average alpha that survives mip minification.
+  const layers = [
+    { r: 0.48, alpha: 0.18 },
+    { r: 0.42, alpha: 0.45 },
+    { r: 0.36, alpha: 0.72 },
+    { r: 0.30, alpha: 1.0 },
+  ];
+  for (const { r, alpha } of layers) {
+    ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+    ctx.beginPath();
+    ctx.arc(c, c, r * cellPx, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Cell index -> drawing helper, for the 7 defined icons. Cells 7-15 are left
 // out of this map and therefore stay untouched/transparent by paintAtlas().
 const PAINTERS = {
   [ICONS.debris]: drawDebris,
@@ -309,18 +345,19 @@ const PAINTERS = {
   [ICONS.satellite]: drawSatelliteGlyph,
   [ICONS.groundHot]: drawGroundHot,
   [ICONS.satMarker]: drawSatMarker,
+  [ICONS.skyDot]: drawSkyDot,
 };
 
 /**
  * Paint every defined icon into ctx, a CanvasRenderingContext2D-compatible
  * object for a square canvas of size (ATLAS_GRID * cellPx). Clears/fills
  * nothing outside icon shapes (transparent background); cells with no
- * entry in PAINTERS (6-15) are never touched. Deterministic: identical
+ * entry in PAINTERS (7-15) are never touched. Deterministic: identical
  * cellPx produces an identical sequence of ctx calls every time.
  *
  * Note: Object.entries() on PAINTERS always yields its integer-like keys in
  * ascending numeric order (per the ECMAScript property-order rules), so
- * icons are painted in index order 0..5 regardless of PAINTERS' literal
+ * icons are painted in index order 0..6 regardless of PAINTERS' literal
  * layout above.
  *
  * @param {CanvasRenderingContext2D} ctx target context (or compatible stub)

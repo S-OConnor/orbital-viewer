@@ -18,6 +18,7 @@ const DEFAULTS = {
   showTrails: false,
   trailSeconds: 30,
   showLabels: false,
+  showSky: true,
   viewMode: 'orbit',
   categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
   host: '',
@@ -216,4 +217,36 @@ test('unknown siteDefaults keys are ignored', () => {
 test('siteDefaults defaults to {} when omitted (backward compatible)', () => {
   const settings = createSettings(new FakeStorage());
   assert.deepEqual(settings.get(), DEFAULTS);
+});
+
+test('showSky defaults to true', () => {
+  const settings = createSettings(new FakeStorage());
+  assert.equal(settings.get().showSky, true);
+});
+
+test('showSky update persists and can be turned off', () => {
+  const storage = new FakeStorage();
+  const settings = createSettings(storage);
+  const result = settings.update({ showSky: false });
+  assert.equal(result.showSky, false);
+  const raw = JSON.parse(storage.getItem('olv.settings.v1'));
+  assert.equal(raw.showSky, false);
+});
+
+test('showSky patch values are coerced via Boolean()', () => {
+  const settings = createSettings(new FakeStorage());
+  assert.equal(settings.update({ showSky: 0 }).showSky, false);
+  assert.equal(settings.update({ showSky: 'x' }).showSky, true);
+});
+
+test('resetDefaults restores showSky to true', () => {
+  const settings = createSettings(new FakeStorage());
+  settings.update({ showSky: false });
+  const result = settings.resetDefaults();
+  assert.equal(result.showSky, true);
+});
+
+test('siteDefaults showSky flows through', () => {
+  const settings = createSettings(new FakeStorage(), { showSky: false });
+  assert.equal(settings.get().showSky, false);
 });

@@ -33,12 +33,34 @@ test('applyState then getSnapshot matches the renderer snap shape exactly', () =
     satellite: msg.satellite,
     objects: msg.objects,
     lastDataTime: msg.lastDataTime,
+    serverTime: msg.serverTime,
   });
 });
 
 test('getSnapshot before any applyState is empty/null', () => {
   const model = createModel();
-  assert.deepEqual(model.getSnapshot(), { satellite: null, objects: [], lastDataTime: null });
+  assert.deepEqual(model.getSnapshot(), {
+    satellite: null,
+    objects: [],
+    lastDataTime: null,
+    serverTime: null,
+  });
+});
+
+test('getSnapshot: serverTime passthrough from a state message', () => {
+  const model = createModel();
+  const msg = sampleMsg();
+  msg.serverTime = '2026-07-01T12:34:56.789Z';
+  model.applyState(msg, 1000);
+  assert.equal(model.getSnapshot().serverTime, '2026-07-01T12:34:56.789Z');
+});
+
+test('getSnapshot: serverTime is null when the state message omits it', () => {
+  const model = createModel();
+  const msg = sampleMsg();
+  delete msg.serverTime;
+  model.applyState(msg, 1000);
+  assert.equal(model.getSnapshot().serverTime, null);
 });
 
 test('getCounts tallies by category plus total', () => {

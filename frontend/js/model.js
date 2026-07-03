@@ -19,6 +19,7 @@ export function createModel() {
   let satellite = null;
   let objects = [];
   let lastDataTime = null;
+  let serverTime = null;
   let stats = null;
   let lastAppliedAtMs = null;
 
@@ -27,12 +28,13 @@ export function createModel() {
     satellite = msg.satellite === undefined ? null : msg.satellite;
     objects = Array.isArray(msg.objects) ? msg.objects : [];
     lastDataTime = msg.lastDataTime === undefined ? null : msg.lastDataTime;
+    serverTime = msg.serverTime === undefined ? null : msg.serverTime;
     stats = msg.stats === undefined ? null : msg.stats;
     lastAppliedAtMs = nowMs;
   }
 
   function getSnapshot() {
-    return { satellite, objects, lastDataTime };
+    return { satellite, objects, lastDataTime, serverTime };
   }
 
   function getListRows(filter, cap = 1000) {
