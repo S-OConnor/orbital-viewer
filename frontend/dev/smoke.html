@@ -42,8 +42,9 @@
   </div>
   <div id="hud">
     <b>renderer smoke test (dev tool)</b><br />
-    drag = orbit · wheel = zoom · click = select<br />
-    synthetic feed @ 1 Hz · <span id="count">0</span> objects · trails+labels on
+    drag = orbit · wheel = zoom · click = select · <b>V</b> = 3D/sat view<br />
+    synthetic feed @ 1 Hz · <span id="count">0</span> objects · trails+labels on ·
+    view: <span id="viewMode">orbit</span>
   </div>
 
   <script type="module">
@@ -55,11 +56,26 @@
 
     const renderer = createRenderer(glCanvas, overlay);
     renderer.resize();
-    renderer.setSettings({
-      showTrails: true,
-      trailSeconds: 30,
-      showLabels: true,
-      categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
+    let viewMode = 'orbit';
+    function applySettings() {
+      renderer.setSettings({
+        showTrails: true,
+        trailSeconds: 30,
+        showLabels: true,
+        categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
+        viewMode,
+      });
+      document.getElementById('viewMode').textContent = viewMode;
+    }
+    applySettings();
+
+    // 'v' toggles the satellite-POV fisheye view (FEATURE_SATVIEW.md) so the
+    // sat render path can be eyeballed against the same synthetic feed.
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'v' || e.key === 'V') {
+        viewMode = viewMode === 'orbit' ? 'sat' : 'orbit';
+        applySettings();
+      }
     });
 
     window.addEventListener('resize', () => renderer.resize());

@@ -69,6 +69,10 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
     panel: byId('panel'),
     panelToggle: byId('panelToggle'),
 
+    btnView3d: byId('btnView3d'),
+    btnViewSat: byId('btnViewSat'),
+    viewBadge: byId('viewBadge'),
+
     btnSettings: byId('btnSettings'),
     btnAbout: byId('btnAbout'),
     settingsModal: byId('settingsModal'),
@@ -157,8 +161,59 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
       closeModal(modal);
     });
   });
+
+  function anyModalOpen() {
+    return [nodes.settingsModal, nodes.aboutModal].some((m) => m && !m.classList.contains('hidden'));
+  }
+
+  // ---- View mode (3D orbit / SAT POV) ----
+  // viewMode is a settingsStore key ('orbit' | 'sat'); the store's onChange
+  // path (main.js applyRendererSettings) is the only thing that talks to the
+  // renderer — ui.js never touches it directly. Defensive against the key
+  // being briefly undefined pre-integration (settings.js lands it separately).
+  function currentViewMode() {
+    const s = settingsStore.get();
+    return s.viewMode === 'sat' ? 'sat' : 'orbit';
+  }
+
+  function updateViewBadge() {
+    if (!nodes.viewBadge) return;
+    if (currentViewMode() !== 'sat') {
+      nodes.viewBadge.classList.add('hidden');
+      return;
+    }
+    const sat = lastModel ? lastModel.getSnapshot().satellite : null;
+    nodes.viewBadge.textContent = sat ? 'SAT VIEW — nadir, 170° FOV' : 'SAT VIEW — awaiting satellite data';
+    nodes.viewBadge.classList.remove('hidden');
+  }
+
+  function updateViewToggle() {
+    const mode = currentViewMode();
+    if (nodes.btnView3d) {
+      nodes.btnView3d.classList.toggle('active', mode === 'orbit');
+      nodes.btnView3d.setAttribute('aria-pressed', String(mode === 'orbit'));
+    }
+    if (nodes.btnViewSat) {
+      nodes.btnViewSat.classList.toggle('active', mode === 'sat');
+      nodes.btnViewSat.setAttribute('aria-pressed', String(mode === 'sat'));
+    }
+    updateViewBadge();
+  }
+
+  if (nodes.btnView3d) {
+    nodes.btnView3d.addEventListener('click', () => settingsStore.update({ viewMode: 'orbit' }));
+  }
+  if (nodes.btnViewSat) {
+    nodes.btnViewSat.addEventListener('click', () => settingsStore.update({ viewMode: 'sat' }));
+  }
+
   doc.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllModals();
+    if (e.key !== 'v') return;
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (anyModalOpen()) return;
+    settingsStore.update({ viewMode: currentViewMode() === 'sat' ? 'orbit' : 'sat' });
   });
 
   // ---- Settings form <-> settings store (single source of truth) ----
@@ -226,6 +281,7 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
     if (nodes.settingsModal && !nodes.settingsModal.classList.contains('hidden')) {
       syncSettingsForm();
     }
+    updateViewToggle();
   });
 
   // ---- Object table: row click -> select ----
@@ -302,6 +358,8 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
       if (n) n.textContent = String(counts[cat]);
     }
 
+    updateViewBadge();
+
     renderList(model);
   }
 
@@ -356,6 +414,7 @@ export function createUi({ settingsStore, callbacks = {} } = {}) {
 
   syncSettingsForm();
   setFilter(null);
+  updateViewToggle();
 
   return { updateConnection, updateData, setSelected, tick };
 }

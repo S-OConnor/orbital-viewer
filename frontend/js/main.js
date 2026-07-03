@@ -33,6 +33,7 @@ function applyRendererSettings(renderer, s) {
     trailSeconds: s.trailSeconds,
     showLabels: s.showLabels,
     categories: s.categories,
+    viewMode: s.viewMode,
   });
 }
 
@@ -153,6 +154,10 @@ async function boot() {
 
   wireOverlayPicking(overlayCanvas, () => renderer, () => ui);
 
+  // Size the backbuffer to the real viewport before the first frame; without
+  // this the canvas stays at the 300x150 default (and the projection at
+  // aspect 1) until the first window-resize event.
+  renderer.resize();
   window.addEventListener('resize', () => renderer.resize());
 
   connection.connect();

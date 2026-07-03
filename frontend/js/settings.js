@@ -10,6 +10,7 @@ const DEFAULTS = {
   showTrails: false,
   trailSeconds: 30,
   showLabels: false,
+  viewMode: 'orbit',
   categories: {
     debris: true,
     star: true,
@@ -53,6 +54,9 @@ function loadStored(storage) {
 function applyPatch(base, patch) {
   if ('showTrails' in patch) base.showTrails = Boolean(patch.showTrails);
   if ('showLabels' in patch) base.showLabels = Boolean(patch.showLabels);
+  if ('viewMode' in patch && (patch.viewMode === 'orbit' || patch.viewMode === 'sat')) {
+    base.viewMode = patch.viewMode;
+  }
   if ('trailSeconds' in patch) {
     base.trailSeconds = clampInt(patch.trailSeconds, 0, 60, base.trailSeconds);
   }
@@ -81,7 +85,8 @@ function normalize(raw, base) {
 }
 
 // Recognized siteDefaults keys, same set update()/applyPatch() accept (minus
-// `categories`, which config.toml does not configure). siteDefaults values
+// `categories` and `viewMode`, which config.toml does not configure — see
+// FEATURE_SATVIEW.md §6). siteDefaults values
 // are merged over the built-in DEFAULTS using the same clamping rules as
 // update(), so an out-of-range site value (e.g. trailSeconds: 99) clamps
 // exactly like a user update would rather than propagating invalid state.

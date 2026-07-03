@@ -7,10 +7,20 @@
 // satellite marker (satMarker atlas art) + 60 s velocity vector, age-faded
 // GL_LINES trails, and 2D-canvas labels / selection ring on the overlay.
 //
+// Two view modes (settings.viewMode, docs/FEATURE_SATVIEW.md): the default
+// 'orbit' free-orbit camera, and 'sat' — a first-person view from the primary
+// satellite looking at nadir, rendered with an equidistant fisheye projection
+// (170 deg FOV) so the Earth disc plus the surrounding space fit the frame.
+// Every vertex shader carries both paths, selected per-draw by the uFisheye
+// uniform; the fisheye forward map is kept LOCKSTEP with sat_camera.js.
+//
 // Public API (frozen — docs/PLAN.md section 6):
 //   createRenderer(glCanvas, overlayCanvas) -> {
 //     resize(), setSnapshot(snap, nowMs), setSettings(s),
 //     setSelected(idOrNull), frame(nowMs), pick(x, y) -> id|null }
+//   setSettings additionally accepts viewMode: 'orbit' | 'sat' (additive per
+//   FEATURE_SATVIEW.md §5.1; anything not exactly 'sat' normalizes to 'orbit').
+//   No new public methods.
 //
 // Units: 1 unit = 1,000 km (SCALE = 1e-6 m -> units). Earth radius 6.371 units,
 // centred at the origin, ECEF axes with +Z toward the north pole.
@@ -25,6 +35,10 @@ import { sunDirectionEcef } from './sun.js';
 // exports are only *called* inside createRenderer(), never at import time.
 import { ATLAS_GRID, CELL, ICONS, paintAtlas, iconUV } from './atlas.js';
 import { createEarthTextures } from './textures.js';
+// Satellite-POV fisheye view (frozen interface — docs/FEATURE_SATVIEW.md §3).
+// IMPORT-SAFE pure-logic sibling: its exports are only *called* inside
+// createRenderer()/frame()/pick(), never at import time.
+import { SAT_FOV_DEG, SAT_NEAR, SAT_FAR, satViewMatrix, fisheyeProjectNdc } from './sat_camera.js';
 
 const DEG = Math.PI / 180;
 const SCALE = 1e-6;      // metres -> scene units (1 unit = 1,000 km)
@@ -37,6 +51,11 @@ const SUN_DIST = 150;    // Sun billboard distance in units
 const FOV = 45 * DEG;
 const NEAR = 0.5;
 const FAR = 1000;
+
+// Half-FOV in radians for the fisheye path (uThetaMax): the equidistant model
+// maps theta == SAT_THETA_MAX to NDC radius 1. LOCKSTEP with sat_camera.js §4.2
+// (thetaMax = (fovDeg/2) * pi/180) — derived from the imported SAT_FOV_DEG.
+const SAT_THETA_MAX = (SAT_FOV_DEG / 2) * DEG;
 
 // Category appearance. groundHot colour is computed per-object from intensity.
 // size is in CSS px (multiplied by DPR in the points shader, then clamped to the
@@ -69,14 +88,42 @@ function groundHotColor(k) {
 // Shader sources
 // ---------------------------------------------------------------------------
 
+// Equidistant-fisheye vertex transform, shared VERBATIM by all four vertex
+// shaders (prepended below) and selected per-draw by the uFisheye uniform. This
+// is the GPU half of the sat-view projection; it MUST stay byte-for-byte
+// equivalent to sat_camera.js fisheyeProjectNdc() (docs/FEATURE_SATVIEW.md
+// §4.2 / §5.2) or picking and labels will disagree with what the GPU draws.
+// thetaMax / aspect / depthRange arrive as params so the function holds no state.
+const FISHEYE_GLSL = `
+// Equidistant fisheye — MUST match sat_camera.js fisheyeProjectNdc().
+vec4 fisheyePosition(vec4 viewPos, float thetaMax, float aspect, vec2 depthRange) {
+  float rho = length(viewPos.xyz);
+  if (rho < 1e-9) return vec4(0.0, 0.0, -3.0, 1.0);          // at eye: cull
+  vec3 dir = viewPos.xyz / rho;
+  float theta = acos(clamp(-dir.z, -1.0, 1.0));
+  float depth = clamp((rho - depthRange.x) / (depthRange.y - depthRange.x), 0.0, 1.0) * 2.0 - 1.0;
+  float pLen = length(dir.xy);
+  if (pLen < 1e-6) {
+    if (theta > 1.5707963) return vec4(0.0, 0.0, -3.0, 1.0); // behind: cull
+    return vec4(0.0, 0.0, depth, 1.0);                        // boresight
+  }
+  float r = theta / thetaMax;
+  return vec4(r * (dir.x / pLen) / aspect, r * (dir.y / pLen), depth, 1.0);
+}`;
+
 // UV is precomputed CPU-side (exact, seam-safe) and carried through a HIGHP
 // varying: a 4096-wide equirect texture needs more than mediump interpolation to
 // avoid visible banding, so we resolve it in the vertex shader and pass highp.
-const EARTH_VS = `
+const EARTH_VS = `${FISHEYE_GLSL}
 attribute vec3 aPos;
 attribute vec3 aNormal;
 attribute vec2 aUV;
 uniform mat4 uMVP;
+uniform bool uFisheye;                          // false: orbit uMVP; true: fisheye
+uniform mat4 uView;                             // sat_camera.js view matrix
+uniform float uThetaMax;
+uniform float uAspect;
+uniform vec2 uDepthRange;                        // [SAT_NEAR, SAT_FAR]
 varying vec3 vNormal;
 varying vec3 vPos;
 varying highp vec2 vUV;
@@ -84,7 +131,11 @@ void main() {
   vNormal = aNormal;
   vPos = aPos;
   vUV = aUV;
-  gl_Position = uMVP * vec4(aPos, 1.0);
+  if (uFisheye) {
+    gl_Position = fisheyePosition(uView * vec4(aPos, 1.0), uThetaMax, uAspect, uDepthRange);
+  } else {
+    gl_Position = uMVP * vec4(aPos, 1.0);
+  }
 }`;
 
 // Textured Earth with a graceful fallback. When the async day texture is ready
@@ -134,14 +185,23 @@ void main() {
   gl_FragColor = vec4(color, 1.0);
 }`;
 
-const LINE_VS = `
+const LINE_VS = `${FISHEYE_GLSL}
 attribute vec3 aPos;
 attribute vec4 aColor;
 uniform mat4 uMVP;
+uniform bool uFisheye;
+uniform mat4 uView;
+uniform float uThetaMax;
+uniform float uAspect;
+uniform vec2 uDepthRange;
 varying vec4 vColor;
 void main() {
   vColor = aColor;
-  gl_Position = uMVP * vec4(aPos, 1.0);
+  if (uFisheye) {
+    gl_Position = fisheyePosition(uView * vec4(aPos, 1.0), uThetaMax, uAspect, uDepthRange);
+  } else {
+    gl_Position = uMVP * vec4(aPos, 1.0);
+  }
 }`;
 
 const LINE_FS = `
@@ -153,12 +213,17 @@ void main() { gl_FragColor = vColor; }`;
 // rect using the SAME 4x4 grid + inset math as atlas.js iconUV() (which cannot be
 // called from GLSL). ATLAS_GRID and INSET below MUST stay in lockstep with
 // atlas.js — if the frozen inset fraction changes there, change it here too.
-const POINTS_VS = `
+const POINTS_VS = `${FISHEYE_GLSL}
 attribute vec3 aPos;
 attribute vec3 aColor;
 attribute float aSize;
 attribute float aIcon;
 uniform mat4 uMVP;
+uniform bool uFisheye;
+uniform mat4 uView;
+uniform float uThetaMax;
+uniform float uAspect;
+uniform vec2 uDepthRange;
 uniform float uDpr;
 uniform float uMaxPoint;                       // ALIASED_POINT_SIZE_RANGE[1] cap
 varying vec3 vColor;
@@ -172,7 +237,11 @@ void main() {
   vec2 rc = vec2(mod(aIcon, ATLAS_GRID), floor(aIcon / ATLAS_GRID)); // col,row
   vUv0 = (rc + INSET) * cell;                  // image-space rect min (v=0 = top)
   vUv1 = (rc + 1.0 - INSET) * cell;            // image-space rect max
-  gl_Position = uMVP * vec4(aPos, 1.0);
+  if (uFisheye) {
+    gl_Position = fisheyePosition(uView * vec4(aPos, 1.0), uThetaMax, uAspect, uDepthRange);
+  } else {
+    gl_Position = uMVP * vec4(aPos, 1.0);
+  }
   gl_PointSize = min(aSize * uDpr, uMaxPoint); // CSS px -> device px, clamped
 }`;
 
@@ -194,13 +263,22 @@ void main() {
 // Single-point billboard used for the Sun disc and the satellite marker.
 // aVertex is a dummy attribute (always fed 0) that keeps vertex attribute 0
 // enabled — some GL backends require attrib 0 to be a real array for a draw.
-const MARKER_VS = `
+const MARKER_VS = `${FISHEYE_GLSL}
 attribute float aVertex;
 uniform mat4 uMVP;
+uniform bool uFisheye;
+uniform mat4 uView;
+uniform float uThetaMax;
+uniform float uAspect;
+uniform vec2 uDepthRange;
 uniform vec3 uWorldPos;
 uniform float uSize;
 void main() {
-  gl_Position = uMVP * vec4(uWorldPos, 1.0);
+  if (uFisheye) {
+    gl_Position = fisheyePosition(uView * vec4(uWorldPos, 1.0), uThetaMax, uAspect, uDepthRange);
+  } else {
+    gl_Position = uMVP * vec4(uWorldPos, 1.0);
+  }
   gl_PointSize = uSize + aVertex; // aVertex is 0, keeps the attribute live
 }`;
 
@@ -372,8 +450,22 @@ export function createRenderer(glCanvas, overlayCanvas) {
   const pointsProg = program(POINTS_VS, POINTS_FS, { aPos: 0, aColor: 1, aSize: 2, aIcon: 3 });
   const markerProg = program(MARKER_VS, MARKER_FS, { aVertex: 0 });
 
+  // The five fisheye uniforms live on every vertex shader (FISHEYE_GLSL + the
+  // per-shader branch); look them up uniformly so the four programs never drift.
+  // setTransformUniforms() feeds these (or uMVP) per draw.
+  function fisheyeUniforms(prog) {
+    return {
+      fisheye: gl.getUniformLocation(prog, 'uFisheye'),
+      view: gl.getUniformLocation(prog, 'uView'),
+      thetaMax: gl.getUniformLocation(prog, 'uThetaMax'),
+      aspect: gl.getUniformLocation(prog, 'uAspect'),
+      depthRange: gl.getUniformLocation(prog, 'uDepthRange'),
+    };
+  }
+
   const earthU = {
     mvp: gl.getUniformLocation(earthProg, 'uMVP'),
+    ...fisheyeUniforms(earthProg),
     sun: gl.getUniformLocation(earthProg, 'uSunDir'),
     ambient: gl.getUniformLocation(earthProg, 'uAmbient'),
     eye: gl.getUniformLocation(earthProg, 'uEye'),
@@ -382,15 +474,17 @@ export function createRenderer(glCanvas, overlayCanvas) {
     day: gl.getUniformLocation(earthProg, 'uDay'),
     night: gl.getUniformLocation(earthProg, 'uNight'),
   };
-  const lineU = { mvp: gl.getUniformLocation(lineProg, 'uMVP') };
+  const lineU = { mvp: gl.getUniformLocation(lineProg, 'uMVP'), ...fisheyeUniforms(lineProg) };
   const pointsU = {
     mvp: gl.getUniformLocation(pointsProg, 'uMVP'),
+    ...fisheyeUniforms(pointsProg),
     dpr: gl.getUniformLocation(pointsProg, 'uDpr'),
     maxPoint: gl.getUniformLocation(pointsProg, 'uMaxPoint'),
     atlas: gl.getUniformLocation(pointsProg, 'uAtlas'),
   };
   const markerU = {
     mvp: gl.getUniformLocation(markerProg, 'uMVP'),
+    ...fisheyeUniforms(markerProg),
     pos: gl.getUniformLocation(markerProg, 'uWorldPos'),
     size: gl.getUniformLocation(markerProg, 'uSize'),
     color: gl.getUniformLocation(markerProg, 'uColor'),
@@ -518,6 +612,11 @@ export function createRenderer(glCanvas, overlayCanvas) {
   let satRender = null;     // {id, x, y, z} or null
   const trails = new Map(); // id | 'sat:<id>' -> {cat, s:[{t,x,y,z}]}
 
+  // Active-view decision for the current frame()/pick(), set at the top of each.
+  // {fisheye, view, mvp, eye, aspectGl, aspectCss} — the draw helpers, overlay
+  // and projectToScreen all read it so GPU, labels and picking never disagree.
+  let activeView = null;
+
   const camera = createCamera(overlayCanvas, {
     distance: 25,
     yaw: 0,
@@ -536,6 +635,9 @@ export function createRenderer(glCanvas, overlayCanvas) {
       showTrails: !!s.showTrails,
       trailSeconds: ts,
       showLabels: !!s.showLabels,
+      // Additive per FEATURE_SATVIEW.md §5.1: anything not exactly 'sat' is
+      // 'orbit'. Drives the active-view decision + the sat-trail skip below.
+      viewMode: s.viewMode === 'sat' ? 'sat' : 'orbit',
       categories: {
         debris: c.debris !== false,
         star: c.star !== false,
@@ -666,10 +768,15 @@ export function createRenderer(glCanvas, overlayCanvas) {
     if (!settings.showTrails || !(settings.trailSeconds > 0)) return;
     const ref = lastSnapNow;
     const secs = settings.trailSeconds;
+    // In sat mode the camera IS the satellite, so its own trail is meaningless
+    // (it would smear across the whole frame): skip the 'sat:<id>' key. setSettings
+    // rebuilds on every viewMode change, so this stays consistent with the mode.
+    const hideSatTrail = settings.viewMode === 'sat';
 
     // First pass: count qualifying segments (younger than trailSeconds, non-degenerate).
     let segCount = 0;
-    for (const [, t] of trails) {
+    for (const [k, t] of trails) {
+      if (hideSatTrail && typeof k === 'string' && k.indexOf('sat:') === 0) continue;
       if (!catVisible(t.cat)) continue;
       const s = t.s;
       for (let i = 1; i < s.length; i++) {
@@ -692,7 +799,8 @@ export function createRenderer(glCanvas, overlayCanvas) {
 
     // Second pass: fill interleaved [x,y,z, r,g,b,a] with per-vertex age fade.
     let k = 0;
-    for (const [, t] of trails) {
+    for (const [key, t] of trails) {
+      if (hideSatTrail && typeof key === 'string' && key.indexOf('sat:') === 0) continue;
       if (!catVisible(t.cat)) continue;
       const col = trailColorFor(t.cat);
       const s = t.s;
@@ -724,10 +832,27 @@ export function createRenderer(glCanvas, overlayCanvas) {
     for (let i = 0; i < 4; i++) gl.disableVertexAttribArray(i);
   }
 
-  function drawEarth(mvp, sunDir, eye) {
+  // Feed the active view's transform uniforms to whichever program is bound.
+  // uFisheye must be set on every program each frame (uniforms are per-program
+  // state and the programs are switched between draws). Orbit sets uMVP and is
+  // byte-for-byte the pre-sat path; sat sets the four fisheye uniforms and lets
+  // the shader ignore uMVP. `u` is any program's uniform-location bundle above.
+  function setTransformUniforms(u) {
+    gl.uniform1i(u.fisheye, activeView.fisheye ? 1 : 0);
+    if (activeView.fisheye) {
+      gl.uniformMatrix4fv(u.view, false, activeView.view);
+      gl.uniform1f(u.thetaMax, SAT_THETA_MAX);
+      gl.uniform1f(u.aspect, activeView.aspectGl);
+      gl.uniform2f(u.depthRange, SAT_NEAR, SAT_FAR);
+    } else {
+      gl.uniformMatrix4fv(u.mvp, false, activeView.mvp);
+    }
+  }
+
+  function drawEarth(sunDir, eye) {
     gl.useProgram(earthProg);
     disableAttribs();
-    gl.uniformMatrix4fv(earthU.mvp, false, mvp);
+    setTransformUniforms(earthU);
     gl.uniform3fv(earthU.sun, sunDir);
     gl.uniform1f(earthU.ambient, 0.25);
     gl.uniform3fv(earthU.eye, eye);
@@ -749,11 +874,11 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.drawElements(gl.TRIANGLES, earthIndexCount, gl.UNSIGNED_SHORT, 0);
   }
 
-  function drawLines(buffer, vertCount, mvp) {
+  function drawLines(buffer, vertCount) {
     if (vertCount <= 0) return;
     gl.useProgram(lineProg);
     disableAttribs();
-    gl.uniformMatrix4fv(lineU.mvp, false, mvp);
+    setTransformUniforms(lineU);
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 28, 0);  // pos: 3 floats
@@ -764,11 +889,11 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.drawArrays(gl.LINES, 0, vertCount);
   }
 
-  function drawPoints(mvp) {
+  function drawPoints() {
     if (objCount <= 0) return;
     gl.useProgram(pointsProg);
     disableAttribs();
-    gl.uniformMatrix4fv(pointsU.mvp, false, mvp);
+    setTransformUniforms(pointsU);
     gl.uniform1f(pointsU.dpr, dpr);
     gl.bindBuffer(gl.ARRAY_BUFFER, objPosBuf);
     gl.enableVertexAttribArray(0);
@@ -787,10 +912,10 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.drawArrays(gl.POINTS, 0, objCount);
   }
 
-  function drawMarker(worldPos, sizePx, color, useAtlas, mvp) {
+  function drawMarker(worldPos, sizePx, color, useAtlas) {
     gl.useProgram(markerProg);
     disableAttribs();
-    gl.uniformMatrix4fv(markerU.mvp, false, mvp);
+    setTransformUniforms(markerU);
     gl.uniform3fv(markerU.pos, worldPos);
     gl.uniform1f(markerU.size, Math.min(sizePx * dpr, maxPointSize)); // clamp to GPU cap
     gl.uniform3fv(markerU.color, color);
@@ -808,10 +933,23 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.drawArrays(gl.POINTS, 0, 1);
   }
 
-  // Project a world point to CSS-pixel screen coordinates. Returns null if the
-  // point is behind the camera.
-  function projectToScreen(mvp, x, y, z) {
-    const c = transform(mvp, [x, y, z, 1]);
+  // Project a world point to CSS-pixel screen coordinates using the active view.
+  // Orbit: the perspective MVP + w-divide (returns null behind the camera). Sat:
+  // the equidistant-fisheye forward map — CPU mirror of FISHEYE_GLSL via
+  // sat_camera.js fisheyeProjectNdc() (aspect = cssW/cssH, matching the GL
+  // aspectGl ratio) — returning null when the helper does (point at/behind the
+  // eye). The NDC->CSS mapping is identical in both branches; |ndc|>1 points
+  // still return coordinates (just off-screen), as callers already tolerate.
+  function projectToScreen(x, y, z) {
+    if (activeView.fisheye) {
+      const p = fisheyeProjectNdc(activeView.view, [x, y, z], activeView.aspectCss);
+      if (!p) return null;
+      return {
+        sx: (p.x * 0.5 + 0.5) * cssW,
+        sy: (1 - (p.y * 0.5 + 0.5)) * cssH,
+      };
+    }
+    const c = transform(activeView.mvp, [x, y, z, 1]);
     if (c[3] <= 1e-6) return null;
     const nx = c[0] / c[3];
     const ny = c[1] / c[3];
@@ -821,16 +959,21 @@ export function createRenderer(glCanvas, overlayCanvas) {
     };
   }
 
-  function drawOverlay(mvp, eye, sunPos) {
+  function drawOverlay(eye, sunPos) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // work in CSS px, clear device px
     ctx.clearRect(0, 0, cssW, cssH);
     ctx.textBaseline = 'middle';
 
+    // In sat mode the satellite IS the camera, so its ring/label are hidden
+    // (per §5.3): its world point sits at the eye where the fisheye map is
+    // degenerate and would place a spurious mark near frame centre.
+    const hideThisSat = (t) => activeView.fisheye && t === satRender;
+
     // Selection ring.
     if (selectedId != null) {
       const t = findRenderById(selectedId);
-      if (t) {
-        const p = projectToScreen(mvp, t.x, t.y, t.z);
+      if (t && !hideThisSat(t)) {
+        const p = projectToScreen(t.x, t.y, t.z);
         if (p) {
           ctx.beginPath();
           ctx.strokeStyle = '#ffd54a';
@@ -856,11 +999,11 @@ export function createRenderer(glCanvas, overlayCanvas) {
         for (let i = 0; i < 200; i++) list.push(withD[i].o);
       }
       for (const o of list) {
-        const p = projectToScreen(mvp, o.x, o.y, o.z);
+        const p = projectToScreen(o.x, o.y, o.z);
         if (p) ctx.fillText(String(o.id), p.sx + 6, p.sy);
       }
-      if (satRender) {
-        const p = projectToScreen(mvp, satRender.x, satRender.y, satRender.z);
+      if (satRender && !activeView.fisheye) {
+        const p = projectToScreen(satRender.x, satRender.y, satRender.z);
         if (p) {
           ctx.fillStyle = '#ffd54a';
           ctx.fillText(String(satRender.id), p.sx + 6, p.sy);
@@ -869,15 +1012,15 @@ export function createRenderer(glCanvas, overlayCanvas) {
       }
       if (selectedId != null) {
         const t = findRenderById(selectedId);
-        if (t) {
-          const p = projectToScreen(mvp, t.x, t.y, t.z);
+        if (t && !hideThisSat(t)) {
+          const p = projectToScreen(t.x, t.y, t.z);
           if (p) ctx.fillText(String(t.id), p.sx + 6, p.sy);
         }
       }
     }
 
     // Sun label near the disc if on-screen (always, independent of labels).
-    const sp = projectToScreen(mvp, sunPos[0], sunPos[1], sunPos[2]);
+    const sp = projectToScreen(sunPos[0], sunPos[1], sunPos[2]);
     if (sp && sp.sx > -20 && sp.sx < cssW + 20 && sp.sy > -20 && sp.sy < cssH + 20) {
       ctx.font = '11px monospace';
       ctx.fillStyle = 'rgba(255,235,180,0.95)';
@@ -925,11 +1068,43 @@ export function createRenderer(glCanvas, overlayCanvas) {
     selectedId = idOrNull == null ? null : idOrNull;
   }
 
+  // Resolve the active view for this frame()/pick(). Sat mode wins only when it
+  // is requested AND a satellite position exists AND sat_camera can build a view
+  // matrix (|pos| >= 1e-9); any failure falls back to the orbit camera for that
+  // call — deterministic, no throw (§5.3). Kept flat: no per-object CPU matrix
+  // work (the shaders do the fisheye transform on the GPU). aspectGl (GL uniform)
+  // and aspectCss (projectToScreen) are identical ratios of the same canvas.
+  function computeActiveView() {
+    if (settings.viewMode === 'sat' && snapshot && snapshot.satellite && snapshot.satellite.pos) {
+      const s = snapshot.satellite;
+      const satPos = worldFromMeters(s.pos);            // same worldFromMeters() as satRender
+      const view = satViewMatrix(satPos, s.vel || null); // only the vel direction is used
+      if (view) {
+        return {
+          fisheye: true,
+          view,
+          mvp: null,
+          eye: satPos,                                   // camera sits at the satellite
+          aspectGl: glCanvas.width / glCanvas.height,
+          aspectCss: cssW / cssH,
+        };
+      }
+    }
+    const orbitView = camera.getViewMatrix();
+    return {
+      fisheye: false,
+      view: orbitView,
+      mvp: multiply(proj, orbitView),
+      eye: camera.getEye(),
+      aspectGl: glCanvas.width / glCanvas.height,
+      aspectCss: cssW / cssH,
+    };
+  }
+
   function frame(nowMs) {
     const now = typeof nowMs === 'number' ? nowMs : Date.now();
-    const view = camera.getViewMatrix();
-    const mvp = multiply(proj, view);
-    const eye = camera.getEye();
+    activeView = computeActiveView();
+    const eye = activeView.eye;
     const sunDir = normalize(sunDirectionEcef(now));
     const sunPos = [sunDir[0] * SUN_DIST, sunDir[1] * SUN_DIST, sunDir[2] * SUN_DIST];
 
@@ -957,26 +1132,29 @@ export function createRenderer(glCanvas, overlayCanvas) {
     gl.bindTexture(gl.TEXTURE_2D, atlasTex);
     gl.activeTexture(gl.TEXTURE0);
 
-    drawEarth(mvp, sunDir, eye);
-    drawLines(gratBuf, gratVertCount, mvp);
-    drawMarker(sunPos, 42, SUN_COLOR, false, mvp);          // Sun: soft procedural disc
-    if (settings.showTrails) drawLines(trailBuf, trailVertCount, mvp);
-    drawPoints(mvp);
-    if (velActive) drawLines(velBuf, 2, mvp);
-    if (satRender) drawMarker([satRender.x, satRender.y, satRender.z], 30, SAT_COLOR, true, mvp); // sat art
+    drawEarth(sunDir, eye);
+    drawLines(gratBuf, gratVertCount);
+    drawMarker(sunPos, 42, SUN_COLOR, false);               // Sun: soft procedural disc (both modes)
+    if (settings.showTrails) drawLines(trailBuf, trailVertCount);
+    drawPoints();
+    // Sat mode hides the satellite marker + velocity vector: the camera IS the
+    // satellite (§5.3). Its trail is already skipped in rebuildTrailBuffer.
+    if (!activeView.fisheye) {
+      if (velActive) drawLines(velBuf, 2);
+      if (satRender) drawMarker([satRender.x, satRender.y, satRender.z], 30, SAT_COLOR, true); // sat art
+    }
 
-    drawOverlay(mvp, eye, sunPos);
+    drawOverlay(eye, sunPos);
   }
 
   function pick(x, y) {
-    const view = camera.getViewMatrix();
-    const mvp = multiply(proj, view);
-    const eye = camera.getEye();
+    activeView = computeActiveView();      // same active-view decision as frame()
+    const eye = activeView.eye;
     let bestId = null;
     let bestD = Infinity;
     let bestCam = Infinity;
     const consider = (o) => {
-      const p = projectToScreen(mvp, o.x, o.y, o.z);
+      const p = projectToScreen(o.x, o.y, o.z);
       if (!p) return;
       const d = Math.hypot(p.sx - x, p.sy - y);
       if (d > 12) return;
@@ -987,7 +1165,8 @@ export function createRenderer(glCanvas, overlayCanvas) {
         bestId = o.id;
       }
     };
-    if (satRender) consider(satRender);
+    // Sat mode excludes the satellite (§5.3): it is the camera, not a target.
+    if (!activeView.fisheye && satRender) consider(satRender);
     for (let i = 0; i < renderObjects.length; i++) consider(renderObjects[i]);
     return bestId;
   }

@@ -25,9 +25,14 @@ targets localhost/LAN use with no runtime internet access.
 - UI panels: object list (filterable by category, capped with a
   "showing N of M" note), satellite telemetry, connection/status, latest
   data time, and live UDP/WebSocket stats.
+- Two view modes, toggled with the 3D/SAT control or the `V` key: the free
+  orbit camera, and a satellite point-of-view mode — a 170° equidistant-fisheye
+  nadir view rendered from the primary satellite, wide enough to show the
+  space around Earth's limb (see
+  [docs/FEATURE_SATVIEW.md](docs/FEATURE_SATVIEW.md)).
 - Settings menu (persisted to `localStorage`): trails on/off + duration,
-  labels on/off, per-category visibility toggles, and WebSocket host/port
-  with a reconnect button.
+  labels on/off, per-category visibility toggles, view mode, and WebSocket
+  host/port with a reconnect button.
 
 ## Architecture
 

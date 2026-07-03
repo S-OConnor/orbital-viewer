@@ -222,7 +222,8 @@ createRenderer(glCanvas, overlayCanvas) → {
 //         objects:[{id,cat:'debris'|'star'|'comet'|'satellite'|'groundHot',
 //                   pos:[3],vel:[3]|null,conf,intensity,flags}], lastDataTime}
 // s = {showTrails,trailSeconds,showLabels,
-//      categories:{debris,star,comet,satellite,groundHot}}
+//      categories:{debris,star,comet,satellite,groundHot},
+//      viewMode:'orbit'|'sat'}  // additive v0.3, docs/FEATURE_SATVIEW.md
 
 // sun.js
 sunDirectionEcef(dateOrMs) → [x,y,z]  // unit vector

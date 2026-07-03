@@ -255,6 +255,57 @@ button, input {
 
 .icon-btn:hover { border-color: var(--accent); }
 
+/* ---- View mode segmented control (3D / SAT) ---- */
+
+.seg-group {
+  display: flex;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  overflow: hidden;
+}
+
+.seg-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0 13px;
+  cursor: pointer;
+}
+
+.seg-btn + .seg-btn {
+  border-left: 1px solid var(--border);
+}
+
+.seg-btn:hover { color: var(--text); }
+
+.seg-btn.active {
+  color: var(--text);
+  background: rgba(88, 214, 141, 0.18);
+}
+
+/* ---- Sat-view badge (overlaid on the 3D viewport) ---- */
+
+.view-badge {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 3;
+  padding: 4px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--panel-bg);
+  color: var(--amber);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  pointer-events: none;
+}
+
 /* ---- Modals ---- */
 
 .modal {

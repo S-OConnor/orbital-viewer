@@ -11,6 +11,7 @@
 <div id="viewport">
   <canvas id="glcanvas"></canvas>
   <canvas id="overlay"></canvas>
+  <div id="viewBadge" class="view-badge hidden"></div>
 </div>
 
 <aside id="panel" class="panel">
@@ -71,6 +72,10 @@
 <button id="panelToggle" class="panel-toggle" type="button" aria-label="Toggle panel" aria-expanded="true">&#10216;</button>
 
 <div class="topright">
+  <div id="viewToggle" class="seg-group" role="group" aria-label="View mode">
+    <button id="btnView3d" class="seg-btn" type="button" aria-pressed="true">3D</button>
+    <button id="btnViewSat" class="seg-btn" type="button" aria-pressed="false">SAT</button>
+  </div>
   <button id="btnSettings" class="icon-btn" type="button" aria-label="Settings">&#9881;</button>
   <button id="btnAbout" class="icon-btn" type="button" aria-label="About">&#8505;</button>
 </div>
@@ -127,6 +132,12 @@
       in ECEF coordinates. Data flows UDP &rarr; C++ Boost backend &rarr;
       WebSocket &rarr; plain-WebGL frontend, with no internet access
       required at runtime.
+    </p>
+    <p>
+      Press the 3D/SAT toggle (or the <kbd>V</kbd> key) to switch to the
+      satellite&rsquo;s point of view: a 170&deg; fisheye nadir view rendered
+      from the primary satellite&rsquo;s position, looking straight down at
+      Earth.
     </p>
     <p>Protocol version: 1</p>
     <p>

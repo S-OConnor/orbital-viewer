@@ -18,6 +18,7 @@ const DEFAULTS = {
   showTrails: false,
   trailSeconds: 30,
   showLabels: false,
+  viewMode: 'orbit',
   categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
   host: '',
   port: 8765,
@@ -64,6 +65,54 @@ test('port is coerced to integer and clamped 1..65535', () => {
   assert.equal(settings.update({ port: -100 }).port, 1);
   assert.equal(settings.update({ port: 70000 }).port, 65535);
   assert.equal(settings.update({ port: 9000.9 }).port, 9000);
+});
+
+test('viewMode defaults to orbit', () => {
+  const settings = createSettings(new FakeStorage());
+  assert.equal(settings.get().viewMode, 'orbit');
+});
+
+test('viewMode update to sat sticks and persists', () => {
+  const storage = new FakeStorage();
+  const settings = createSettings(storage);
+  const result = settings.update({ viewMode: 'sat' });
+  assert.equal(result.viewMode, 'sat');
+  const raw = JSON.parse(storage.getItem('olv.settings.v1'));
+  assert.equal(raw.viewMode, 'sat');
+});
+
+test('viewMode rejects anything other than exactly "orbit" or "sat"', () => {
+  const settings = createSettings(new FakeStorage());
+  settings.update({ viewMode: 'sat' });
+  assert.equal(settings.update({ viewMode: 'SAT' }).viewMode, 'sat');
+  assert.equal(settings.update({ viewMode: '' }).viewMode, 'sat');
+  assert.equal(settings.update({ viewMode: null }).viewMode, 'sat');
+  assert.equal(settings.update({ viewMode: 42 }).viewMode, 'sat');
+  assert.equal(settings.update({ viewMode: {} }).viewMode, 'sat');
+});
+
+test('resetDefaults restores viewMode to orbit', () => {
+  const settings = createSettings(new FakeStorage());
+  settings.update({ viewMode: 'sat' });
+  const result = settings.resetDefaults();
+  assert.equal(result.viewMode, 'orbit');
+});
+
+test('stored JSON lacking viewMode loads with default orbit', () => {
+  const storage = new FakeStorage({
+    'olv.settings.v1': JSON.stringify({ showTrails: true }),
+  });
+  const settings = createSettings(storage);
+  assert.equal(settings.get().viewMode, 'orbit');
+});
+
+test('onChange fires with the new viewMode value', () => {
+  const settings = createSettings(new FakeStorage());
+  const seen = [];
+  settings.onChange((s) => seen.push(s));
+  settings.update({ viewMode: 'sat' });
+  assert.equal(seen.length, 1);
+  assert.equal(seen[0].viewMode, 'sat');
 });
 
 test('unknown keys in patch are ignored', () => {
