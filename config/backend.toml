@@ -32,6 +32,29 @@ hz = 1.0
 # Object expiry window, in seconds. Range: 1-3600.
 expiry_seconds = 15
 
+[input]
+# Intake strategy selected at boot. "olv1" = the first-party OLV1 UDP binary
+# protocol (docs/PROTOCOL_UDP.md). "dis" = IEEE 1278.1 DIS Entity State PDUs
+# (docs/FEATURE_INPUT_SOURCES.md).
+mode = "olv1"
+
+# The dis_* keys below are consulted only when mode = "dis"; they are still
+# schema-checked whenever present. (The first-party TOML subset has single-level
+# tables only, so these are flat dis_* keys rather than a nested [input.dis]
+# table.)
+#
+# UDP listen address/port for incoming DIS Entity State PDUs. The default port
+# is distinct from OLV1's 47000 so both modes' defaults can coexist on a host.
+dis_bind = "0.0.0.0"
+dis_port = 47001
+# Optional exercise filter, 0-255. Commented out = accept all exercise IDs; a
+# PDU whose DIS exerciseID differs is ignored (counted as received only).
+# dis_exercise_id = 1
+# The one DIS entity promoted to the satellite, as site:application:entity
+# (three decimal 0-65535 values). Required when mode = "dis"; every other entity
+# becomes a tracked object. Uncomment and set when running DIS mode:
+# dis_satellite_entity_id = "1:1:1"
+
 [logging]
 # Log file path (must be non-empty).
 file = "olv_backend.log"

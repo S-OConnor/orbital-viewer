@@ -28,6 +28,11 @@ from datetime import datetime, timezone
 
 OLV_VERSION = "0.1.0"
 
+# Pinned open-dis-cpp release (BSD-2-Clause), built and installed by
+# scripts/install_open_dis.sh (not vendored). Keep in sync with the VERSION
+# pinned in that script.
+OPEN_DIS_VERSION = "1.2.0"
+
 # Vendored frontend image assets (frontend/assets/), added to the frontend
 # BOM as CycloneDX "file" components. `version` here is the imagery vintage
 # (the NASA product's acquisition/composite date), not a software release —
@@ -208,10 +213,28 @@ def build_backend_bom() -> tuple[dict, str]:
                     "dependency (see THIRD_PARTY.md)."
                     + (f" Detected from {boost_header}." if boost_header else "")
                 ),
-            }
+            },
+            {
+                "type": "library",
+                "name": "open-dis-cpp",
+                "version": OPEN_DIS_VERSION,
+                "licenses": [_license("BSD-2-Clause")],
+                "purl": f"pkg:github/open-dis/open-dis-cpp@v{OPEN_DIS_VERSION}",
+                "description": (
+                    "IEEE 1278.1 DIS Entity State PDUs: decode for olv_backend's "
+                    "--input-mode dis, encode for olv_sim's --protocol dis. Built "
+                    "from the pinned upstream release (sha256-verified tarball, "
+                    "src/dis6 only, no local modifications) and installed into a "
+                    "prefix by scripts/install_open_dis.sh; statically linked "
+                    "(see THIRD_PARTY.md)."
+                ),
+            },
         ],
     }
-    summary = f"backend: olv-backend@{OLV_VERSION} (MIT); boost@{boost_version} (BSL-1.0)"
+    summary = (
+        f"backend: olv-backend@{OLV_VERSION} (MIT); boost@{boost_version} (BSL-1.0); "
+        f"open-dis-cpp@{OPEN_DIS_VERSION} (BSD-2-Clause)"
+    )
     return bom, summary
 
 

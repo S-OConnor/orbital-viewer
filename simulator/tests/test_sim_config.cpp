@@ -397,3 +397,95 @@ OLV_TEST(cli_config_flag_missing_value_is_an_error) {
   OLV_CHECK(!result.has_value());
   OLV_CHECK(contains(error, "--config"));
 }
+
+// ---- [send] protocol / dis_* (docs/FEATURE_INPUT_SOURCES.md Phase 3) -------
+
+OLV_TEST(config_file_send_protocol_and_dis_keys) {
+  TempConfig cfg_file(
+      "[source]\nmode = \"generate\"\ngenerate_count = 10\n"
+      "[send]\nprotocol = \"dis\"\ndis_exercise_id = 7\ndis_site = 12\n"
+      "dis_satellite_entity_id = \"3:5:9\"\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(cfg.protocol == SimConfig::Protocol::kDis);
+  OLV_CHECK_EQ(cfg.dis_exercise_id, 7);
+  OLV_CHECK_EQ(cfg.dis_site, 12);
+  OLV_CHECK_EQ(cfg.dis_satellite_entity_id, std::string("3:5:9"));
+}
+
+OLV_TEST(config_file_send_protocol_banana_is_rejected) {
+  TempConfig cfg_file("[send]\nprotocol = \"banana\"\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(contains(error, "send.protocol"));
+}
+
+OLV_TEST(config_file_dis_exercise_id_out_of_range) {
+  TempConfig cfg_file("[send]\ndis_exercise_id = 256\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(contains(error, "send.dis_exercise_id"));
+}
+
+OLV_TEST(config_file_dis_site_out_of_range) {
+  TempConfig cfg_file("[send]\ndis_site = 65536\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(contains(error, "send.dis_site"));
+}
+
+OLV_TEST(config_file_dis_satellite_entity_id_bad_format) {
+  for (const char* bad : {"\"1:2\"", "\"1:2:3:4\"", "\"a:b:c\"", "\"1::3\"", "\"1:2:99999\""}) {
+    TempConfig cfg_file(std::string("[send]\ndis_satellite_entity_id = ") + bad + "\n");
+    SimConfig cfg;
+    std::string error;
+    OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+    OLV_CHECK(contains(error, "send.dis_satellite_entity_id"));
+  }
+}
+
+OLV_TEST(cli_protocol_flag_and_dis_default_port) {
+  std::string error;
+  {
+    Args args({"--generate", "10", "--protocol", "dis"});
+    auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+    OLV_CHECK(cfg.has_value());
+    OLV_CHECK(cfg->protocol == SimConfig::Protocol::kDis);
+    OLV_CHECK_EQ(cfg->dest_port, 47001);  // DIS default when no port given
+  }
+  {
+    Args args({"--generate", "10", "--protocol", "dis", "--port", "47123"});
+    auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+    OLV_CHECK(cfg.has_value());
+    OLV_CHECK_EQ(cfg->dest_port, 47123);  // explicit port always wins
+  }
+  {
+    Args args({"--generate", "10"});
+    auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+    OLV_CHECK(cfg.has_value());
+    OLV_CHECK(cfg->protocol == SimConfig::Protocol::kOlv1);
+    OLV_CHECK_EQ(cfg->dest_port, 47000);  // olv1 default unchanged
+  }
+}
+
+OLV_TEST(cli_protocol_dis_respects_config_file_port) {
+  TempConfig cfg_file(
+      "[target]\nport = 48000\n[source]\nmode = \"generate\"\ngenerate_count = 5\n");
+  std::string error;
+  Args args({"--config", cfg_file.str(), "--protocol", "dis"});
+  auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+  OLV_CHECK(cfg.has_value());
+  OLV_CHECK_EQ(cfg->dest_port, 48000);  // file-set port counts as explicit
+}
+
+OLV_TEST(cli_protocol_bad_value_is_rejected) {
+  std::string error;
+  Args args({"--generate", "10", "--protocol", "udp"});
+  auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+  OLV_CHECK(!cfg.has_value());
+  OLV_CHECK(contains(error, "--protocol"));
+}

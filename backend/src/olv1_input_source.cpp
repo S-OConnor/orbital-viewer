@@ -1,7 +1,8 @@
-// udp_receiver.cpp — see udp_receiver.hpp. Thread 1: private io_context on an
-// internal std::thread running the async receive loop.
+// olv1_input_source.cpp — see olv1_input_source.hpp. Thread 1: private
+// io_context on an internal std::thread running the async receive loop.
+// Formerly udp_receiver.cpp; bodies and log message formats are unchanged.
 
-#include "udp_receiver.hpp"
+#include "olv1_input_source.hpp"
 
 #include <string>
 
@@ -12,24 +13,24 @@ namespace olv {
 namespace asio = boost::asio;
 using asio::ip::udp;
 
-UdpReceiver::UdpReceiver(const std::string& bind_address, std::uint16_t port, StateStore& store,
-                         Logger& log)
+Olv1InputSource::Olv1InputSource(const std::string& bind_address, std::uint16_t port,
+                                 StateStore& store, Logger& log)
     : socket_(ioc_, udp::endpoint(asio::ip::make_address(bind_address), port)),
       store_(store),
       log_(log) {}
 
-UdpReceiver::~UdpReceiver() {
+Olv1InputSource::~Olv1InputSource() {
   stop();
 }
 
-void UdpReceiver::start() {
+void Olv1InputSource::start() {
   if (started_) return;
   started_ = true;
   armReceive();
   thread_ = std::thread([this] { ioc_.run(); });
 }
 
-void UdpReceiver::stop() {
+void Olv1InputSource::stop() {
   if (!started_) return;
   asio::post(ioc_, [this] {
     boost::system::error_code ec;
@@ -40,7 +41,7 @@ void UdpReceiver::stop() {
   started_ = false;
 }
 
-void UdpReceiver::armReceive() {
+void Olv1InputSource::armReceive() {
   socket_.async_receive_from(asio::buffer(buffer_), sender_,
                              [this](const boost::system::error_code& ec, std::size_t len) {
                                if (ec == asio::error::operation_aborted) return;
@@ -49,7 +50,7 @@ void UdpReceiver::armReceive() {
                              });
 }
 
-void UdpReceiver::handleDatagram(std::size_t len) {
+void Olv1InputSource::handleDatagram(std::size_t len) {
   store_.countReceived(len);
 
   const std::string from = sender_.address().to_string() + ":" + std::to_string(sender_.port());

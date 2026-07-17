@@ -1,4 +1,5 @@
-// udp_receiver.hpp — thread 1: UDP receive loop.
+// olv1_input_source.hpp — thread 1: OLV1 UDP receive loop (the default
+// InputSource; formerly udp_receiver.hpp's UdpReceiver, renamed unchanged).
 //
 // Owns a private io_context run on an internal std::thread. Each datagram:
 // StateStore::countReceived -> proto::decode -> on success StateStore::apply,
@@ -17,6 +18,7 @@
 #include <cstdint>
 #include <thread>
 
+#include "input_source.hpp"
 #include "olv/protocol.hpp"
 #include "state_store.hpp"
 
@@ -24,19 +26,20 @@ namespace olv {
 
 class Logger;
 
-class UdpReceiver {
+class Olv1InputSource : public InputSource {
  public:
   // Binds <bind_address>:<port> immediately (throws boost::system::system_error
   // on a bad address or bind failure so startup errors surface before threads
   // exist). bind_address is a dotted IPv4/IPv6 literal, e.g. "0.0.0.0".
-  UdpReceiver(const std::string& bind_address, std::uint16_t port, StateStore& store, Logger& log);
-  ~UdpReceiver();
+  Olv1InputSource(const std::string& bind_address, std::uint16_t port, StateStore& store,
+                  Logger& log);
+  ~Olv1InputSource() override;
 
-  UdpReceiver(const UdpReceiver&) = delete;
-  UdpReceiver& operator=(const UdpReceiver&) = delete;
+  Olv1InputSource(const Olv1InputSource&) = delete;
+  Olv1InputSource& operator=(const Olv1InputSource&) = delete;
 
-  void start();  // spawns the receive thread; no-op if already started
-  void stop();   // stops the io_context and joins; idempotent
+  void start() override;  // spawns the receive thread; no-op if already started
+  void stop() override;   // stops the io_context and joins; idempotent
 
  private:
   void armReceive();

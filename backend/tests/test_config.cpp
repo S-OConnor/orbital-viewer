@@ -19,6 +19,9 @@ namespace olv {
 inline std::ostream& operator<<(std::ostream& os, LogLevel l) {
   return os << toString(l);
 }
+inline std::ostream& operator<<(std::ostream& os, InputMode m) {
+  return os << toString(m);
+}
 }  // namespace olv
 
 namespace {
@@ -283,4 +286,179 @@ OLV_TEST(config_parse_args_repeated_config) {
   const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
   OLV_CHECK(!cfg.has_value());
   OLV_CHECK(err.find("--config") != std::string::npos);
+}
+
+// ---------------------------------------------------------------------------
+// [input] mode / --input-mode (FEATURE_INPUT_SOURCES.md §6).
+// ---------------------------------------------------------------------------
+
+OLV_TEST(config_input_mode_defaults_to_olv1) {
+  Config cfg;
+  OLV_CHECK_EQ(cfg.input_mode, InputMode::kOlv1);
+}
+
+OLV_TEST(config_input_mode_from_file) {
+  TempConfig tc("[input]\nmode = \"dis\"\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK_EQ(cfg.input_mode, InputMode::kDis);
+}
+
+OLV_TEST(config_input_mode_olv1_in_file_is_noop) {
+  TempConfig tc("[input]\nmode = \"olv1\"\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK_EQ(cfg.input_mode, InputMode::kOlv1);
+}
+
+OLV_TEST(config_input_mode_invalid_string_in_file) {
+  TempConfig tc("[input]\nmode = \"tcp\"\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.mode") != std::string::npos);
+  OLV_CHECK(err.find("tcp") != std::string::npos);
+}
+
+OLV_TEST(config_input_mode_wrong_type_in_file) {
+  TempConfig tc("[input]\nmode = 1\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.mode") != std::string::npos);
+}
+
+OLV_TEST(config_input_mode_flag) {
+  // --input-mode dis requires a satellite entity id, and there is no CLI flag
+  // for it (§6), so the flag is paired with a config file that supplies one.
+  TempConfig tc("[input]\ndis_satellite_entity_id = \"1:1:1\"\n");
+  const std::string path = tc.pathStr();
+  auto argv = makeArgv({"--config", path.c_str(), "--input-mode", "dis"});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  OLV_CHECK(cfg.has_value());
+  OLV_CHECK_EQ(cfg->input_mode, InputMode::kDis);
+}
+
+OLV_TEST(config_input_mode_flag_invalid_is_hard_error) {
+  auto argv = makeArgv({"--input-mode", "udp"});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  OLV_CHECK(!cfg.has_value());
+  OLV_CHECK(err.find("input mode") != std::string::npos);
+  OLV_CHECK(err.find("udp") != std::string::npos);
+}
+
+OLV_TEST(config_input_mode_flag_overrides_file) {
+  TempConfig tc("[input]\nmode = \"dis\"\n");
+  const std::string path = tc.pathStr();
+  auto argv = makeArgv({"--config", path.c_str(), "--input-mode", "olv1"});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  OLV_CHECK(cfg.has_value());
+  OLV_CHECK_EQ(cfg->input_mode, InputMode::kOlv1);
+}
+
+// ---------------------------------------------------------------------------
+// [input] dis_* keys (FEATURE_INPUT_SOURCES.md §6). Flat keys under [input]
+// because the first-party TOML subset has single-level tables only.
+// ---------------------------------------------------------------------------
+
+OLV_TEST(config_dis_full_group_sets_every_field) {
+  TempConfig tc(
+      "[input]\n"
+      "mode = \"dis\"\n"
+      "dis_bind = \"127.0.0.9\"\n"
+      "dis_port = 47500\n"
+      "dis_exercise_id = 42\n"
+      "dis_satellite_entity_id = \"10:20:30\"\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK_EQ(err, std::string());
+  OLV_CHECK_EQ(cfg.input_mode, InputMode::kDis);
+  OLV_CHECK_EQ(cfg.dis.bind_address, std::string("127.0.0.9"));
+  OLV_CHECK_EQ(cfg.dis.port, 47500);
+  OLV_CHECK(cfg.dis.exercise_id.has_value());
+  OLV_CHECK_EQ(static_cast<int>(*cfg.dis.exercise_id), 42);
+  OLV_CHECK_EQ(cfg.dis.satellite_entity_id, std::string("10:20:30"));
+}
+
+OLV_TEST(config_dis_defaults_when_absent) {
+  TempConfig tc("[input]\nmode = \"olv1\"\n");
+  Config cfg;
+  const Config def;
+  std::string err;
+  OLV_CHECK(applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK_EQ(cfg.dis.bind_address, def.dis.bind_address);
+  OLV_CHECK_EQ(cfg.dis.port, def.dis.port);
+  OLV_CHECK(!cfg.dis.exercise_id.has_value());
+  OLV_CHECK_EQ(cfg.dis.satellite_entity_id, std::string());
+}
+
+OLV_TEST(config_dis_exercise_id_range) {
+  TempConfig tc("[input]\ndis_exercise_id = 256\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.dis_exercise_id") != std::string::npos);
+  OLV_CHECK(err.find("0-255") != std::string::npos);
+}
+
+OLV_TEST(config_dis_port_range) {
+  TempConfig tc("[input]\ndis_port = 0\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.dis_port") != std::string::npos);
+  OLV_CHECK(err.find("1-65535") != std::string::npos);
+}
+
+OLV_TEST(config_dis_satellite_entity_id_bad_format) {
+  TempConfig tc("[input]\ndis_satellite_entity_id = \"1:2\"\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.dis_satellite_entity_id") != std::string::npos);
+}
+
+OLV_TEST(config_dis_satellite_entity_id_wrong_type) {
+  TempConfig tc("[input]\ndis_satellite_entity_id = 5\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.dis_satellite_entity_id") != std::string::npos);
+  OLV_CHECK(err.find("string") != std::string::npos);
+}
+
+OLV_TEST(config_dis_mode_requires_satellite_entity_id) {
+  // mode=dis with no satellite id is a hard error at the parseArgs level.
+  TempConfig tc("[input]\nmode = \"dis\"\n");
+  const std::string path = tc.pathStr();
+  auto argv = makeArgv({"--config", path.c_str()});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  OLV_CHECK(!cfg.has_value());
+  OLV_CHECK(err.find("dis_satellite_entity_id") != std::string::npos);
+}
+
+OLV_TEST(config_dis_mode_with_satellite_id_ok) {
+  TempConfig tc("[input]\nmode = \"dis\"\ndis_satellite_entity_id = \"1:1:1\"\n");
+  const std::string path = tc.pathStr();
+  auto argv = makeArgv({"--config", path.c_str()});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  OLV_CHECK(cfg.has_value());
+  OLV_CHECK_EQ(cfg->input_mode, InputMode::kDis);
+  OLV_CHECK_EQ(cfg->dis.satellite_entity_id, std::string("1:1:1"));
+}
+
+OLV_TEST(config_dis_unknown_key_rejected) {
+  TempConfig tc("[input]\ndis_bogus = 1\n");
+  Config cfg;
+  std::string err;
+  OLV_CHECK(!applyConfigFile(tc.pathStr(), cfg, err));
+  OLV_CHECK(err.find("input.dis_bogus") != std::string::npos);
 }

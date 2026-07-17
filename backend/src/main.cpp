@@ -1,5 +1,6 @@
 // main.cpp — olv_backend entry point. Wires config -> logger -> StateStore ->
-// UdpReceiver (thread 1) -> WsServer (thread 2, the main io_context).
+// InputSource (thread 1, chosen by cfg.input_mode) -> WsServer (thread 2,
+// the main io_context).
 
 #include <utility>  // std::exchange, needed before Boost.Asio on Boost 1.74
 
@@ -8,12 +9,13 @@
 #include <chrono>
 #include <cstdio>
 #include <exception>
+#include <memory>
 #include <string>
 
 #include "config.hpp"
+#include "input_source.hpp"
 #include "logger.hpp"
 #include "state_store.hpp"
-#include "udp_receiver.hpp"
 #include "ws_server.hpp"
 
 int main(int argc, char** argv) {
@@ -45,22 +47,28 @@ int main(int argc, char** argv) {
                         " expiry_seconds=" + std::to_string(cfg.expiry_seconds) +
                         " broadcast_hz=" + hz + " log_file=" + cfg.log_file;
   if (!cfg.config_file.empty()) startup += " config_file=" + cfg.config_file;
+  // Only logged when non-default so a default run's log output stays
+  // byte-identical to pre-InputSource builds (FEATURE_INPUT_SOURCES.md §7
+  // Phase 1 regression guard).
+  if (cfg.input_mode != olv::InputMode::kOlv1) {
+    startup += std::string(" input_mode=") + olv::toString(cfg.input_mode);
+  }
   log.info("main", startup);
 
   try {
     olv::StateStore store(std::chrono::seconds{cfg.expiry_seconds});
-    olv::UdpReceiver udp(cfg.udp_bind, cfg.udp_port, store, log);
+    std::unique_ptr<olv::InputSource> input = olv::makeInputSource(cfg, store, log);
     boost::asio::io_context ioc;
     olv::WsServer ws(ioc, cfg.ws_bind, cfg.ws_port, store, log, cfg.broadcast_hz);
 
-    udp.start();
+    input->start();
     ws.start();
 
     boost::asio::signal_set signals(ioc, SIGINT, SIGTERM);
     signals.async_wait([&](const boost::system::error_code&, int) {
       log.info("main", "shutting down");
       ws.stop();
-      udp.stop();
+      input->stop();
       ioc.stop();
     });
 

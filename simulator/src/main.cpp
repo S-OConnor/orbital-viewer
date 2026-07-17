@@ -27,8 +27,10 @@
 #include <vector>
 
 #include "csv_reader.hpp"
+#include "dis_builder.hpp"
 #include "frame_builder.hpp"
 #include "generator.hpp"
+#include "olv/dis_entity_id.hpp"
 #include "olv/protocol.hpp"
 #include "sim_config.hpp"
 
@@ -130,10 +132,23 @@ int main(int argc, char** argv) {
   std::uint64_t bytes_sent = 0;
   std::uint64_t send_errors = 0;
   const std::size_t chunk = static_cast<std::size_t>(cfg.chunk);
+  const bool dis_mode = cfg.protocol == SimConfig::Protocol::kDis;
+
+  // DIS emit settings (--protocol dis): validated by parseSimArgs, so the
+  // entity-id parse here cannot fail.
+  olv::sim::DisEmitConfig dis_cfg;
+  dis_cfg.exercise_id = static_cast<std::uint8_t>(cfg.dis_exercise_id);
+  dis_cfg.site = static_cast<std::uint16_t>(cfg.dis_site);
+  olv::parseDisEntityId(cfg.dis_satellite_entity_id, dis_cfg.sat_site, dis_cfg.sat_application,
+                        dis_cfg.sat_entity);
 
   auto sendFrame = [&](const Frame& frame) {
+    // DIS timestamps must be monotone across the whole run (including CSV
+    // --loop wraps, where frame.t resets), so they derive from the cycle
+    // counter, not from frame.t.
     const std::vector<std::vector<std::uint8_t>> packets =
-        olv::sim::buildPackets(frame, chunk, seq);
+        dis_mode ? olv::sim::buildDisPdus(frame, dis_cfg, static_cast<double>(cycles) / cfg.rate_hz)
+                 : olv::sim::buildPackets(frame, chunk, seq);
     for (const std::vector<std::uint8_t>& pkt : packets) {
       boost::system::error_code send_ec;
       socket.send(boost::asio::buffer(pkt), 0, send_ec);

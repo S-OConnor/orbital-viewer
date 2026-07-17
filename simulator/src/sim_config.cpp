@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 
+#include "olv/dis_entity_id.hpp"
 #include "olv/protocol.hpp"
 #include "olv/toml.hpp"
 
@@ -35,6 +36,16 @@ bool validDurationSeconds(std::int64_t v) {
 }
 bool validSeed(std::int64_t v) {
   return v >= 0 && v <= 4294967295LL;
+}
+bool validExerciseId(std::int64_t v) {
+  return v >= 0 && v <= 255;
+}
+bool validSite(std::int64_t v) {
+  return v >= 0 && v <= 65535;
+}
+bool validSatelliteEntityId(const std::string& s) {
+  std::uint16_t site = 0, app = 0, entity = 0;
+  return olv::parseDisEntityId(s, site, app, entity);
 }
 
 bool parseInt64(const std::string& s, std::int64_t& out) {
@@ -85,6 +96,7 @@ bool applySimConfigFile(const std::string& path, SimConfig& cfg, std::string& er
     if (v->type != Value::Type::kInteger) return fail("target.port", "must be an integer");
     if (!validPort(v->i)) return fail("target.port", "must be in [1,65535]");
     cfg.dest_port = static_cast<std::uint16_t>(v->i);
+    cfg.dest_port_set = true;
   }
   if (auto v = take("source.mode")) {
     if (v->type != Value::Type::kString) return fail("source.mode", "must be a string");
@@ -137,6 +149,34 @@ bool applySimConfigFile(const std::string& path, SimConfig& cfg, std::string& er
     if (v->type != Value::Type::kInteger) return fail("send.chunk", "must be an integer");
     if (!validChunk(v->i)) return fail("send.chunk", "must be in [1,128]");
     cfg.chunk = static_cast<int>(v->i);
+  }
+  if (auto v = take("send.protocol")) {
+    if (v->type != Value::Type::kString) return fail("send.protocol", "must be a string");
+    if (v->s == "olv1") {
+      cfg.protocol = SimConfig::Protocol::kOlv1;
+    } else if (v->s == "dis") {
+      cfg.protocol = SimConfig::Protocol::kDis;
+    } else {
+      return fail("send.protocol", "must be \"olv1\" or \"dis\" (got \"" + v->s + "\")");
+    }
+  }
+  if (auto v = take("send.dis_exercise_id")) {
+    if (v->type != Value::Type::kInteger) return fail("send.dis_exercise_id", "must be an integer");
+    if (!validExerciseId(v->i)) return fail("send.dis_exercise_id", "must be in [0,255]");
+    cfg.dis_exercise_id = static_cast<int>(v->i);
+  }
+  if (auto v = take("send.dis_site")) {
+    if (v->type != Value::Type::kInteger) return fail("send.dis_site", "must be an integer");
+    if (!validSite(v->i)) return fail("send.dis_site", "must be in [0,65535]");
+    cfg.dis_site = static_cast<int>(v->i);
+  }
+  if (auto v = take("send.dis_satellite_entity_id")) {
+    if (v->type != Value::Type::kString)
+      return fail("send.dis_satellite_entity_id", "must be a string");
+    if (!validSatelliteEntityId(v->s))
+      return fail("send.dis_satellite_entity_id",
+                  "must be \"site:application:entity\" (three decimal uint16s)");
+    cfg.dis_satellite_entity_id = v->s;
   }
   if (auto v = take("output.quiet")) {
     if (v->type != Value::Type::kBoolean) return fail("output.quiet", "must be a boolean");
@@ -233,6 +273,14 @@ std::optional<SimConfig> parseSimArgs(int argc, const char* const* argv, std::st
         return std::nullopt;
       }
       cfg.dest_port = static_cast<std::uint16_t>(n);
+      cfg.dest_port_set = true;
+    } else if (a == "--protocol") {
+      auto v = value();
+      if (!v || (*v != "olv1" && *v != "dis")) {
+        error = "--protocol: expected \"olv1\" or \"dis\"";
+        return std::nullopt;
+      }
+      cfg.protocol = (*v == "dis") ? SimConfig::Protocol::kDis : SimConfig::Protocol::kOlv1;
     } else if (a == "--rate") {
       auto v = value();
       double r = 0.0;
@@ -291,32 +339,43 @@ std::optional<SimConfig> parseSimArgs(int argc, const char* const* argv, std::st
     return std::nullopt;
   }
 
+  // DIS default port: when nothing set a port explicitly, follow the
+  // backend's distinct DIS default (47001 vs OLV1's 47000) so
+  // `olv_sim --protocol dis` reaches `olv_backend --input-mode dis` with
+  // both sides on defaults.
+  if (cfg.protocol == SimConfig::Protocol::kDis && !cfg.dest_port_set) {
+    cfg.dest_port = 47001;
+  }
+
   return cfg;
 }
 
 void printSimUsage(const char* argv0) {
-  std::cout << "Usage: " << argv0 << " (--csv PATH | --generate N) [options]\n"
-            << "       " << argv0 << " --config PATH [options]\n"
-            << "\n"
-            << "Data source (exactly one required, from flags and/or config file):\n"
-            << "  --csv PATH        Replay a mission CSV file.\n"
-            << "  --generate N      Synthesize N tracked objects (deterministic), N in [1,5000].\n"
-            << "\n"
-            << "Options:\n"
-            << "  --config PATH     Load a TOML config file (see config/simulator.toml).\n"
-            << "  --dest IP         Destination address (default 127.0.0.1).\n"
-            << "  --port N          Destination UDP port (default 47000).\n"
-            << "  --rate HZ         Cycles/second, 0 < HZ <= 50 (default 1.0).\n"
-            << "  --loop            CSV mode only: wrap to the first frame and keep going.\n"
-            << "  --chunk N         Max objects per packet, [1,128] (default 128).\n"
-            << "  --duration S      Generate mode only: run S seconds; 0 = forever (default 120).\n"
-            << "  --seed N          Generate mode only: RNG seed (default 1).\n"
-            << "  --quiet           Suppress per-cycle status lines.\n"
-            << "  --help            Print this message and exit.\n"
-            << "\n"
-            << "Precedence (lowest to highest): built-in defaults < --config TOML file <\n"
-            << "explicit command-line flags (applied regardless of argument order). See\n"
-            << "config/simulator.toml for a commented example config file.\n";
+  std::cout
+      << "Usage: " << argv0 << " (--csv PATH | --generate N) [options]\n"
+      << "       " << argv0 << " --config PATH [options]\n"
+      << "\n"
+      << "Data source (exactly one required, from flags and/or config file):\n"
+      << "  --csv PATH        Replay a mission CSV file.\n"
+      << "  --generate N      Synthesize N tracked objects (deterministic), N in [1,5000].\n"
+      << "\n"
+      << "Options:\n"
+      << "  --config PATH     Load a TOML config file (see config/simulator.toml).\n"
+      << "  --dest IP         Destination address (default 127.0.0.1).\n"
+      << "  --port N          Destination UDP port (default 47000; 47001 with --protocol dis).\n"
+      << "  --rate HZ         Cycles/second, 0 < HZ <= 50 (default 1.0).\n"
+      << "  --loop            CSV mode only: wrap to the first frame and keep going.\n"
+      << "  --chunk N         Max objects per packet, [1,128] (default 128; olv1 only).\n"
+      << "  --protocol P      Wire protocol: \"olv1\" (default) or \"dis\" (IEEE 1278.1\n"
+      << "                    Entity State PDUs; dis_* settings come from the config file).\n"
+      << "  --duration S      Generate mode only: run S seconds; 0 = forever (default 120).\n"
+      << "  --seed N          Generate mode only: RNG seed (default 1).\n"
+      << "  --quiet           Suppress per-cycle status lines.\n"
+      << "  --help            Print this message and exit.\n"
+      << "\n"
+      << "Precedence (lowest to highest): built-in defaults < --config TOML file <\n"
+      << "explicit command-line flags (applied regardless of argument order). See\n"
+      << "config/simulator.toml for a commented example config file.\n";
 }
 
 }  // namespace olv::sim

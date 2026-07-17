@@ -22,6 +22,7 @@ namespace {
 constexpr const char* kPortRangeDesc = "1-65535";
 constexpr const char* kExpiryRangeDesc = "1-3600";
 constexpr const char* kHzRangeDesc = ">0 and <=60";
+constexpr const char* kExerciseRangeDesc = "0-255";
 
 bool validPort(long long v) {
   return v >= 1 && v <= 65535;
@@ -31,6 +32,9 @@ bool validExpiry(long long v) {
 }
 bool validHz(double v) {
   return v > 0.0 && v <= 60.0;
+}
+bool validExerciseId(long long v) {
+  return v >= 0 && v <= 255;
 }
 
 std::string formatDouble(double v) {
@@ -136,6 +140,42 @@ bool applyConfigFile(const std::string& path, Config& cfg, std::string& error) {
     } else if (key == "logging.stderr") {
       if (value.type != toml::Value::Type::kBoolean) return typeError(key, "boolean", value);
       cfg.log_stderr = value.b;
+    } else if (key == "input.mode") {
+      if (value.type != toml::Value::Type::kString) return typeError(key, "string", value);
+      if (!parseInputMode(value.s, cfg.input_mode)) {
+        error = path + ": " + key + " invalid input mode (olv1|dis): " + value.s;
+        return false;
+      }
+    } else if (key == "input.dis_bind") {
+      if (value.type != toml::Value::Type::kString) return typeError(key, "string", value);
+      cfg.dis.bind_address = value.s;
+    } else if (key == "input.dis_port") {
+      if (value.type != toml::Value::Type::kInteger) return typeError(key, "integer", value);
+      if (!validPort(value.i)) {
+        error = path + ": " + key + " out of range (" + kPortRangeDesc +
+                "): " + std::to_string(value.i);
+        return false;
+      }
+      cfg.dis.port = static_cast<std::uint16_t>(value.i);
+    } else if (key == "input.dis_exercise_id") {
+      if (value.type != toml::Value::Type::kInteger) return typeError(key, "integer", value);
+      if (!validExerciseId(value.i)) {
+        error = path + ": " + key + " out of range (" + kExerciseRangeDesc +
+                "): " + std::to_string(value.i);
+        return false;
+      }
+      cfg.dis.exercise_id = static_cast<std::uint8_t>(value.i);
+    } else if (key == "input.dis_satellite_entity_id") {
+      if (value.type != toml::Value::Type::kString) return typeError(key, "string", value);
+      std::uint16_t s = 0, a = 0, e = 0;
+      if (!parseDisEntityId(value.s, s, a, e)) {
+        error = path + ": " + key +
+                " invalid satellite entity id (expected site:application:entity, three decimal "
+                "0-65535 values): " +
+                value.s;
+        return false;
+      }
+      cfg.dis.satellite_entity_id = value.s;
     } else {
       error = path + ": unknown key \"" + key + "\"";
       return false;
@@ -222,6 +262,11 @@ std::optional<Config> parseArgs(int argc, const char* const* argv, std::string& 
         error = "invalid log level (debug|info|warn|error): " + std::string(value);
         return std::nullopt;
       }
+    } else if (arg == "--input-mode") {
+      if (!parseInputMode(value, cfg.input_mode)) {
+        error = "invalid input mode (olv1|dis): " + std::string(value);
+        return std::nullopt;
+      }
     } else if (arg == "--expiry-seconds") {
       long v = 0;
       if (!parseLong(value, v)) {
@@ -252,6 +297,14 @@ std::optional<Config> parseArgs(int argc, const char* const* argv, std::string& 
     }
   }
 
+  // Cross-field invariant: DIS mode needs a satellite entity id (it has no
+  // sensible default — §6). Checked on the fully merged config so it holds
+  // regardless of whether mode and the id came from the file, flags, or a mix.
+  if (cfg.input_mode == InputMode::kDis && cfg.dis.satellite_entity_id.empty()) {
+    error = "input mode 'dis' requires [input] dis_satellite_entity_id (site:application:entity)";
+    return std::nullopt;
+  }
+
   return cfg;
 }
 
@@ -267,6 +320,7 @@ void printUsage(const char* argv0) {
       "  --log-level LVL     debug|info|warn|error (default info)\n"
       "  --expiry-seconds N  object expiry window seconds, 1-3600 (default 15)\n"
       "  --broadcast-hz X    WebSocket broadcast rate, >0 and <=60 (default 1)\n"
+      "  --input-mode MODE   intake strategy: olv1|dis (default olv1)\n"
       "  --quiet             do not mirror log lines to stderr\n"
       "  --help              show this help and exit\n"
       "Precedence: defaults < --config file < flags (regardless of where\n"

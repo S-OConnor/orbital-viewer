@@ -15,6 +15,13 @@
 //   [logging]  file = "olv_backend.log"
 //              level = "info"         # debug|info|warn|error
 //              stderr = true          # mirror >= info to stderr
+//   [input]    mode = "olv1"          # olv1|dis (intake strategy at boot)
+//              dis_bind = "0.0.0.0"   # consulted only when mode = "dis":
+//              dis_port = 47001       #   DIS Entity State PDU listen socket
+//              dis_exercise_id = 1    #   optional 0-255 filter; omit = accept all
+//              dis_satellite_entity_id = "1:1:1"  # site:app:entity; required when dis
+// (The first-party TOML subset has single-level tables only, so the DIS group
+// is flat dis_* keys under [input] rather than a nested [input.dis] table.)
 
 #pragma once
 
@@ -22,6 +29,8 @@
 #include <optional>
 #include <string>
 
+#include "dis_input_source.hpp"
+#include "input_source.hpp"
 #include "logger.hpp"
 
 namespace olv {
@@ -37,6 +46,8 @@ struct Config {
   int expiry_seconds = 15;    // object table expiry window
   double broadcast_hz = 1.0;  // WebSocket broadcast rate
   bool log_stderr = true;     // mirror >= info to stderr
+  InputMode input_mode = InputMode::kOlv1;  // intake strategy selected at boot
+  DisInputConfig dis;         // consulted only when input_mode == kDis
   bool show_help = false;
 };
 
@@ -49,7 +60,7 @@ bool applyConfigFile(const std::string& path, Config& cfg, std::string& error);
 // Supported flags (all optional):
 //   --config PATH  --udp-bind ADDR --udp-port N --ws-bind ADDR --ws-port N
 //   --log-file PATH --log-level LVL --expiry-seconds N --broadcast-hz X
-//   --quiet (no stderr mirror) --help
+//   --input-mode olv1|dis --quiet (no stderr mirror) --help
 // The config file (if given) is applied first, then the remaining flags on
 // top, regardless of their position relative to --config. Returns nullopt
 // and fills `error` on invalid input. When --help was given, returns a

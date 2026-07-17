@@ -13,8 +13,13 @@
 #   - The build stage needs `apt-get` access to a Debian package repository
 #     (base OS packages + libboost-dev). In an air-gapped environment, point
 #     apt at a local/mirrored repository (e.g. via /etc/apt/sources.list or an
-#     apt-cacher-ng mirror) before running `podman build`; no other network
-#     access is required — CMake fetches nothing.
+#     apt-cacher-ng mirror) before running `podman build`.
+#   - The build stage also fetches the pinned open-dis-cpp v1.2.0 source
+#     tarball (sha256-verified; see scripts/install_open_dis.sh) and compiles
+#     it into /usr/local — the library is NOT vendored in this repository. In
+#     an air-gapped environment, mirror that tarball internally and pass
+#     `--build-arg OLV_OPEN_DIS_URL=<mirror-url>`; the pinned sha256 is still
+#     enforced. CMake itself fetches nothing.
 #   - The base image (docker.io/library/debian:bookworm-slim) must be
 #     pre-pulled or mirrored into a local registry ahead of time.
 #   - No component here reaches the network at runtime.
@@ -30,8 +35,17 @@ RUN apt-get update && \
         cmake \
         make \
         libboost-dev \
+        curl \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
+
+# open-dis-cpp (third-party, BSD-2-Clause, pinned v1.2.0): built from the
+# upstream release straight into /usr/local. Runs before COPY . . so the
+# layer (including the download) is cached across ordinary source changes.
+ARG OLV_OPEN_DIS_URL=
+COPY scripts/install_open_dis.sh /tmp/install_open_dis.sh
+RUN OLV_OPEN_DIS_URL="${OLV_OPEN_DIS_URL}" /tmp/install_open_dis.sh --prefix /usr/local && \
+    rm /tmp/install_open_dis.sh
 
 WORKDIR /src
 COPY . .

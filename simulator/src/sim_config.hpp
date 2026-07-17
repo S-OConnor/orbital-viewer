@@ -16,7 +16,11 @@
 //             duration_seconds = 120       # generate mode: 0 = forever
 //             seed = 1                     # generate mode
 //   [send]    rate_hz = 1.0                # (0, 50]
-//             chunk = 128                  # objects/packet, [1, 128]
+//             chunk = 128                  # objects/packet, [1, 128], olv1 only
+//             protocol = "olv1"            # "olv1" | "dis"
+//             dis_exercise_id = 1          # dis: PDU header exerciseID, [0, 255]
+//             dis_site = 1                 # dis: EntityID site for objects
+//             dis_satellite_entity_id = "1:1:1"  # dis: satellite EntityID
 //   [output]  quiet = false
 
 #pragma once
@@ -29,6 +33,7 @@ namespace olv::sim {
 
 struct SimConfig {
   enum class Mode { kUnset, kCsv, kGenerate };
+  enum class Protocol { kOlv1, kDis };
 
   std::string config_file;  // --config PATH; empty = no file
   Mode mode = Mode::kUnset;
@@ -38,9 +43,17 @@ struct SimConfig {
   int duration_seconds = 120;  // generate mode; 0 = run forever
   std::uint32_t seed = 1;
   std::string dest_host = "127.0.0.1";
+  // Default 47000 (olv1). When protocol = "dis" and neither the file nor
+  // --port set a port, parseSimArgs switches this to 47001, matching the
+  // backend's distinct DIS default so both modes' defaults line up end-to-end.
   std::uint16_t dest_port = 47000;
+  bool dest_port_set = false;  // true once the file or --port set dest_port
   double rate_hz = 1.0;
-  int chunk = 128;
+  int chunk = 128;  // olv1 only; DIS is one entity per PDU/datagram
+  Protocol protocol = Protocol::kOlv1;
+  int dis_exercise_id = 1;                        // dis: [0, 255]
+  int dis_site = 1;                               // dis: [0, 65535]
+  std::string dis_satellite_entity_id = "1:1:1";  // dis: "site:application:entity"
   bool quiet = false;
   bool show_help = false;
 };
@@ -52,14 +65,15 @@ struct SimConfig {
 bool applySimConfigFile(const std::string& path, SimConfig& cfg, std::string& error);
 
 // Supported flags: --config PATH, --csv PATH, --generate N, --dest IP,
-// --port N, --rate HZ, --loop, --chunk N, --duration S, --seed N, --quiet,
-// --help. The config file (if given) is applied first, then the remaining
-// flags on top, regardless of position. --csv and --generate each force the
-// mode and are mutually exclusive ON THE COMMAND LINE; either overrides a
-// mode set by the file. After merging, a source mode MUST be set (csv mode
-// additionally requires a csv_path; generate mode requires generate_count in
-// [1,5000]) or an error is returned. Returns nullopt + `error` on invalid
-// input; --help returns a config with show_help=true.
+// --port N, --rate HZ, --loop, --chunk N, --duration S, --seed N,
+// --protocol olv1|dis, --quiet, --help. There are no --dis-* flags (matching
+// the backend's --input-mode-only precedent): the dis_* settings come from
+// the config file or their defaults. The config file (if given) is applied first, then the
+// remaining flags on top, regardless of position. --csv and --generate each force the mode and are
+// mutually exclusive ON THE COMMAND LINE; either overrides a mode set by the file. After merging, a
+// source mode MUST be set (csv mode additionally requires a csv_path; generate mode requires
+// generate_count in [1,5000]) or an error is returned. Returns nullopt + `error` on invalid input;
+// --help returns a config with show_help=true.
 std::optional<SimConfig> parseSimArgs(int argc, const char* const* argv, std::string& error);
 
 void printSimUsage(const char* argv0);
