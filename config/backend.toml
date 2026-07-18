@@ -35,7 +35,7 @@ expiry_seconds = 15
 [input]
 # Intake strategy selected at boot. "olv1" = the first-party OLV1 UDP binary
 # protocol (docs/PROTOCOL_UDP.md). "dis" = IEEE 1278.1 DIS Entity State PDUs
-# (docs/FEATURE_INPUT_SOURCES.md).
+# (docs/PROTOCOL_DIS.md).
 mode = "olv1"
 
 # The dis_* keys below are consulted only when mode = "dis"; they are still

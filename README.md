@@ -22,7 +22,7 @@ targets localhost/LAN use with no runtime internet access.
 - Optional time-accurate celestial background: the ~180 brightest stars, the
   Moon (with an illuminated-fraction readout), and the five naked-eye planets,
   all positioned from the state message's `serverTime` and drawn in both view
-  modes (see [docs/FEATURE_SKY.md](docs/FEATURE_SKY.md)).
+  modes (see [docs/features/FEATURE_SKY.md](docs/features/FEATURE_SKY.md)).
 - Per-object trails, 0–60 s configurable, age-faded.
 - Optional on-screen labels (nearest objects + satellite + current selection;
   capped for readability).
@@ -33,10 +33,16 @@ targets localhost/LAN use with no runtime internet access.
   orbit camera, and a satellite point-of-view mode — a 170° equidistant-fisheye
   nadir view rendered from the primary satellite, wide enough to show the
   space around Earth's limb (see
-  [docs/FEATURE_SATVIEW.md](docs/FEATURE_SATVIEW.md)).
+  [docs/features/FEATURE_SATVIEW.md](docs/features/FEATURE_SATVIEW.md)).
 - Settings menu (persisted to `localStorage`): trails on/off + duration,
   labels on/off, sky (stars/Moon/planets) on/off, per-category visibility
   toggles, view mode, and WebSocket host/port with a reconnect button.
+- Boot-selectable backend input source: the first-party OLV1 UDP protocol
+  (default), or IEEE 1278.1 DIS Entity State PDUs
+  (`olv_backend --input-mode dis`); the simulator can emit either
+  (`olv_sim --protocol dis`). See
+  [docs/PROTOCOL_DIS.md](docs/PROTOCOL_DIS.md) and
+  [docs/features/FEATURE_INPUT_SOURCES.md](docs/features/FEATURE_INPUT_SOURCES.md).
 
 ## Architecture
 
@@ -49,6 +55,8 @@ the backend's two threads, and no TLS/auth by design (see §11).
 - Full design, threading model, and the Mermaid architecture diagram:
   [`docs/PLAN.md`](docs/PLAN.md)
 - Binary UDP wire format (normative): [`docs/PROTOCOL_UDP.md`](docs/PROTOCOL_UDP.md)
+- DIS input mode — accepted PDU subset & mapping (normative):
+  [`docs/PROTOCOL_DIS.md`](docs/PROTOCOL_DIS.md)
 - WebSocket JSON format (normative): [`docs/PROTOCOL_WS.md`](docs/PROTOCOL_WS.md)
 
 ## Prerequisites
@@ -66,6 +74,22 @@ sudo dnf install gcc-c++ cmake boost-devel
 # Immutable/Atomic distros (Bazzite, Silverblue, etc.) via Homebrew/Linuxbrew
 brew install cmake boost
 ```
+
+Plus the one compiled third-party dependency, `open-dis-cpp` (IEEE 1278.1
+DIS support; BSD-2-Clause, pinned v1.2.0). It is not vendored — build and
+install it once into a prefix:
+
+```sh
+scripts/install_open_dis.sh --prefix ~/.local     # or /usr/local, /opt/open-dis
+```
+
+The script downloads the pinned, sha256-verified release tarball (air-gapped
+hosts: point `OLV_OPEN_DIS_TARBALL` at a mirrored copy, or `OLV_OPEN_DIS_URL`
+at an internal mirror), compiles the self-contained `dis6` tree, and installs
+headers + `libopendis6.a`. CMake finds it automatically in `/usr/local`,
+`/opt/open-dis`, or `~/.local`; other prefixes need
+`-DOLV_OPEN_DIS_PREFIX=DIR` at configure time. (The container build does this
+step itself — nothing to install for `scripts/run_all.sh`.)
 
 Optional, for the full development workflow:
 
@@ -94,6 +118,12 @@ node --test "frontend/tests/*.test.mjs"
 ./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
 ./build/simulator/olv_sim --generate 5000 --rate 1        # load test
 scripts/serve_frontend.sh 8000                            # then open http://localhost:8000/frontend/
+
+# Or ingest IEEE 1278.1 DIS Entity State PDUs instead of OLV1 (see
+# docs/PROTOCOL_DIS.md; first uncomment dis_satellite_entity_id in the config —
+# DIS mode requires it and it has no CLI flag)
+./build/backend/olv_backend --config config/backend.toml --input-mode dis
+./build/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
 
 # Lint / format / SBOM
 cmake --build build --target format lint
@@ -148,10 +178,12 @@ offending key and line so typos can't hide. The frontend is deliberately
 falls back to defaults, so a bad deployment file never bricks the page.
 
 Configurable items include the backend's UDP/WebSocket bind addresses and
-ports, broadcast rate, object-expiry window and logging; the simulator's
-target host/port, data source (CSV path or synthetic generation), rate,
-chunking and seed; and the frontend's default WebSocket host/port and
-display toggles (trails, labels, trail duration).
+ports, broadcast rate, object-expiry window, logging, and input mode
+(`[input] mode = "olv1" | "dis"` plus the DIS-only `dis_*` keys — see
+`docs/PROTOCOL_DIS.md` §8); the simulator's target host/port, data source
+(CSV path or synthetic generation), rate, chunking, seed, and wire protocol
+(`[send] protocol = "olv1" | "dis"`); and the frontend's default WebSocket
+host/port and display toggles (trails, labels, trail duration).
 
 The files are parsed by a small first-party TOML *subset* parser
 (`backend/include/olv/toml.hpp`, mirrored in `frontend/js/toml.js`): comments,
@@ -169,6 +201,7 @@ see the header comment in `toml.hpp` for the exact grammar.
 |---|---|
 | `--csv PATH` | Replay a mission CSV file (see column format below) instead of synthesizing data. |
 | `--generate N` | Synthesize N tracked objects (up to `kMaxTrackedObjects` = 5000) plus a primary satellite instead of reading a CSV — used for load testing. |
+| `--protocol P` | Wire protocol: `olv1` (default, docs/PROTOCOL_UDP.md) or `dis` (IEEE 1278.1 Entity State PDUs, docs/PROTOCOL_DIS.md §9). With `dis` and no explicit `--port`, the destination port defaults to `47001` to match the backend's DIS default; the DIS-only settings (`dis_exercise_id`, `dis_site`, `dis_satellite_entity_id`) come from `config/simulator.toml`. |
 | `--dest HOST` | UDP destination host/IP (e.g. `127.0.0.1`, or a container/compose service name such as `backend`). |
 | `--port N` | UDP destination port (matches the backend's `--udp-port`; protocol default `47000`). |
 | `--rate N` | Update rate in Hz (protocol target/default: 1 Hz). |
@@ -294,7 +327,8 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
   object-type rejection, and wraparound-safe sequence-staleness rejection.
   Any failure drops the whole packet (never partially applied), increments a
   counter, and is logged — see `docs/PROTOCOL_UDP.md` §4 for the full,
-  normative ordered list.
+  normative ordered list (and `docs/PROTOCOL_DIS.md` §7 for the equivalent
+  ordered list in DIS input mode).
 
 ## Troubleshooting
 
@@ -306,6 +340,11 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
   (`cmake/common.cmake` also auto-adds `$HOMEBREW_PREFIX` and
   `/home/linuxbrew/.linuxbrew` to `CMAKE_PREFIX_PATH` when present, so this
   is usually only needed with a nonstandard Homebrew install location.)
+- **`open-dis-cpp not found` at configure time:** the DIS library hasn't
+  been installed yet (see §Prerequisites) — run
+  `scripts/install_open_dis.sh --prefix ~/.local` (or another prefix), then
+  reconfigure; a prefix outside the default search list needs
+  `-DOLV_OPEN_DIS_PREFIX=DIR`.
 - **UDP packets from the simulator never arrive / blocked by `firewalld`:**
   ```sh
   sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp   # runtime only
@@ -335,7 +374,7 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 ├── simulator/                           # olv_sim (C++20)
 ├── frontend/                            # plain HTML/CSS/JS, no frameworks
 ├── tests/support/olv_test.hpp           # shared minimal C++ test framework
-├── docs/                                # PLAN, PROTOCOL_UDP, PROTOCOL_WS, SBOM
+├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/
 ├── scripts/                             # integration test, sbom gen, run/serve helpers
 └── containers/                          # Containerfiles + compose.yaml
 ```

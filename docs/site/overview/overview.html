@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Overview — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="overview/overview" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Project Overview</h1>
+<p class="lead">This page gives decision makers and newcomers everything needed to
+understand what Orbital LOS Viewer is, why it exists, and how it is put together —
+without reading a line of code.</p>
+
+<h2 id="executive-summary">Executive summary</h2>
+<p>Orbital LOS Viewer (OLV) is a small, self-contained software stack that
+visualizes a <strong>primary satellite in Earth orbit plus up to 5,000 tracked
+objects</strong> — orbital debris, stars, comets, other satellites, and hot ground
+objects — live in a web browser. All positions are Earth-Centered Earth-Fixed
+(ECEF) meters, updated at a nominal 1&nbsp;Hz.</p>
+<p>The stack has three components connected by two well-specified protocols:</p>
+<ol>
+  <li><strong><code>olv_sim</code></strong> — a C++ command-line simulator that replays CSV
+  mission files or synthesizes deterministic load-test data, emitting binary UDP.</li>
+  <li><strong><code>olv_backend</code></strong> — a C++20 server (Boost.Asio/Beast) that
+  validates and aggregates incoming track data and rebroadcasts a world-state
+  snapshot as WebSocket JSON.</li>
+  <li><strong>Frontend</strong> — a dependency-free, framework-free HTML/CSS/JS
+  application with a custom minimal WebGL renderer. No build step, no npm packages.</li>
+</ol>
+<p>Version: <strong>0.1.0</strong> (CMake project version), with additive frontend
+feature versions v0.3 (satellite POV view) and v0.4 (celestial sky), plus a
+completed boot-selectable input-source feature adding IEEE&nbsp;1278.1 DIS ingest.
+License: <strong>MIT</strong>. Deployment scope: <strong>trusted localhost/LAN only</strong> —
+no TLS or authentication, by explicit design.</p>
+
+<h2 id="problem">The problem being solved</h2>
+<p>Situational-awareness tooling for orbital scenarios typically demands heavyweight
+stacks: GIS frameworks, message brokers, GPU engines, or cloud services. OLV solves
+a deliberately scoped version of the problem: <em>display a live, validated track
+picture from a local data source in any modern browser, on an air-gapped or
+LAN-only network, with a codebase small enough for one team to audit
+end-to-end.</em></p>
+<p>Key constraints the design answers:</p>
+<ul>
+  <li><strong>No runtime internet access.</strong> All assets (including NASA Earth
+  imagery and the star catalog) are vendored or first-party; nothing is fetched at
+  runtime.</li>
+  <li><strong>Untrusted input tolerance.</strong> Every inbound datagram passes an
+  ordered validation pipeline (structure, CRC-32, NaN/Inf, coordinate range,
+  sequence staleness) before touching shared state.</li>
+  <li><strong>Minimal third-party surface.</strong> Runtime dependencies are exactly
+  two: header-only Boost (Asio/Beast) and the pinned, checksum-verified
+  <code>open-dis-cpp</code> v1.2.0 static library. The frontend ships zero
+  third-party code.</li>
+  <li><strong>Interoperability.</strong> Besides its first-party OLV1 protocol, the
+  backend can ingest standard IEEE&nbsp;1278.1 DIS Entity State PDUs, so it can sit
+  on an existing simulation exercise network.</li>
+</ul>
+
+<h2 id="audience">Intended audience</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Audience</th><th>How they use OLV</th><th>Where to start</th></tr></thead>
+  <tbody>
+    <tr><td>Simulation / training engineers</td>
+        <td>Feed DIS or OLV1 track data into a browser display on an exercise LAN.</td>
+        <td><a href="../user-guide/installation.html">Installation</a>,
+            <a href="../reference/protocol-dis.html">DIS protocol</a></td></tr>
+    <tr><td>Demonstrators &amp; educators</td>
+        <td>Run the containerized stack with the bundled example mission in one command.</td>
+        <td><a href="../user-guide/getting-started.html">Getting Started</a></td></tr>
+    <tr><td>Developers</td>
+        <td>Extend protocols, renderers, panels, or input sources; use the repo as a
+            reference for a lean C++/WebGL pipeline.</td>
+        <td><a href="../developer-guide/repo-structure.html">Developer Guide</a></td></tr>
+    <tr><td>Technical evaluators</td>
+        <td>Assess licensing, dependencies, and security posture (SBOMs are generated
+            in CycloneDX 1.5).</td>
+        <td><a href="repository.html#third-party">Third-party &amp; SBOM</a></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="capabilities">Major capabilities</h2>
+<ul>
+  <li><strong>Live 3D display</strong> of one primary satellite and up to 5,000 tracked
+  objects at 1&nbsp;Hz, in ECEF meters, on a textured, sun-lit Earth globe
+  (vendored NASA Blue Marble day / Black Marble night imagery).</li>
+  <li><strong>Five object categories</strong>, each with distinct color, size, and icon:
+  debris, star, comet, satellite, ground-hot.</li>
+  <li><strong>Two view modes</strong>: a free orbit camera, and a satellite point-of-view
+  mode — a 170&deg; equidistant-fisheye nadir view from the primary satellite,
+  toggled with <kbd>V</kbd>.</li>
+  <li><strong>Time-accurate celestial background</strong> (optional): ~230 brightest
+  stars, the Moon with illuminated-fraction readout, and the five naked-eye
+  planets — all positioned from the state message's <code>serverTime</code>.</li>
+  <li><strong>Per-object trails</strong> (0–60&nbsp;s, age-faded), on-screen labels
+  (capped for readability), filterable object list, satellite telemetry,
+  connection status, and live UDP/WebSocket statistics panels.</li>
+  <li><strong>Two ingest protocols</strong>, chosen at backend boot: first-party OLV1
+  binary UDP (default) or IEEE&nbsp;1278.1 DIS Entity State PDUs.</li>
+  <li><strong>Simulation tooling</strong>: CSV mission replay (with looping) and
+  deterministic seeded synthetic generation for load testing, over either wire
+  protocol.</li>
+  <li><strong>Operations tooling</strong>: one-command containerized bring-up
+  (<code>scripts/run_all.sh</code>), plain-text audit log, CycloneDX SBOM generation,
+  end-to-end integration test.</li>
+</ul>
+
+<h2 id="architecture">High-level architecture</h2>
+<p>Data flows one way, through three processes:</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 860 200" role="img" aria-label="Pipeline: simulator to backend over UDP, backend to browser over WebSocket">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <rect class="d-box" x="10" y="55" width="200" height="90" rx="10"/>
+  <text class="d-text" x="110" y="85" text-anchor="middle" font-weight="600">olv_sim</text>
+  <text class="d-small" x="110" y="105" text-anchor="middle">C++ CLI simulator</text>
+  <text class="d-small" x="110" y="122" text-anchor="middle">CSV replay or --generate N</text>
+
+  <rect class="d-box" x="330" y="55" width="200" height="90" rx="10"/>
+  <text class="d-text" x="430" y="85" text-anchor="middle" font-weight="600">olv_backend</text>
+  <text class="d-small" x="430" y="105" text-anchor="middle">C++20 · Boost.Asio/Beast</text>
+  <text class="d-small" x="430" y="122" text-anchor="middle">validate · aggregate · broadcast</text>
+
+  <rect class="d-box" x="650" y="55" width="200" height="90" rx="10"/>
+  <text class="d-text" x="750" y="85" text-anchor="middle" font-weight="600">Browser frontend</text>
+  <text class="d-small" x="750" y="105" text-anchor="middle">plain HTML/CSS/JS</text>
+  <text class="d-small" x="750" y="122" text-anchor="middle">custom WebGL renderer</text>
+
+  <line class="d-line" x1="210" y1="100" x2="328" y2="100" marker-end="url(#arr)"/>
+  <text class="d-mono" x="269" y="88" text-anchor="middle">UDP binary</text>
+  <text class="d-mono" x="269" y="120" text-anchor="middle">OLV1 or DIS</text>
+
+  <line class="d-line" x1="530" y1="100" x2="648" y2="100" marker-end="url(#arr)"/>
+  <text class="d-mono" x="589" y="88" text-anchor="middle">WebSocket</text>
+  <text class="d-mono" x="589" y="120" text-anchor="middle">JSON @ 1 Hz</text>
+</svg>
+<figcaption>The three-process pipeline. Each arrow is a normatively specified protocol
+(<a href="../reference/protocol-udp.html">OLV1</a> / <a href="../reference/protocol-dis.html">DIS</a>,
+and <a href="../reference/protocol-ws.html">WebSocket JSON</a>).</figcaption>
+</figure>
+
+<p>Inside the backend there are exactly <strong>two threads</strong>: an input thread
+(the boot-selected <em>input source</em> — OLV1 or DIS) that decodes and validates
+datagrams, and the main thread that runs the WebSocket server and a 1&nbsp;Hz
+broadcast timer. They share exactly one mutex-protected
+<code>StateStore</code>. See <a href="architecture.html">Architecture at a Glance</a>
+and the <a href="../developer-guide/architecture.html">detailed architecture</a>.</p>
+
+<h2 id="design-philosophy">Design philosophy</h2>
+<ul>
+  <li><strong>Simplicity over maximum performance.</strong> 5,000 objects at 1&nbsp;Hz fits
+  comfortably in one <code>GL_POINTS</code> draw call and a ~450&nbsp;KB JSON message on
+  a LAN; the design refuses complexity that this workload doesn't need.</li>
+  <li><strong>Frozen interfaces first.</strong> Wire protocols and module APIs were
+  specified and frozen (in <code>docs/PLAN.md</code> and the protocol docs) before
+  implementation; the checked-in specs are normative.</li>
+  <li><strong>Dependency minimalism.</strong> A first-party TOML-subset parser, a
+  first-party ~120-line C++ test framework, and a first-party WebGL renderer exist
+  precisely so the repo doesn't need toml++, Catch2, or Three.js.</li>
+  <li><strong>Fail fast, fail loud.</strong> Backend/simulator configuration is strict —
+  an unknown key or out-of-range value aborts startup with the offending key and
+  line. The frontend is deliberately lenient — a bad <code>config.toml</code> warns
+  and falls back to defaults so a deployment mistake never bricks the page.</li>
+  <li><strong>Determinism.</strong> Synthetic data generation is seeded (never
+  time-based), the example CSV is regenerable from a fixed seed, and SBOM serial
+  numbers are content-derived — runs and artifacts are reproducible.</li>
+</ul>
+
+<h2 id="workflows">Typical workflows</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Workflow</th><th>Commands</th></tr></thead>
+  <tbody>
+    <tr><td>Demo the whole stack in containers</td>
+        <td><code>scripts/run_all.sh</code> &rarr; open <code>http://localhost:8000/</code></td></tr>
+    <tr><td>Native three-process run</td>
+        <td><code>olv_backend</code> + <code>olv_sim --csv ... --loop</code> + <code>scripts/serve_frontend.sh</code></td></tr>
+    <tr><td>Load test at capacity</td>
+        <td><code>olv_sim --generate 5000 --rate 1</code></td></tr>
+    <tr><td>Ingest a DIS exercise feed</td>
+        <td><code>olv_backend --config config/backend.toml --input-mode dis</code></td></tr>
+    <tr><td>Replay a custom mission</td>
+        <td>Author a CSV (see <a href="../reference/file-formats.html#csv">CSV format</a>) &rarr; <code>olv_sim --csv mission.csv --loop</code></td></tr>
+    <tr><td>Verify the build</td>
+        <td><code>ctest --test-dir build</code> + <code>node --test "frontend/tests/*.test.mjs"</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="deployment">Deployment overview</h2>
+<p>Two supported deployment shapes, both localhost/LAN-scoped:</p>
+<ul>
+  <li><strong>Containers</strong> (recommended for demos/ops): three OCI images —
+  backend and simulator built from <code>containers/Containerfile.cpp</code>
+  (Debian bookworm-slim, non-root UID 10001), frontend from
+  <code>containers/Containerfile.frontend</code> (nginx:alpine-slim) — orchestrated by
+  <code>containers/compose.yaml</code> under Podman or Docker. Host ports are remappable
+  via <code>OLV_HTTP_PORT</code>/<code>OLV_WS_PORT</code>/<code>OLV_UDP_PORT</code>.</li>
+  <li><strong>Native binaries</strong>: build with CMake, run the two executables
+  directly, and serve <code>frontend/</code> with any static file server (it must be
+  HTTP, not <code>file://</code>, because the frontend uses ES modules).</li>
+</ul>
+<p>Default ports: <strong>47000/udp</strong> (OLV1 ingest), <strong>47001/udp</strong>
+(DIS ingest), <strong>8765/tcp</strong> (WebSocket), <strong>8000/tcp</strong> (HTTP,
+dev server/containers). See <a href="../user-guide/best-practices.html">Best
+Practices</a> for firewall and deployment guidance.</p>
+
+<h2 id="use-cases">Example use cases</h2>
+<ul>
+  <li><strong>Exercise wall display:</strong> point <code>olv_backend --input-mode dis</code>
+  at an existing DIS exercise network; entities appear as categorized tracks with
+  the configured entity promoted to the primary-satellite telemetry panel.</li>
+  <li><strong>Mission playback:</strong> convert recorded ephemerides to the mission CSV
+  format and replay them at 1&nbsp;Hz (or faster) for after-action review.</li>
+  <li><strong>Pipeline soak testing:</strong> <code>olv_sim --generate 5000 --duration 0</code>
+  drives the full validation/broadcast path at maximum object count indefinitely,
+  with live drop/rate counters in the UI.</li>
+  <li><strong>Teaching aid:</strong> the sky feature places the real Moon, planets, and
+  bright stars for any timestamp; the sat-view mode shows what a nadir-pointing
+  LEO camera would geometrically see.</li>
+</ul>
+
+<h2 id="interfaces">Major interfaces</h2>
+<ul>
+  <li><a href="../reference/protocol-udp.html"><strong>OLV1 UDP protocol</strong></a> — little-endian
+  binary datagrams, 56-byte header + 48-byte object records + CRC-32; max 6,204 bytes.</li>
+  <li><a href="../reference/protocol-dis.html"><strong>DIS input</strong></a> — IEEE&nbsp;1278.1
+  Entity State PDUs (versions 5–7, big-endian), mapped deterministically into the
+  same internal model.</li>
+  <li><a href="../reference/protocol-ws.html"><strong>WebSocket JSON</strong></a> — a
+  <code>hello</code> message on connect, then <code>state</code> snapshots at 1&nbsp;Hz
+  with row-array object encoding.</li>
+  <li><a href="../reference/file-formats.html"><strong>File formats</strong></a> — mission CSV,
+  the strict TOML subset used by all three configs, and the backend log line format.</li>
+</ul>
+
+<h2 id="glossary-faq">Terminology &amp; FAQ</h2>
+<p>A full <a href="../reference/glossary.html">glossary and acronym list</a> lives in the
+Reference section; common questions are answered in the <a href="faq.html">FAQ</a>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

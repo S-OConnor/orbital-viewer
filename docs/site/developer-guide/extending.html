@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extending the Software — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/extending" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Extending the Software</h1>
+<p class="lead">Recipes for the most likely extensions, each following the project's
+established patterns. General rule: <strong>update the normative doc, the code, and
+the tests together</strong> — the docs in <code>docs/</code> are specs, not
+descriptions.</p>
+
+<h2 id="new-input-source">Add a new input source (e.g. another protocol)</h2>
+<p>This is the designed-for extension — DIS was added exactly this way
+(<code>docs/features/FEATURE_INPUT_SOURCES.md</code> is the worked example). The
+condensed steps are below; the complete procedure — spec template, code skeleton,
+dependency plumbing, test matrix, and ship checklist — has its own page:
+<a href="new-interface.html"><strong>Adding a New Interface</strong></a>.</p>
+<ol>
+  <li>Create <code>backend/src/foo_input_source.{hpp,cpp}</code> implementing
+  <code>InputSource</code>: own a private <code>io_context</code>, socket, and thread;
+  make <code>start()</code>/<code>stop()</code> idempotent.</li>
+  <li>Feed the store <em>only</em> through <code>countReceived</code>,
+  <code>countDropped</code>, <code>apply</code> — this keeps the Stats panel truthful
+  with zero frontend changes. Synthesize a strictly-increasing sequence if your
+  protocol lacks one (see <code>DisInputSource</code>).</li>
+  <li>Expose a <code>processDatagram()</code>-style public test seam and write unit
+  tests that drive it with crafted byte arrays.</li>
+  <li>Extend <code>InputMode</code>, <code>parseInputMode</code>, and
+  <code>makeInputSource()</code> in <code>input_source.{hpp,cpp}</code>; add config keys
+  under <code>[input]</code> in <code>config.cpp</code> (flat <code>foo_*</code> keys —
+  the TOML subset has one table level) with strict type/range checks; add
+  cross-field invariants on the merged config.</li>
+  <li>Write <code>docs/PROTOCOL_FOO.md</code> (accepted subset, mapping, validation
+  order, stats identity) and add the commented keys to
+  <code>config/backend.toml</code>.</li>
+  <li>Verify the default path is untouched: the pre-existing tests must pass
+  unmodified, and a default-config run should produce a byte-identical startup log
+  line (the DIS feature held itself to exactly this bar).</li>
+</ol>
+
+<h2 id="new-object-type">Add a new object category</h2>
+<p>Touches every layer, in this order:</p>
+<ol>
+  <li><strong>Protocol:</strong> new <code>ObjectType</code> value in
+  <code>protocol.hpp</code> + <code>isKnownObjectType</code>/<code>toString</code>;
+  bump nothing (new enum values under version 1 are additive for senders, but old
+  receivers will reject them — coordinate deployment). Update
+  <code>docs/PROTOCOL_UDP.md</code> §3.</li>
+  <li><strong>Backend:</strong> nothing else — the backend treats types opaquely.</li>
+  <li><strong>Simulator:</strong> <code>csv_reader.cpp</code> name mapping,
+  <code>generator.cpp</code> mix (if desired), <code>dis_builder.cpp</code> EntityType
+  mapping.</li>
+  <li><strong>Frontend:</strong> <code>net.js</code> category map;
+  <code>renderer.js</code> <code>CAT</code> table (color/size/icon — add an atlas cell in
+  <code>atlas.js</code> and extend its frozen-constant test);
+  <code>ui.js</code>/<code>index.html</code> filter chip + settings checkbox;
+  <code>settings.js</code> <code>DEFAULTS.categories</code>.</li>
+  <li><strong>Tests:</strong> protocol round-trip, CSV parse, net.js category test,
+  atlas determinism test.</li>
+</ol>
+
+<h2 id="new-config">Add a configuration option</h2>
+<ul>
+  <li><strong>Backend/simulator:</strong> add the field to the config struct with its
+  default; add the key to <code>applyConfigFile</code> (type + range check, keep the
+  strict unknown-key rejection working); if it needs a CLI flag, add it to
+  <code>parseArgs</code> pass 2 and <code>printUsage</code>; document it in the sample
+  TOML and add cases to <code>test_config.cpp</code> (valid, wrong type, out of range,
+  precedence).</li>
+  <li><strong>Frontend user setting:</strong> add to <code>DEFAULTS</code> in
+  <code>settings.js</code> with validation/clamping in <code>applyPatch</code>; add the
+  control to the Settings modal in <code>index.html</code> + sync/wiring in
+  <code>ui.js</code>; consume it in <code>main.js</code>'s
+  <code>applyRendererSettings</code> (and <code>renderer.normalizeSettings</code>).
+  Existing localStorage blobs lack the key — your default must apply cleanly (no
+  migration needed if you follow the coerce-with-default pattern).</li>
+  <li><strong>Frontend site default:</strong> additionally add the key to
+  <code>SITE_CONFIG_SCHEMA</code> in <code>site_config.js</code> and the commented
+  example in <code>frontend/config.toml</code>. Remember the lenient contract: invalid
+  values warn and fall back, never throw.</li>
+</ul>
+
+<h2 id="new-panel">Add a UI panel or renderer feature</h2>
+<ol>
+  <li>Markup in <code>index.html</code>; wiring in <code>ui.js</code> (follow the
+  existing panel pattern: an <code>updateData(model)</code> hook + a 1&nbsp;s
+  <code>tick()</code> for relative times).</li>
+  <li>Renderer features: keep new draw code inside <code>renderer.js</code>; reuse the
+  four existing GLSL programs where possible (the sky feature added stars, Moon,
+  and planets with <em>zero</em> shader changes — atlas cells + existing point/marker
+  paths). If you must touch a vertex shader, remember every VS carries the fisheye
+  branch — test in both view modes.</li>
+  <li>Anything mathematical goes in a new pure module (like <code>sky.js</code>) so it
+  gets Node tests without a browser.</li>
+  <li>Write a frozen-interface feature doc in <code>docs/features/</code> first if the
+  change is nontrivial — that's the repo's established process (SATVIEW and SKY are
+  the templates).</li>
+</ol>
+
+<h2 id="new-command">Add a CLI tool</h2>
+<p>Follow <code>backend/tools/ws_probe.cpp</code>: a single file under
+<code>tools/</code>, linking only what it needs (the probe deliberately links Boost
+only, not <code>olv_core</code>, to stay an independent check). Add an
+<code>add_executable</code> in the subproject CMakeLists and, if test-support, wire it
+into <code>scripts/integration_test.sh</code> via a target-file argument in the
+top-level CTest registration.</p>
+
+<h2 id="unit-tests">Add unit tests</h2>
+<ul>
+  <li><strong>C++:</strong> new <code>test_foo.cpp</code> in
+  <code>backend/tests/</code> or <code>simulator/tests/</code>; include
+  <code>olv_test.hpp</code>, write <code>OLV_TEST(...)</code> cases, and add the file to
+  the test binary's source list in CMakeLists. Do <em>not</em> add
+  <code>OLV_TEST_MAIN()</code> — exactly one file per binary has it
+  (<code>test_protocol.cpp</code> / the sim equivalent).</li>
+  <li><strong>Frontend:</strong> new <code>frontend/tests/foo.test.mjs</code> using
+  <code>node:test</code>; import the pure module directly. Keep modules import-safe
+  (no DOM access at import time) or they can't be tested this way — that constraint
+  is why <code>main.js</code>/<code>ui.js</code> isolate all DOM handling.</li>
+</ul>
+
+<h2 id="integration-tests">Extend the integration test</h2>
+<p><code>scripts/integration_test.sh</code> is plain bash: ephemeral random ports, a
+temp dir, a cleanup trap. To add a scenario (e.g. DIS end-to-end), follow its
+existing steps — start backend with a written config, drive with
+<code>olv_sim</code>, capture with <code>olv_ws_probe</code>, assert on frames and the
+backend log. Keep the whole run under the 120&nbsp;s CTest timeout and preserve the
+"random ports, no fixed state" discipline so parallel CI runs don't collide.</p>
+
+<h2 id="protocol-evolution">Evolve the OLV1 protocol itself</h2>
+<ul>
+  <li>Additive message types: allowed under version 1 — receivers reject unknown
+  <code>msg_type</code>, so ship receiver support first.</li>
+  <li>Any layout change: bump <code>kVersion</code>; old receivers will reject new
+  packets (<code>kBadVersion</code>) — coordinate rollout.</li>
+  <li>Always change <code>protocol.hpp</code>, <code>docs/PROTOCOL_UDP.md</code>,
+  <code>test_protocol.cpp</code>/<code>test_validation.cpp</code>, and the frontend
+  parser together; the integration test's frame-revalidation step is your
+  cross-component safety net.</li>
+</ul>
+
+<div class="note"><strong>The invariants to never break:</strong> (1) drops are
+all-or-nothing — never partially apply a packet; (2) every drop is counted and
+logged with a reason; (3) thread 1 writes state only via the three StateStore
+methods; (4) the GLSL fisheye block and <code>sat_camera.js</code> stay in lockstep;
+(5) backend/simulator config stays strict, frontend config stays lenient.</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

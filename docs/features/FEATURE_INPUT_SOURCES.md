@@ -1,7 +1,9 @@
 # Feature: Boot-Selectable Input Sources — OLV1 (current) & open-dis (new)
 
-Status: **Phases 0-3 complete (2026-07-17)** — §3 decisions below are answered
-and folded into §4-§6, which are the **frozen contract** for Phase 1+.
+Status: **Complete — all phases (0-5) done (2026-07-17)** — §3 decisions below
+are answered and folded into §4-§6, which are the **frozen contract** for
+Phase 1+. The normative operator-facing spec for the DIS input mode is
+`docs/PROTOCOL_DIS.md` (Phase 4).
 The repo-facing bookkeeping those decisions imply (THIRD_PARTY.md row, SBOM
 component) landed with the Phase 2 code.
 
@@ -490,17 +492,48 @@ Delivered:
   means "same positions/velocities/types for every mapped category", not a
   byte-identical WS stream.
 
-**Phase 4 — Docs, SBOM, and repo bookkeeping.**
-- New `docs/PROTOCOL_DIS.md`: supported PDU subset, the EntityType→OLV type
-  mapping table, satellite-entity rule, staleness rule (mirrors the structure
-  of `docs/PROTOCOL_UDP.md`).
-- Update `docs/PLAN.md`'s architecture section to describe intake as
-  pluggable (`InputSource`) rather than naming `UdpReceiver` exclusively.
-- Update `THIRD_PARTY.md` (new `open-dis-cpp` row: role, license, vendoring
-  note) and regenerate `sbom/backend.cdx.json` via `scripts/gen_sbom.py`
-  (extend the script to emit the new component).
-- Update README prerequisites/config examples; update
-  `config/backend.toml`'s committed example with the new `[input]` section.
+**Phase 4 — Docs, SBOM, and repo bookkeeping.** ✅ Done (2026-07-17).
+- New `docs/PROTOCOL_DIS.md` (normative): supported PDU subset, the
+  EntityType→OLV type mapping table, satellite-entity rule, id fold,
+  staleness rule, the ordered validation/accounting table (incl. the
+  `received >= accepted + malformed + stale` identity in DIS mode), config
+  reference, and sender notes — mirroring `docs/PROTOCOL_UDP.md`'s structure.
+- `docs/PLAN.md` updated: overview + architecture diagram + threading section
+  describe intake as the boot-selected pluggable `InputSource`
+  (`Olv1InputSource` default / `DisInputSource`), and the repo tree reflects
+  `input_source.*` / `olv1_input_source.*` / `dis_input_source.*`,
+  `dis_builder.*`, `docs/PROTOCOL_DIS.md`, and `docs/features/`.
+- `THIRD_PARTY.md` row and the `scripts/gen_sbom.py` component had already
+  landed with Phase 2 (per §3.1) and the de-vendoring change; verified
+  current (`gen_sbom.py` regeneration produces zero diff) and repointed doc
+  references at `docs/PROTOCOL_DIS.md` / `docs/features/`.
+- README updated: DIS feature bullet, normative-doc link, `open-dis-cpp`
+  install step under Prerequisites (`scripts/install_open_dis.sh`, air-gap
+  vars, `-DOLV_OPEN_DIS_PREFIX`), DIS run examples, config-section and
+  simulator `--protocol` documentation, a configure-time troubleshooting
+  entry, and fixed stale `docs/FEATURE_*.md` links → `docs/features/`.
+  `config/backend.toml`'s committed `[input]` example had already landed
+  with Phase 2 (verified current).
+
+**Phase 5 — Verification.** ✅ Done (2026-07-17). All green:
+- Full `cmake --build build` + `ctest --test-dir build`: 3/3 passed
+  (integration, backend_unit, sim_unit).
+- `node --test "frontend/tests/*.test.mjs"`: 166/166 passed (frontend
+  untouched, no cross-contamination).
+- DIS smoke test: `olv_sim --generate 20 --protocol dis` →
+  `olv_backend --input-mode dis` → `olv_ws_probe`: satellite recognized
+  (FNV-folded id), all 20 objects present with mapped types,
+  `received == accepted` (168/168, zero drops), and every captured frame
+  re-parsed successfully by the real frontend parser
+  (`frontend/tests/validate_message.mjs`) — the frontend renders DIS-fed
+  state exactly as OLV1-fed state.
+- Explicit default-path regression check: the pre-feature backend (commit
+  `13911dc`, before any input-sources work) and the current backend were fed
+  a byte-identical recorded OLV1 stream (same fixed source port) with **no**
+  `--input-mode`/`[input]` config. Debug-level logs are byte-identical after
+  stripping timestamps and the WS probe's ephemeral client port (both
+  environmental), and the resulting state (satellite, all 50 object rows,
+  received/accepted/dropped/objectCount) is identical.
 
 **Phase 5 — Verification.**
 - Full `cmake --build build && ctest --test-dir build`.

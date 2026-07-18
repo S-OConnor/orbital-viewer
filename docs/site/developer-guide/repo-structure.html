@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repository Structure — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/repo-structure" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Repository Structure</h1>
+<p class="lead">Every major directory and the load-bearing files inside it. Written
+for an engineer's first day on the project.</p>
+
+<h2 id="top-level">Top level</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>CMakeLists.txt</code></td><td>Aggregating build: includes
+        <code>cmake/common.cmake</code>, adds <code>backend/</code> and
+        <code>simulator/</code>, registers the <code>integration</code> CTest (UNIX only),
+        defines <code>format</code>/<code>format-check</code>/<code>lint</code> targets.</td></tr>
+    <tr><td><code>cmake/common.cmake</code></td><td>Shared toolchain setup: C++20, Release
+        default, <code>OLV_BUILD_TESTS</code>/<code>OLV_WERROR</code> options, Homebrew
+        prefix auto-detection, Boost &ge; 1.74 (CONFIG mode), and the INTERFACE targets
+        <code>olv_proto</code>, <code>olv_test_support</code>, <code>olv_warnings</code>.</td></tr>
+    <tr><td><code>cmake/open_dis_cpp.cmake</code></td><td>Locates the installed
+        open-dis-cpp prefix and exposes the imported static target
+        <code>open_dis_cpp</code> (headers marked SYSTEM).</td></tr>
+    <tr><td><code>LICENSE</code> / <code>THIRD_PARTY.md</code></td><td>MIT license; complete
+        dependency &amp; license table, asset provenance, air-gap notes.</td></tr>
+    <tr><td><code>.clang-format</code> / <code>.clang-tidy</code> / <code>.editorconfig</code></td>
+        <td>Style configuration — see <a href="coding-standards.html">Coding Standards</a>.</td></tr>
+    <tr><td><code>.dockerignore</code></td><td>Keeps host artifacts (notably
+        <code>build*/</code> with its stale CMakeCache) out of container build contexts.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="backend">backend/</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>include/olv/protocol.hpp</code></td><td><strong>Single source of truth for
+        the OLV1 wire format</strong>: constants, <code>ObjectRecord</code>/<code>StatePacket</code>,
+        <code>DecodeError</code>, CRC-32, <code>encode()</code>/<code>decode()</code>. Header-only;
+        shared by backend, simulator, and tests via the <code>olv_proto</code> target.</td></tr>
+    <tr><td><code>include/olv/toml.hpp</code></td><td>First-party TOML-subset parser
+        (header-only), mirrored by <code>frontend/js/toml.js</code>.</td></tr>
+    <tr><td><code>include/olv/dis_entity_id.hpp</code></td><td><code>parseDisEntityId()</code> —
+        the one shared parser for <code>"site:app:entity"</code> strings, used by backend
+        config, DIS input source, and the simulator so the format can't diverge.</td></tr>
+    <tr><td><code>src/main.cpp</code></td><td><code>olv_backend</code> entry point: config &rarr;
+        logger &rarr; StateStore &rarr; InputSource &rarr; WsServer wiring, signal handling.</td></tr>
+    <tr><td><code>src/config.{hpp,cpp}</code></td><td>CLI + TOML parsing with shared range
+        validation; two-pass argument handling (<code>--config</code> first, then flags).</td></tr>
+    <tr><td><code>src/logger.{hpp,cpp}</code></td><td>Thread-safe file logger, ISO-8601
+        timestamps, level filtering, optional stderr mirroring.</td></tr>
+    <tr><td><code>src/state_store.{hpp,cpp}</code></td><td>The single mutex-protected shared
+        state: object table, satellite, counters, snapshot-with-pruning.</td></tr>
+    <tr><td><code>src/input_source.{hpp,cpp}</code></td><td><code>InputSource</code> strategy
+        interface + <code>makeInputSource()</code> boot-time factory.</td></tr>
+    <tr><td><code>src/olv1_input_source.{hpp,cpp}</code></td><td>Default input thread: async
+        UDP receive &rarr; <code>proto::decode</code> &rarr; <code>StateStore::apply</code>.</td></tr>
+    <tr><td><code>src/dis_input_source.{hpp,cpp}</code></td><td>DIS input thread: manual
+        header parse, open-dis-cpp unmarshal, EntityID fold, satellite carry-forward,
+        per-entity timestamp staleness.</td></tr>
+    <tr><td><code>src/json_writer.{hpp,cpp}</code></td><td>Snapshot &rarr; WS JSON text
+        (<code>hello</code> + <code>state</code>), row-array encoding, fixed rounding.</td></tr>
+    <tr><td><code>src/ws_server.{hpp,cpp}</code></td><td>Beast acceptor, sessions, 1&nbsp;Hz
+        broadcast timer, per-session 5-frame outbox.</td></tr>
+    <tr><td><code>tools/ws_probe.cpp</code></td><td><code>olv_ws_probe</code>: standalone WS
+        capture client for the integration test (links only Boost).</td></tr>
+    <tr><td><code>tests/</code></td><td>Seven unit-test files compiled into
+        <code>olv_backend_tests</code> — see <a href="testing.html">Testing</a>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="simulator">simulator/</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>src/main.cpp</code></td><td>CLI entry: arg parsing, socket setup
+        (IPv4-preferring hostname resolution), paced send loop, loop/duration handling.</td></tr>
+    <tr><td><code>src/csv_reader.{hpp,cpp}</code></td><td>Strict CSV parser: exact header
+        check, per-field validation with line numbers, name-or-number object types.</td></tr>
+    <tr><td><code>src/frame_builder.{hpp,cpp}</code></td><td>Groups rows into frames by
+        <code>time_s</code>, carries the satellite forward, chunks into
+        &le;128-object <code>StatePacket</code>s with monotonic sequence.</td></tr>
+    <tr><td><code>src/generator.{hpp,cpp}</code></td><td>Deterministic LCG-seeded synthetic
+        world: circular-orbit satellite + mixed object population, analytic velocities.</td></tr>
+    <tr><td><code>src/dis_builder.{hpp,cpp}</code></td><td>Frame &rarr; DIS Entity State PDUs
+        (big-endian, one per entity, satellite first).</td></tr>
+    <tr><td><code>src/sim_config.{hpp,cpp}</code></td><td>CLI + TOML parsing for the
+        simulator; DIS destination-port defaulting.</td></tr>
+    <tr><td><code>data/example_mission.csv</code></td><td>61-frame bundled mission
+        (regenerable via <code>scripts/make_example_csv.py</code>, fixed seed).</td></tr>
+    <tr><td><code>tests/</code></td><td>Four unit-test files &rarr; <code>olv_sim_tests</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="frontend">frontend/</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>index.html</code></td><td>The single page: canvases, panels, modals;
+        loads <code>js/main.js</code> as an ES module.</td></tr>
+    <tr><td><code>config.toml</code></td><td>Optional site defaults (websocket host/port,
+        display toggles) — lenient parsing.</td></tr>
+    <tr><td><code>js/</code></td><td>16 ES modules. DOM-touching: <code>main.js</code>,
+        <code>ui.js</code>. GL-scoped: <code>renderer.js</code> (+ <code>camera.js</code>,
+        <code>sat_camera.js</code>, <code>atlas.js</code>, <code>textures.js</code>,
+        <code>math3.js</code>). Pure logic (Node-testable): <code>net.js</code>,
+        <code>model.js</code>, <code>settings.js</code>, <code>site_config.js</code>,
+        <code>toml.js</code>, <code>sun.js</code>, <code>sky.js</code>,
+        <code>star_catalog.js</code>. See the
+        <a href="source-walkthrough.html#frontend">source walkthrough</a>.</td></tr>
+    <tr><td><code>css/style.css</code></td><td>All app styling.</td></tr>
+    <tr><td><code>assets/</code></td><td>Vendored public-domain NASA Earth textures +
+        provenance README with SHA-256 hashes.</td></tr>
+    <tr><td><code>dev/smoke.html</code></td><td>Standalone renderer eyeball page fed by
+        synthetic data — no backend needed.</td></tr>
+    <tr><td><code>tests/</code></td><td>Eleven <code>node:test</code> suites +
+        <code>validate_message.mjs</code> (the integration test's parser check).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="other">docs/, config/, scripts/, containers/, tests/, sbom/</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>docs/PLAN.md</code></td><td>The plan of record: requirements, frozen
+        interfaces, threading model, work breakdown. Normative for design intent.</td></tr>
+    <tr><td><code>docs/PROTOCOL_UDP.md</code> / <code>PROTOCOL_DIS.md</code> /
+        <code>PROTOCOL_WS.md</code></td><td>Normative wire-format specs (code wins on
+        conflict; the responsible source file is named in each doc).</td></tr>
+    <tr><td><code>docs/features/</code></td><td>Per-feature frozen design specs:
+        FEATURE_INPUT_SOURCES.md, FEATURE_SATVIEW.md (v0.3), FEATURE_SKY.md (v0.4).</td></tr>
+    <tr><td><code>docs/SBOM.md</code></td><td>SBOM strategy and sample output.</td></tr>
+    <tr><td><code>docs/site/</code></td><td>This documentation website.</td></tr>
+    <tr><td><code>config/</code></td><td>Commented example TOML configs matching built-in
+        defaults.</td></tr>
+    <tr><td><code>scripts/</code></td><td><code>run_all.sh</code> (compose wrapper),
+        <code>install_open_dis.sh</code>, <code>integration_test.sh</code>,
+        <code>gen_sbom.py</code>, <code>serve_frontend.sh</code>,
+        <code>make_example_csv.py</code>, <code>cleanup.sh</code>, <code>serve_docs.sh</code>.</td></tr>
+    <tr><td><code>containers/</code></td><td><code>Containerfile.cpp</code> (multi-stage;
+        targets <code>backend</code>, <code>simulator</code>),
+        <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code> (three
+        services, bridge network, port env vars).</td></tr>
+    <tr><td><code>tests/support/olv_test.hpp</code></td><td>The shared ~120-line C++ test
+        framework (registration macros, check macros, runner).</td></tr>
+    <tr><td><code>sbom/</code></td><td>Generated CycloneDX 1.5 SBOMs (committed snapshots;
+        regenerate with <code>gen_sbom.py</code>).</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="ownership">Code-sharing map</h2>
+<figure class="diagram">
+<svg viewBox="0 0 760 240" role="img" aria-label="Shared code: olv_proto headers used by backend, simulator, tests; toml.hpp mirrored in toml.js">
+  <defs>
+    <marker id="arr3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <rect class="d-box" x="280" y="15" width="200" height="70"/>
+  <text class="d-text" x="380" y="42" text-anchor="middle" font-weight="600">backend/include/olv/</text>
+  <text class="d-small" x="380" y="62" text-anchor="middle">protocol.hpp · toml.hpp · dis_entity_id.hpp</text>
+
+  <rect class="d-box" x="40" y="150" width="150" height="55"/>
+  <text class="d-text" x="115" y="182" text-anchor="middle">olv_backend</text>
+  <rect class="d-box" x="240" y="150" width="150" height="55"/>
+  <text class="d-text" x="315" y="182" text-anchor="middle">olv_sim</text>
+  <rect class="d-box" x="440" y="150" width="150" height="55"/>
+  <text class="d-text" x="515" y="175" text-anchor="middle">test binaries</text>
+  <text class="d-small" x="515" y="192" text-anchor="middle">backend + sim</text>
+  <rect class="d-box2" x="620" y="150" width="130" height="55"/>
+  <text class="d-text" x="685" y="175" text-anchor="middle">frontend js/toml.js</text>
+  <text class="d-small" x="685" y="192" text-anchor="middle">mirrored grammar</text>
+
+  <line class="d-line" x1="330" y1="85" x2="130" y2="148" marker-end="url(#arr3)"/>
+  <line class="d-line" x1="370" y1="85" x2="320" y2="148" marker-end="url(#arr3)"/>
+  <line class="d-line" x1="420" y1="85" x2="505" y2="148" marker-end="url(#arr3)"/>
+  <line class="d-line" x1="470" y1="70" x2="670" y2="148" marker-end="url(#arr3)" stroke-dasharray="5 4"/>
+</svg>
+<figcaption>The <code>olv_proto</code> INTERFACE target makes the shared headers available
+everywhere; the frontend's TOML parser is a deliberate JS mirror of the same grammar
+(kept in sync by convention + parallel test suites).</figcaption>
+</figure>
+
+<div class="note"><strong>Build artifacts:</strong> a <code>build/</code> directory may
+exist in a working tree (CMake output). It is disposable, excluded from container
+contexts by <code>.dockerignore</code>, and should never be committed.</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

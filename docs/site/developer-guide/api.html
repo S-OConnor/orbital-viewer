@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>API Documentation — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/api" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>API Documentation</h1>
+<p class="lead">The public programming interfaces: the shared C++ headers, the
+backend's internal seams, and the frontend's module APIs. Wire protocols and file
+formats have their own <a href="../reference/protocol-udp.html">reference pages</a>.</p>
+
+<h2 id="cpp-shared">C++ shared headers (<code>olv_proto</code>)</h2>
+
+<h3 id="protocol">olv/protocol.hpp — namespace <code>olv::proto</code></h3>
+<dl class="api">
+  <dt>constexpr limits</dt>
+  <dd><code>kMagic="OLV1"</code>, <code>kVersion=1</code>, <code>kHeaderSize=56</code>,
+  <code>kRecordSize=48</code>, <code>kCrcSize=4</code>, <code>kMaxObjectsPerPacket=128</code>,
+  <code>kMaxTrackedObjects=5000</code>, <code>kMinPacketSize=60</code>,
+  <code>kMaxPacketSize=6204</code>, <code>kMaxCoordinateMeters=1e13</code>.</dd>
+
+  <dt>enum class ObjectType : uint8_t</dt>
+  <dd><code>kDebris=1, kStar=2, kComet=3, kSatellite=4, kGroundHot=5</code>;
+  helpers <code>isKnownObjectType(v)</code>, <code>toString(ObjectType)</code>.</dd>
+
+  <dt>flags</dt>
+  <dd><code>kFlagHasVelocity=0x01</code>, <code>kFlagHighlight=0x02</code>.</dd>
+
+  <dt>struct ObjectRecord</dt>
+  <dd><code>id</code> (u32), <code>type</code>, <code>flags</code>, <code>confidence</code>
+  (0–100), <code>px/py/pz</code> (double, ECEF m), <code>vx/vy/vz</code> (float, m/s),
+  <code>intensity</code> (float; Kelvin for ground-hot, magnitude for stars);
+  <code>bool hasVelocity() const</code>.</dd>
+
+  <dt>struct StatePacket</dt>
+  <dd><code>sequence</code>, <code>sat_id</code>, <code>sat_px/py/pz</code>,
+  <code>sat_vx/vy/vz</code>, <code>object_total</code>,
+  <code>std::vector&lt;ObjectRecord&gt; objects</code>.</dd>
+
+  <dt>std::vector&lt;uint8_t&gt; encode(const StatePacket&amp;)</dt>
+  <dd>Serializes little-endian with trailing CRC-32; truncates &gt;128 objects,
+  clamps confidence to 100 and <code>object_total</code> to 5000.</dd>
+
+  <dt>DecodeError decode(const uint8_t* data, size_t len, StatePacket&amp; out)</dt>
+  <dd>Stateless validation pipeline; returns <code>kNone</code> and fills
+  <code>out</code> only on full success. Error order:
+  <code>kTooShort, kTooLong, kBadMagic, kBadVersion, kBadMsgType, kTooManyObjects,
+  kBadLength, kBadCrc, kNonFinite, kOutOfRange, kBadObjectType</code>.</dd>
+
+  <dt>uint32_t crc32(const uint8_t*, size_t)</dt>
+  <dd>CRC-32 (IEEE 802.3 reflected, zlib-compatible); compile-time table.</dd>
+</dl>
+
+<h3 id="toml-hpp">olv/toml.hpp — namespace <code>olv::toml</code></h3>
+<dl class="api">
+  <dt>struct Value { Type type; std::string s; int64_t i; double f; bool b; }</dt>
+  <dd><code>Type</code> is <code>kString | kInteger | kFloat | kBoolean</code>;
+  <code>typeName()</code> for error text.</dd>
+  <dt>struct ParseResult</dt>
+  <dd><code>std::map&lt;std::string, Value&gt; values</code> keyed as flattened
+  <code>"table.key"</code>; <code>error</code>, <code>error_line</code> (1-based),
+  <code>ok()</code>.</dd>
+  <dt>parse(std::istream&amp;) / parse(const std::string&amp;) / parseFile(path)</dt>
+  <dd>Grammar: comments, one-level <code>[table]</code>, bare keys, double-quoted
+  strings (escapes <code>\" \\ \n \t \r</code>), bools, ints, floats (no exponent).
+  Everything else rejects with a line-numbered error. See
+  <a href="../reference/file-formats.html#toml">the grammar reference</a>.</dd>
+</dl>
+
+<h3 id="entity-id">olv/dis_entity_id.hpp</h3>
+<dl class="api">
+  <dt>bool parseDisEntityId(std::string_view, uint16_t&amp; site, uint16_t&amp; app, uint16_t&amp; entity)</dt>
+  <dd>Parses <code>"site:application:entity"</code> — exactly three colon-separated
+  decimal uint16s. Shared by backend config, DisInputSource, and the simulator so
+  the format cannot diverge.</dd>
+</dl>
+
+<h2 id="cpp-backend">Backend internal interfaces</h2>
+<dl class="api">
+  <dt>class InputSource { virtual void start(); virtual void stop(); }</dt>
+  <dd>Strategy interface for the intake path; both methods idempotent. Implemented by
+  <code>Olv1InputSource</code> and <code>DisInputSource</code>; each owns a private
+  io_context + thread.</dd>
+
+  <dt>std::unique_ptr&lt;InputSource&gt; makeInputSource(const Config&amp;, StateStore&amp;, Logger&amp;)</dt>
+  <dd>Boot-time factory switching on <code>Config::input_mode</code>
+  (<code>kOlv1</code> default / <code>kDis</code>).</dd>
+
+  <dt>class StateStore</dt>
+  <dd><code>StateStore(std::chrono::seconds expiry)</code>;
+  <code>countReceived(bytes)</code>; <code>countDropped(DropKind)</code>;
+  <code>ApplyResult apply(const StatePacket&amp;, wall_time, mono_time)</code>
+  (sequence gate, satellite replace, object upsert);
+  <code>Snapshot snapshot(mono_time)</code> (prune + full copy, objects sorted by
+  id). All methods take the single internal mutex.</dd>
+
+  <dt>class Logger</dt>
+  <dd><code>open(path, LogLevel, mirror_stderr)</code>;
+  <code>debug/info/warn/error(component, message)</code> — thread-safe, ISO-8601 UTC
+  ms timestamps, flush per line. <code>parseLogLevel(str)</code> is case-insensitive
+  strict.</dd>
+
+  <dt>class WsServer</dt>
+  <dd><code>WsServer(io_context&amp;, bind, port, StateStore&amp;, Logger&amp;, hz)</code>;
+  <code>start()</code>/<code>stop()</code>. Sends <code>hello</code> per connection,
+  broadcasts <code>state</code> at <code>hz</code>; 5-frame per-session outbox.</dd>
+
+  <dt>DisInputSource::processDatagram(const uint8_t*, size_t, endpoint)</dt>
+  <dd>Public test seam: runs the full DIS pipeline without a live socket.</dd>
+
+  <dt>struct Config / parseArgs(argc, argv, error) / applyConfigFile(...)</dt>
+  <dd>Defaults &lt; TOML &lt; flags; strict schema; cross-field DIS invariant.
+  Full key/flag tables: <a href="../reference/configuration.html">Configuration
+  Reference</a> and <a href="../reference/cli.html">CLI Reference</a>.</dd>
+</dl>
+
+<h2 id="js-api">Frontend module APIs</h2>
+<dl class="api">
+  <dt>net.js — parseStateMessage(text) &rarr; {type, ...}</dt>
+  <dd>Throws on any protocol violation (bad JSON, unknown type, row length &ne; 11,
+  unknown category, partial velocity, hello protocolVersion &ne; 1). Categories map
+  1&rarr;debris, 2&rarr;star, 3&rarr;comet, 4&rarr;satellite, 5&rarr;groundHot.</dd>
+
+  <dt>net.js — createConnection({url, onState, onHello, onStatus, wsFactory})</dt>
+  <dd><code>connect()</code>, <code>close()</code>, <code>setEndpoint(url)</code>
+  (immediate reconnect), <code>getStats()</code>. Backoff 1/2/4/8/10&nbsp;s; parse
+  errors counted, connection kept.</dd>
+
+  <dt>model.js — createModel()</dt>
+  <dd><code>applyState(msg)</code>, <code>getSnapshot()</code> (incl.
+  <code>serverTime</code>), <code>getListRows(filter, cap=1000)</code>,
+  <code>getCounts()</code>, <code>getStats()</code>,
+  <code>secondsSinceLastState()</code>.</dd>
+
+  <dt>settings.js — createSettings(storage, siteDefaults)</dt>
+  <dd><code>get()</code> (deep clone), <code>update(patch)</code>
+  (validate/clamp/persist/notify), <code>onChange(cb)</code>,
+  <code>resetDefaults()</code>. Settings:
+  <code>showTrails=false</code>, <code>trailSeconds=30</code> (0–60),
+  <code>showLabels=false</code>, <code>showSky=true</code>,
+  <code>viewMode='orbit'|'sat'</code>, <code>categories{5&times;true}</code>,
+  <code>host=''</code>, <code>port=8765</code> (1–65535). Storage key
+  <code>olv.settings.v1</code>.</dd>
+
+  <dt>site_config.js — loadSiteConfig(fetchFn) &rarr; Promise&lt;object&gt;</dt>
+  <dd>Fetches <code>config.toml</code>; validates against the 5-key schema
+  (<code>websocket.host/port</code>, <code>display.show_trails/trail_seconds/show_labels</code>);
+  any failure resolves <code>{}</code>.</dd>
+
+  <dt>renderer.js — createRenderer(glCanvas, overlayCanvas)</dt>
+  <dd><code>setSnapshot(snap)</code>, <code>setSettings(s)</code>,
+  <code>setSelected(id|null)</code>, <code>frame(nowMs)</code>, <code>resize()</code>,
+  <code>pick(x, y) &rarr; id|null</code> (12&nbsp;px radius, view-mode aware).
+  Throws if WebGL is unavailable.</dd>
+
+  <dt>sat_camera.js</dt>
+  <dd><code>satViewMatrix(posUnits, velUnits) &rarr; Float32Array(16)|null</code>
+  (nadir boresight, velocity screen-up, fallback chain velocity&rarr;north&rarr;+X);
+  <code>fisheyeProjectNdc(view, world, aspect, fovDeg) &rarr; {x,y,depth,theta}|null</code>;
+  constants <code>SAT_FOV_DEG=170</code>, <code>SAT_NEAR=0.05</code>,
+  <code>SAT_FAR=1000</code>. <strong>Lockstep:</strong> must match the renderer's
+  <code>FISHEYE_GLSL</code> byte-for-byte in behavior.</dd>
+
+  <dt>sky.js / sun.js</dt>
+  <dd><code>sunDirectionEcef(dateOrMs)</code>, <code>gmstRad(ms)</code>,
+  <code>raDecToEci(ra, dec)</code>, <code>eciToEcef(v, gmst)</code>,
+  <code>moonDirectionEcef(ms)</code>, <code>moonIlluminatedFraction(ms)</code>,
+  <code>planetsEcef(ms)</code> (<code>PLANET_NAMES</code> = mercury/venus/mars/jupiter/saturn),
+  <code>starsEcefInto(ms, out)</code> (allocation-free), <code>STAR_COUNT</code>,
+  <code>STAR_MAGS</code>. Precision class ~arcmin–0.5&deg;.</dd>
+
+  <dt>toml.js — parseToml(text) &rarr; object</dt>
+  <dd>JS mirror of the C++ grammar; throws with line numbers on rejected constructs.</dd>
+</dl>
+
+<h2 id="test-api">Test framework (tests/support/olv_test.hpp)</h2>
+<dl class="api">
+  <dt>OLV_TEST(name) { ... }</dt>
+  <dd>Declares, registers (static-init), and defines a test case.</dd>
+  <dt>OLV_CHECK(cond) / OLV_CHECK_EQ(a,b) / OLV_CHECK_NEAR(a,b,eps)</dt>
+  <dd>Non-fatal checks; failures print <code>FAIL file:line</code> and mark the case
+  failed but keep executing.</dd>
+  <dt>OLV_TEST_MAIN()</dt>
+  <dd>Defines <code>main()</code> — exactly one per test binary. Runner supports
+  <code>--list</code>; prints <code>[ RUN ]/[ OK ]/[ FAIL ]</code> and a summary;
+  exit 0 iff all pass.</dd>
+</dl>
+<p>Custom enums streamed in checks need an <code>operator&lt;&lt;</code> in their own
+namespace (ADL) — see existing test files for the pattern.</p>
+
+<h2 id="examples">Worked examples</h2>
+<h3 id="ex-encode">Encode and send an OLV1 packet (C++)</h3>
+<pre><code class="language-cpp">#include "olv/protocol.hpp"
+using namespace olv::proto;
+
+StatePacket pkt;
+pkt.sequence = 1;
+pkt.sat_id = 1;
+pkt.sat_px = 6921000.0; pkt.sat_py = 0.0; pkt.sat_pz = 0.0;
+pkt.sat_vx = 0.f; pkt.sat_vy = 7600.f; pkt.sat_vz = 0.f;
+
+ObjectRecord r{};
+r.id = 101; r.type = ObjectType::kDebris;
+r.flags = kFlagHasVelocity; r.confidence = 90;
+r.px = 6921000.0; r.py = 50000.0; r.pz = 0.0;
+r.vx = 0.f; r.vy = 7500.f; r.vz = 100.f;
+pkt.objects.push_back(r);
+pkt.object_total = 1;
+
+std::vector&lt;uint8_t&gt; wire = encode(pkt);   // 56 + 48 + 4 = 108 bytes
+// sendto(sock, wire.data(), wire.size(), ...) toward port 47000
+</code></pre>
+
+<h3 id="ex-parse">Consume the WebSocket feed (JavaScript, outside the app)</h3>
+<pre><code class="language-js">import { parseStateMessage } from './frontend/js/net.js';
+
+const ws = new WebSocket('ws://localhost:8765/');
+ws.onmessage = (ev) =&gt; {
+  const msg = parseStateMessage(ev.data);   // throws on protocol violations
+  if (msg.type === 'state') {
+    console.log(msg.stats.objectCount, 'objects at', msg.serverTime);
+  }
+};
+</code></pre>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

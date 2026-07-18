@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repository &amp; Technology — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="overview/repository" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Repository &amp; Technology</h1>
+<p class="lead">How the repository is organized, what technologies it uses, which
+platforms and toolchains are supported, and the complete third-party picture.</p>
+
+<h2 id="organization">Repository organization</h2>
+<pre><code class="language-sh">.
+├── CMakeLists.txt                  # top-level build; format/lint targets; integration test
+├── cmake/
+│   ├── common.cmake                # toolchain, warnings, Boost, shared INTERFACE targets
+│   └── open_dis_cpp.cmake          # locates the installed open-dis-cpp prefix
+├── backend/                        # olv_backend (C++20, Boost.Asio/Beast)
+│   ├── include/olv/                # shared headers: protocol, TOML parser, DIS entity id
+│   ├── src/                        # config, logger, state store, input sources, WS server
+│   ├── tools/ws_probe.cpp          # WebSocket capture client (integration test)
+│   └── tests/                      # backend unit tests
+├── simulator/                      # olv_sim (C++20)
+│   ├── src/                        # CSV reader, frame builder, generator, DIS builder
+│   ├── data/example_mission.csv    # bundled 61-frame example mission
+│   └── tests/                      # simulator unit tests
+├── frontend/                       # plain HTML/CSS/JS, no frameworks, no build step
+│   ├── index.html · config.toml
+│   ├── js/                         # 16 ES modules (renderer, net, model, ui, sky, ...)
+│   ├── css/ · assets/              # stylesheet; vendored NASA Earth imagery
+│   ├── dev/smoke.html              # standalone renderer smoke-test page
+│   └── tests/                      # node:test suites + validate_message.mjs
+├── tests/support/olv_test.hpp      # first-party ~120-line C++ test framework
+├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
+├── config/                         # commented example backend.toml / simulator.toml
+├── scripts/                        # run_all, install_open_dis, integration test, SBOM, ...
+├── containers/                     # Containerfile.cpp, Containerfile.frontend, compose.yaml
+└── sbom/                           # generated CycloneDX SBOMs (backend + frontend)
+</code></pre>
+<p>Per-directory detail: <a href="../developer-guide/repo-structure.html">Developer
+Guide: Repository Structure</a>.</p>
+
+<h2 id="stack">Technology stack</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Layer</th><th>Technology</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Backend / simulator</td><td>C++20</td>
+        <td>Strict warnings (<code>-Wall -Wextra -Wpedantic</code>), optional
+        <code>-Werror</code> via <code>OLV_WERROR</code>.</td></tr>
+    <tr><td>Async I/O &amp; WebSocket</td><td>Boost.Asio + Boost.Beast (&ge; 1.74)</td>
+        <td>Header-only usage — no compiled Boost libraries are linked.</td></tr>
+    <tr><td>DIS decode/encode</td><td>open-dis-cpp v1.2.0</td>
+        <td>The single compiled third-party dependency; pinned, sha256-verified,
+        installed to a prefix by <code>scripts/install_open_dis.sh</code>.</td></tr>
+    <tr><td>Frontend</td><td>HTML5 / CSS / JavaScript ES modules, WebGL&nbsp;1</td>
+        <td>Zero third-party code; no bundler, transpiler, or package manager.</td></tr>
+    <tr><td>Build</td><td>CMake &ge; 3.20 + CTest</td>
+        <td>Aggregated top level; <code>backend/</code> and <code>simulator/</code> are also
+        independently configurable.</td></tr>
+    <tr><td>Containers</td><td>Podman or Docker (+ compose)</td>
+        <td>Multi-stage Containerfiles, non-root runtime, bridge network.</td></tr>
+    <tr><td>Scripting</td><td>Bash, Python 3 (stdlib only)</td>
+        <td>No pip packages required anywhere.</td></tr>
+    <tr><td>Frontend tests</td><td>Node.js &ge; 18, <code>node:test</code></td>
+        <td>Dev-only; never needed to serve or run the frontend.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="platforms">Supported platforms, compilers, build systems</h2>
+<ul>
+  <li><strong>Operating systems:</strong> Linux is the primary target (Debian/Ubuntu,
+  Fedora, and immutable/atomic distros such as Bazzite/Silverblue via
+  Homebrew/Linuxbrew are documented). The integration test and container scripts
+  are POSIX/UNIX-only (the CMake <code>integration</code> test registers only on UNIX).
+  Any OS with a modern browser can act as a frontend <em>client</em>.</li>
+  <li><strong>Compilers:</strong> GCC &ge; 12 or Clang &ge; 14 (per
+  <code>THIRD_PARTY.md</code>); any C++20-conforming compiler should work.</li>
+  <li><strong>Build system:</strong> CMake &ge; 3.20 with the default generator
+  (Makefiles or Ninja). Build type defaults to Release when unspecified.</li>
+  <li><strong>Browsers:</strong> any modern browser with WebGL&nbsp;1 and ES-module
+  support. The page must be served over HTTP (ES modules are blocked from
+  <code>file://</code>).</li>
+</ul>
+<div class="note"><strong>Assumption:</strong> Windows and macOS native builds are not
+exercised by any script or test in the repository. The code is portable C++/Boost, so
+they may work, but treat them as unsupported until verified.</div>
+
+<h2 id="third-party">Third-party libraries &amp; external dependencies</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Dependency</th><th>Role</th><th>License</th></tr></thead>
+  <tbody>
+    <tr><td>Boost &ge; 1.74 (Asio/Beast/core)</td><td>Runtime (header-only)</td><td>BSL-1.0</td></tr>
+    <tr><td>open-dis-cpp v1.2.0</td><td>Runtime (static lib from installed prefix)</td><td>BSD-2-Clause</td></tr>
+    <tr><td>CMake &ge; 3.20</td><td>Build only</td><td>BSD-3-Clause</td></tr>
+    <tr><td>GCC &ge; 12 / Clang &ge; 14</td><td>Build only</td><td>GPLv3 / Apache-2.0 + LLVM exception</td></tr>
+    <tr><td>Node.js &ge; 18</td><td>Dev/test only</td><td>MIT</td></tr>
+    <tr><td>Python 3 (stdlib)</td><td>Scripts only</td><td>PSF</td></tr>
+    <tr><td>clang-format / clang-tidy</td><td>Optional dev tooling</td><td>Apache-2.0 + LLVM exception</td></tr>
+    <tr><td>cppcheck</td><td>Optional dev tooling</td><td>GPLv3</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Vendored assets</strong> (public domain, NASA Media Usage Guidelines):
+<code>frontend/assets/earth_day.jpg</code> (Blue Marble: Next Generation, Dec 2004) and
+<code>frontend/assets/earth_night.jpg</code> (Black Marble / Suomi NPP VIIRS, 2012).
+SHA-256 hashes are recorded in <code>frontend/assets/README.md</code> and tracked as
+<code>file</code>-type components in the frontend SBOM. The ~230-entry bright-star
+catalog is first-party data hardcoded in <code>frontend/js/star_catalog.js</code>, not
+an asset file.</p>
+<p><strong>SBOMs:</strong> <code>python3 scripts/gen_sbom.py --out sbom/</code> produces
+CycloneDX 1.5 JSON for the backend (records the detected Boost version and the
+open-dis-cpp pin) and the frontend (zero code components + the two image assets with
+runtime-computed SHA-256). Strategy: <code>docs/SBOM.md</code>; full license table:
+<code>THIRD_PARTY.md</code>.</p>
+
+<h2 id="air-gap">Air-gap posture</h2>
+<ul>
+  <li><strong>Runtime:</strong> no component makes any outbound network call. The
+  frontend serves everything from its own origin.</li>
+  <li><strong>Native build:</strong> needs only a system Boost and a C++20 toolchain,
+  plus a one-time <code>open-dis-cpp</code> install — the tarball can be pre-fetched
+  and supplied via <code>OLV_OPEN_DIS_TARBALL</code>, or mirrored via
+  <code>OLV_OPEN_DIS_URL</code>; it is sha256-verified either way.</li>
+  <li><strong>Container build:</strong> additionally needs an apt mirror and pre-pulled
+  base images (<code>debian:bookworm-slim</code>, <code>nginx:alpine-slim</code>); the
+  Containerfile accepts the open-dis mirror URL as a build arg.</li>
+</ul>
+
+<h2 id="ci">CI/CD status</h2>
+<div class="warn"><strong>Gap:</strong> the repository contains <em>no</em> CI/CD
+configuration (no GitHub Actions, GitLab CI, or similar). All quality gates —
+<code>ctest</code>, Node tests, <code>format-check</code>, <code>lint</code>, the
+integration test — exist as local commands and are run manually. Wiring them into a
+pipeline is a natural first infrastructure task; the commands are already
+non-interactive and exit-code clean. See
+<a href="../developer-guide/testing.html">Testing</a> for the full list.</div>
+
+<h2 id="license">Licensing</h2>
+<p>The project is <strong>MIT-licensed</strong> (<code>LICENSE</code>). All runtime
+dependencies are permissively licensed (BSL-1.0, BSD-2-Clause); GPL-licensed tools
+(GCC, cppcheck) are build/dev-time only and impose no obligations on distributed
+artifacts. Dependency-by-dependency detail lives in <code>THIRD_PARTY.md</code>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

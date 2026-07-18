@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>File Formats — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/file-formats" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>File Formats</h1>
+<p class="lead">The mission CSV, the TOML subset, the backend log line format, and
+the generated artifact formats.</p>
+
+<h2 id="csv">Mission CSV (<code>olv_sim --csv</code>)</h2>
+<p>Parsed by <code>simulator/src/csv_reader.cpp</code> — strict, with line-numbered
+errors. Blank lines and <code>#</code> comments are allowed; trailing <code>\r</code>
+is stripped (CRLF-safe). The first non-comment line must be <em>exactly</em>:</p>
+<pre><code class="language-csv">time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,flags
+</code></pre>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Column</th><th>Rule</th></tr></thead>
+  <tbody>
+    <tr><td><code>time_s</code></td><td>finite double, seconds from mission start; rows sharing a
+        value form one update cycle (frames are sent in ascending time order)</td></tr>
+    <tr><td><code>kind</code></td><td><code>sat</code> or <code>obj</code>. The first frame must
+        contain a <code>sat</code> row; later frames without one carry the satellite forward</td></tr>
+    <tr><td><code>id</code></td><td>u32</td></tr>
+    <tr><td><code>type</code></td><td>objects: 1–5 or a name — <code>debris</code>, <code>star</code>,
+        <code>comet</code>, <code>satellite</code>, <code>ground_hot</code>; ignored on <code>sat</code> rows</td></tr>
+    <tr><td><code>px_m, py_m, pz_m</code></td><td>finite doubles, ECEF meters</td></tr>
+    <tr><td><code>vx_mps, vy_mps, vz_mps</code></td><td>all three empty (= no velocity) or all three
+        present; partial triples are an error</td></tr>
+    <tr><td><code>confidence</code></td><td>empty &rarr; 100; else integer 0–100</td></tr>
+    <tr><td><code>intensity</code></td><td>empty &rarr; 0; else finite float (Kelvin for ground_hot,
+        magnitude for star)</td></tr>
+    <tr><td><code>flags</code></td><td>empty &rarr; 0; else only <code>0</code> or <code>2</code>
+        (HIGHLIGHT). The HAS_VELOCITY bit is OR'd in automatically when velocity is present</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Number parsing rejects trailing garbage and non-finite values. Example file:
+<code>simulator/data/example_mission.csv</code> (61 frames, regenerable with
+<code>scripts/make_example_csv.py</code>).</p>
+
+<h2 id="toml">The TOML subset</h2>
+<p>Implemented twice, deliberately identically:
+<code>backend/include/olv/toml.hpp</code> (C++, strict consumers) and
+<code>frontend/js/toml.js</code> (JS, lenient consumer). Grammar:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Supported</th><th>Rejected (line-numbered error)</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>
+        <ul>
+          <li>comments (<code>#</code>) and blank lines</li>
+          <li>one level of <code>[table]</code> (reopening allowed)</li>
+          <li>bare keys <code>[A-Za-z0-9_-]+</code></li>
+          <li>double-quoted strings with escapes <code>\" \\ \n \t \r</code></li>
+          <li>booleans <code>true</code>/<code>false</code></li>
+          <li>integers and simple floats (no exponent)</li>
+          <li>CRLF line endings</li>
+        </ul>
+      </td>
+      <td>
+        <ul>
+          <li>arrays and inline tables</li>
+          <li>dotted keys, nested tables</li>
+          <li>single-quoted and multi-line strings</li>
+          <li>dates/times</li>
+          <li>hex/octal/binary numbers, underscores in numbers</li>
+          <li>duplicate keys</li>
+        </ul>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+<p>Values flatten to <code>"table.key"</code> paths with types string / integer /
+float / boolean. Consumers layer their own schema on top: the backend/simulator
+reject unknown keys; the frontend ignores them with a warning.</p>
+
+<h2 id="log">Backend log format</h2>
+<pre><code class="language-sh">&lt;ISO-8601 UTC, ms&gt; &lt;LEVEL&gt; [component] message
+
+2026-07-01T12:34:56.789Z INFO  [main] startup udp=0.0.0.0:47000 ws=0.0.0.0:8765 ...
+2026-07-01T12:35:03.001Z WARN  [udp]  dropped bad_crc len=6204 from=10.0.0.7:58211
+</code></pre>
+<ul>
+  <li>Levels: <code>DEBUG</code>, <code>INFO</code>, <code>WARN</code>, <code>ERROR</code>;
+  components: <code>main</code>, <code>udp</code>, <code>dis</code>, <code>ws</code>.</li>
+  <li>Append-mode file, flushed per line; info+ mirrored to stderr unless
+  <code>--quiet</code>.</li>
+  <li>Grep-friendly stable phrases: <code>startup</code>, <code>accepted seq=</code>,
+  <code>dropped &lt;reason&gt;</code>, <code>client connected</code> /
+  <code>client disconnected</code>, <code>shutting down</code>,
+  <code>clean shutdown</code>, <code>fatal:</code>.</li>
+</ul>
+
+<h2 id="frames">Captured frame files (<code>olv_ws_probe --out</code>)</h2>
+<p>One JSON text frame per line (JSONL). Line 1 is normally the <code>hello</code>
+message, subsequent lines <code>state</code> messages. Validate with
+<code>node frontend/tests/validate_message.mjs FILE [--min-objects N]</code> —
+it re-parses every line with the production frontend parser and requires at least
+one state frame with a non-null satellite.</p>
+
+<h2 id="sbom">SBOM files (<code>sbom/*.cdx.json</code>)</h2>
+<ul>
+  <li>CycloneDX 1.5 JSON, one per shippable artifact:
+  <code>backend.cdx.json</code> (olv_backend + olv_sim; components: Boost with
+  auto-detected version, open-dis-cpp pinned v1.2.0) and
+  <code>frontend.cdx.json</code> (zero code components; two <code>file</code>-type
+  components for the NASA textures with runtime-computed SHA-256).</li>
+  <li>Deterministic <code>serialNumber</code> (uuid5 over fixed namespace); only the
+  <code>timestamp</code> field varies between runs.</li>
+  <li>Consumable by Grype, Trivy, Dependency-Track, etc.</li>
+</ul>
+
+<h2 id="settings-blob">Frontend settings blob (localStorage)</h2>
+<p>Key <code>olv.settings.v1</code>, a JSON object holding only explicitly-changed
+settings (defaults are not written). Corrupt JSON is tolerated (defaults win).
+Schema: see the <a href="configuration.html#settings">settings table</a>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

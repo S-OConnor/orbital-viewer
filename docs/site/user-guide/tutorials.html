@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tutorials — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/tutorials" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Tutorials</h1>
+<p class="lead">Guided scenarios from beginner to advanced. Each assumes a built repo
+(<a href="installation.html">Installation</a>) and starts from a clean state.</p>
+
+<h2 id="t1">Tutorial 1 (beginner): the containerized demo, explored</h2>
+<ol>
+  <li>Start: <code>scripts/run_all.sh</code> and open <code>http://localhost:8000/</code>.</li>
+  <li>In the Objects panel, click the <em>debris</em> chip — the list filters to debris
+  only; chips show live per-category counts.</li>
+  <li>Click a debris row. Find its ring on the globe; open Settings, enable
+  <em>Show trails</em>, and watch its path build up (the example mission loops every
+  61 seconds).</li>
+  <li>Press <kbd>V</kbd>. You are now looking straight down from the satellite through
+  a 170&deg; fisheye; Earth's limb is the bright circle. Press <kbd>V</kbd> again.</li>
+  <li>In the terminal, press <kbd>Ctrl-C</kbd> once — containers stop and remove
+  themselves. Confirm with <code>podman ps</code> (empty).</li>
+</ol>
+
+<h2 id="t2">Tutorial 2 (beginner): author and replay your own mission</h2>
+<ol>
+  <li>Create <code>mymission.csv</code> — a satellite pass plus one highlighted debris
+  object and one ground-hot source:
+<pre><code class="language-csv">time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,flags
+0,sat,1,,6921000,0,0,0,7600,0,,,
+0,obj,101,debris,6921000,50000,0,0,7500,100,90,0,2
+0,obj,201,ground_hot,1113195,-4842330,3985029,,,,95,1450,0
+1,sat,1,,6920958,7600,0,-8.3,7600,0,,,
+1,obj,101,debris,6920959,57500,100,-8.3,7500,100,90,0,2
+</code></pre>
+  Notes: <code>type</code> accepts names (<code>debris</code>, <code>star</code>,
+  <code>comet</code>, <code>satellite</code>, <code>ground_hot</code>) or numbers 1–5;
+  empty velocity triple means "no velocity"; <code>flags=2</code> sets HIGHLIGHT;
+  the header line must match exactly.</li>
+  <li>Run the backend, then replay:
+<pre><code class="language-sh">./build/simulator/olv_sim --csv mymission.csv --rate 1 --loop</code></pre></li>
+  <li>In the viewer: object 101 renders highlighted; 201 sits on Earth's surface,
+  tinted by its 1450&nbsp;K intensity. The satellite panel tracks id 1.</li>
+  <li>Malformed-input experiment: change a row's <code>type</code> to <code>7</code> and
+  rerun — the simulator rejects the CSV with the line number. Validation starts
+  <em>before</em> the wire.</li>
+</ol>
+
+<h2 id="t3">Tutorial 3 (intermediate): remote backend on a LAN</h2>
+<p>Goal: backend + simulator on host A (e.g. <code>192.168.1.20</code>), browser on host B.</p>
+<ol>
+  <li>Host A: open the firewall and start the backend bound to all interfaces
+  (the default):
+<pre><code class="language-sh">sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp --add-port=8000/tcp
+./build/backend/olv_backend --log-file olv.log
+./build/simulator/olv_sim --generate 800 --duration 0 &amp;
+scripts/serve_frontend.sh 8000
+</code></pre></li>
+  <li>Host B: browse to <code>http://192.168.1.20:8000/frontend/</code>. The frontend
+  defaults its WebSocket host to the page's hostname, so it connects to
+  <code>ws://192.168.1.20:8765/</code> automatically — no settings needed.</li>
+  <li>Verify on host A: <code>olv.log</code> shows a <code>client connected</code> line
+  with host B's address; the Stats panel on B shows <code>WS clients</code> counting
+  every open tab.</li>
+</ol>
+
+<h2 id="t4">Tutorial 4 (intermediate): capacity load test with live stats</h2>
+<ol>
+  <li>Start the backend with debug logging:
+  <code>./build/backend/olv_backend --log-level debug --log-file load.log</code></li>
+  <li>Drive it at the protocol ceiling:
+<pre><code class="language-sh">./build/simulator/olv_sim --generate 5000 --rate 1 --duration 300</code></pre>
+  5,000 objects means each cycle is split into 40 packets (128 objects max per
+  packet), so expect the Stats panel's UDP rate to read ~40 packets/s.</li>
+  <li>While it runs: toggle trails (heaviest render path), switch to SAT view, and
+  filter categories. The object list shows "showing 1000 of 5000" — a display cap,
+  not data loss.</li>
+  <li>Afterwards, quantify the run:
+<pre><code class="language-sh">grep -c "accepted seq" load.log     # ~12000 accepted packets over 300 s
+grep -c "dropped" load.log          # expect 0
+</code></pre></li>
+</ol>
+
+<h2 id="t5">Tutorial 5 (advanced): end-to-end DIS, and observing its lossy mapping</h2>
+<ol>
+  <li>Enable DIS in <code>config/backend.toml</code>:
+<pre><code class="language-toml">[input]
+mode = "dis"
+dis_port = 47001
+dis_satellite_entity_id = "1:1:1"
+</code></pre></li>
+  <li>Start both ends:
+<pre><code class="language-sh">./build/backend/olv_backend --config config/backend.toml --log-level debug --log-file dis.log
+./build/simulator/olv_sim --generate 50 --protocol dis --duration 120
+</code></pre>
+  (With <code>--protocol dis</code> and no <code>--port</code>, the simulator targets
+  47001 automatically.)</li>
+  <li>Observe the documented DIS losses in the viewer: every object shows
+  confidence 100 and intensity 0; there are no star-category objects (DIS cannot
+  express them — they arrive as debris); object ids are FNV-1a folds of the DIS
+  EntityID rather than the generator's raw ids.</li>
+  <li>Exercise filtering: add <code>dis_exercise_id = 2</code> to the backend config and
+  restart. The simulator (emitting exercise 1 by default) is now filtered:
+  <code>dis.log</code> fills with <code>filtered exercise=1</code> debug lines, Stats
+  shows <code>received</code> climbing while <code>accepted</code> stays flat. Remove the
+  filter to recover.</li>
+  <li>Cross-check stats identity: in DIS mode
+  <code>received &ge; accepted + dropped</code> (filtered/ignored PDUs are neither
+  accepted nor dropped) — visible directly in the Stats panel.</li>
+</ol>
+
+<h2 id="t6">Tutorial 6 (advanced): scripted capture &amp; validation pipeline</h2>
+<p>Build a small CI-style check that proves the whole pipeline is healthy — the same
+technique <code>scripts/integration_test.sh</code> uses:</p>
+<pre><code class="language-sh">#!/usr/bin/env bash
+set -euo pipefail
+./build/backend/olv_backend --udp-port 47555 --ws-port 18765 \
+    --log-file /tmp/check.log --quiet &amp; BACKEND=$!
+trap 'kill $BACKEND' EXIT
+sleep 1
+./build/simulator/olv_sim --generate 500 --port 47555 --rate 2 --duration 20 --quiet &amp;
+./build/backend/olv_ws_probe --host 127.0.0.1 --port 18765 \
+    --count 6 --timeout 30 --out /tmp/frames.jsonl
+node frontend/tests/validate_message.mjs /tmp/frames.jsonl --min-objects 100
+grep -q "client connected" /tmp/check.log
+echo "PIPELINE OK"
+</code></pre>
+<p>Every stage exercises a different contract: the probe checks the WS server, the
+validator re-parses frames with the <em>real</em> frontend parser, and the log grep
+confirms the backend's audit trail. For the full production version of this flow,
+read <code>scripts/integration_test.sh</code>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

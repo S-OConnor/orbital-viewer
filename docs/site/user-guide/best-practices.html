@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Best Practices — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/best-practices" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Best Practices</h1>
+
+<h2 id="workflows">Recommended workflows</h2>
+<ul>
+  <li><strong>Demos and operations: use the containers.</strong>
+  <code>scripts/run_all.sh</code> gives you readiness waiting, port remapping, log
+  streaming, and one-keystroke teardown. Reserve the native three-process flow for
+  development.</li>
+  <li><strong>Pin configuration in files, not flags.</strong> Put deployment settings
+  in <code>backend.toml</code> / <code>simulator.toml</code> (they're strict, so drift is
+  caught at startup) and keep CLI flags for one-off experiments. The precedence
+  order — defaults &lt; file &lt; flags — makes this layering safe.</li>
+  <li><strong>Version-control your configs and missions.</strong> TOML configs and
+  mission CSVs are small, deterministic inputs; keeping them in git makes any
+  display reproducible.</li>
+  <li><strong>After any change, run the pyramid:</strong> <code>ctest --test-dir
+  build</code>, then <code>node --test "frontend/tests/*.test.mjs"</code>. The
+  integration test alone proves the full pipeline.</li>
+</ul>
+
+<h2 id="performance">Performance recommendations</h2>
+<ul>
+  <li><strong>Stay at 1&nbsp;Hz unless you need more.</strong> The whole design is sized
+  for 1&nbsp;Hz; higher <code>--rate</code>/<code>--broadcast-hz</code> multiplies JSON
+  serialization (~450&nbsp;KB per broadcast at 5,000 objects) and client parse work
+  linearly.</li>
+  <li><strong>Chunk below the MTU on real networks.</strong> The default 128
+  objects/packet yields ~6.2&nbsp;KB datagrams that will IP-fragment on standard
+  Ethernet; fragments multiply loss probability. <code>--chunk 24</code> keeps
+  packets under ~1,300 bytes. On loopback, the default is fine.</li>
+  <li><strong>Trails are the most expensive render feature.</strong> With 5,000 objects
+  and 60&nbsp;s trails, the trail buffer rebuild dominates frame time on weak GPUs —
+  shorten the duration or disable trails on low-end display machines.</li>
+  <li><strong>Slow clients handle themselves.</strong> The per-session outbox drops
+  frames past 5 pending rather than stalling the broadcaster — one struggling wall
+  display cannot back-pressure the rest.</li>
+  <li><strong>Keep the log level at <code>info</code> in production.</strong>
+  <code>debug</code> writes a line per accepted packet (40/s at full load) and the
+  logger flushes every line by design.</li>
+</ul>
+
+<h2 id="security">Security considerations</h2>
+<div class="warn"><strong>Scope first:</strong> OLV has <em>no TLS and no
+authentication by design</em>. It is built for trusted localhost/LAN segments.
+Treat that as a hard boundary, not a default to harden later.</div>
+<ul>
+  <li><strong>Never expose 47000/udp, 47001/udp, or 8765/tcp to untrusted
+  networks.</strong> Anyone who can reach the UDP port can inject track data
+  (validation stops malformed packets, not well-formed lies); anyone who can reach
+  the WebSocket can read the world state.</li>
+  <li><strong>Need remote viewing?</strong> Put the WebSocket and HTTP ports behind a
+  TLS-terminating, authenticating reverse proxy or a VPN. Leave the UDP intake
+  strictly LAN-side.</li>
+  <li><strong>Use the audit log.</strong> Every drop is logged with source address and
+  reason; a burst of <code>bad_magic</code>/<code>bad_crc</code> from an unexpected
+  address is your tamper signal. Consider shipping the log to your normal
+  collection.</li>
+  <li><strong>Exercise networks: set <code>dis_exercise_id</code>.</strong> On shared DIS
+  segments this filters foreign exercises at the door.</li>
+  <li><strong>Supply chain:</strong> regenerate SBOMs (<code>scripts/gen_sbom.py</code>)
+  when dependencies change and feed them to your scanner (CycloneDX 1.5 —
+  Grype/Trivy/Dependency-Track all accept it). The open-dis tarball is
+  sha256-pinned; keep it that way in mirrors.</li>
+</ul>
+
+<h2 id="deployment">Deployment recommendations</h2>
+<ul>
+  <li><strong>Prefer rootless Podman.</strong> The images already run as non-root
+  (UID 10001); rootless Podman removes the daemon attack surface too.</li>
+  <li><strong>Remap ports via environment, not compose edits.</strong>
+  <code>OLV_HTTP_PORT</code>/<code>OLV_WS_PORT</code>/<code>OLV_UDP_PORT</code> change
+  only host publishing; container-internal wiring stays fixed and tested.</li>
+  <li><strong>Mount configs read-only.</strong> The compose file carries a commented
+  example for mounting <code>backend.toml</code>; use it rather than baking configs
+  into images.</li>
+  <li><strong>One data source per backend instance.</strong> The OLV1 staleness check
+  assumes a single monotonic sequence stream; two simulators aimed at one backend
+  will mutually stale each other. Run one backend per source (distinct ports).</li>
+  <li><strong>Air-gapped sites:</strong> mirror the open-dis tarball
+  (<code>OLV_OPEN_DIS_TARBALL</code>/<code>OLV_OPEN_DIS_URL</code>), an apt mirror, and
+  the two base images; after that the stack builds and runs fully offline.
+  Checklist: <a href="installation.html#air-gapped">Installation</a>.</li>
+  <li><strong>Know what's ephemeral.</strong> The backend holds no persistent state —
+  a restart is always safe and always clean. The only client-side persistence is
+  browser <code>localStorage</code> settings.</li>
+</ul>
+
+<h2 id="data-hygiene">Data-source hygiene</h2>
+<ul>
+  <li>Keep mission CSVs deterministic and comment-annotated (<code>#</code> lines are
+  allowed); regenerate the bundled example only via
+  <code>scripts/make_example_csv.py</code> so it stays reproducible.</li>
+  <li>Use OLV1 when you control both ends (lossless); accept DIS's documented
+  degradations (fixed confidence/intensity, folded ids, no stars) only when
+  interoperating with standard tooling — see the
+  <a href="../reference/protocol-dis.html">DIS reference</a>.</li>
+  <li>Send velocity whenever you have it (<code>HAS_VELOCITY</code>): the sat-view's
+  screen-up vector and the velocity vector display both use it.</li>
+</ul>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

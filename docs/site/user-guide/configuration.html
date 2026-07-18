@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/configuration" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Configuration</h1>
+<p class="lead">All three components read optional TOML files; commented examples that
+match the built-in defaults live in <code>config/</code> and
+<code>frontend/config.toml</code>. This page explains the model and the recommended
+settings; the exhaustive key-by-key tables are in the
+<a href="../reference/configuration.html">Configuration Reference</a>.</p>
+
+<h2 id="model">The configuration model</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Component</th><th>File</th><th>How it's loaded</th><th>On bad config</th></tr></thead>
+  <tbody>
+    <tr><td>Backend</td><td><code>config/backend.toml</code></td>
+        <td><code>olv_backend --config config/backend.toml</code></td>
+        <td><strong>Strict</strong> — startup aborts with the offending key + line</td></tr>
+    <tr><td>Simulator</td><td><code>config/simulator.toml</code></td>
+        <td><code>olv_sim --config config/simulator.toml</code></td>
+        <td><strong>Strict</strong> — same</td></tr>
+    <tr><td>Frontend</td><td><code>frontend/config.toml</code></td>
+        <td>fetched relative to the page at startup</td>
+        <td><strong>Lenient</strong> — <code>console.warn</code> + built-in defaults</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Precedence is always:</strong> built-in defaults &lt; config file &lt;
+explicit overrides. For the C++ binaries the overrides are command-line flags
+(applied last regardless of argument order); for the frontend they are the user's
+saved Settings in <code>localStorage</code>.</p>
+<div class="warn"><strong>Strictness matters:</strong> the backend and simulator reject
+unknown keys, wrong types, and out-of-range values at startup so typos can't hide.
+E.g. misspelling <code>udp_port</code> as <code>upd_port</code> is a hard error, not a
+silent default.</div>
+
+<h2 id="toml-subset">The TOML subset</h2>
+<p>Files are parsed by a small first-party TOML <em>subset</em> parser
+(<code>backend/include/olv/toml.hpp</code>, mirrored in
+<code>frontend/js/toml.js</code>). Supported: comments, blank lines, one level of
+<code>[tables]</code>, bare keys, double-quoted strings, integers, floats, booleans.
+Rejected with a line-numbered error: arrays, dotted keys, dates, hex/octal/binary,
+underscores in numbers, single-quoted and multi-line strings, inline tables,
+duplicate keys. Details: <a href="../reference/file-formats.html#toml">File
+Formats</a>.</p>
+
+<h2 id="backend">Backend configuration</h2>
+<p>A complete <code>backend.toml</code> showing every key at its default (all keys
+optional; the two commented DIS keys are only needed in DIS mode):</p>
+<pre><code class="language-toml">[network]
+udp_bind = "0.0.0.0"      # OLV1 UDP listen address
+udp_port = 47000          # OLV1 UDP listen port (1-65535)
+ws_bind  = "0.0.0.0"      # WebSocket listen address
+ws_port  = 8765           # WebSocket listen port (1-65535)
+
+[broadcast]
+hz = 1.0                  # snapshot broadcast rate (0 &lt; hz &lt;= 60)
+
+[state]
+expiry_seconds = 15       # prune objects not refreshed within N seconds (1-3600)
+
+[logging]
+file   = "olv_backend.log"  # log file path (non-empty)
+level  = "info"             # debug | info | warn | error
+stderr = true               # mirror info+ lines to stderr
+
+[input]
+mode = "olv1"             # "olv1" (default) or "dis"
+dis_bind = "0.0.0.0"      # DIS listen address (dis mode only)
+dis_port = 47001          # DIS listen port
+# dis_exercise_id = 1             # optional filter 0-255; unset = accept all
+# dis_satellite_entity_id = "1:1:1"  # REQUIRED in dis mode; "site:app:entity"
+</code></pre>
+<div class="note"><strong>DIS mode gotcha:</strong> <code>dis_satellite_entity_id</code>
+has <em>no CLI flag</em>. Running <code>--input-mode dis</code> without a config file
+that sets it is a startup error. The entity whose DIS EntityID matches all three
+parts becomes the primary satellite.</div>
+
+<h2 id="simulator">Simulator configuration</h2>
+<pre><code class="language-toml">[target]
+host = "127.0.0.1"        # UDP destination (IP or hostname, e.g. "backend")
+port = 47000              # destination port (DIS default: 47001)
+
+[source]
+mode = "csv"              # "csv" or "generate"
+csv_path = "simulator/data/example_mission.csv"
+loop = false              # replay repeatedly (csv mode)
+generate_count = 100      # synthetic objects, 1-5000 (generate mode)
+duration_seconds = 120    # stop after N seconds; 0 = forever (generate mode)
+seed = 1                  # deterministic generator seed, 0-4294967295
+
+[send]
+rate_hz = 1.0             # update rate, 0 &lt; rate &lt;= 50
+chunk = 128               # max objects per packet, 1-128 (olv1 only)
+protocol = "olv1"         # "olv1" or "dis"
+dis_exercise_id = 1       # DIS emission: exercise id (0-255)
+dis_site = 1              # DIS emission: site id (0-65535)
+dis_satellite_entity_id = "1:1:1"  # DIS emission: satellite EntityID
+
+[output]
+quiet = false             # suppress per-cycle console line
+</code></pre>
+
+<h2 id="frontend">Frontend configuration</h2>
+<p><code>frontend/config.toml</code> sets <em>site defaults</em> — the values a fresh
+browser (no saved Settings) starts with. A user's saved Settings always win, and
+"Reset to defaults" returns to the config-file-merged baseline.</p>
+<pre><code class="language-toml">[websocket]
+host = ""                 # "" = use the page's hostname
+port = 8765
+
+[display]
+show_trails = false
+trail_seconds = 30        # 0-60
+show_labels = false
+</code></pre>
+<p>Only these five keys are recognized from the file. The remaining settings
+(<code>showSky</code>, view mode, per-category visibility) are user-side settings in
+the Settings panel, persisted to <code>localStorage</code> under
+<code>olv.settings.v1</code>. A missing or invalid <code>config.toml</code> is never an
+error — the page logs a warning and continues with defaults.</p>
+
+<h2 id="recommended">Recommended settings by scenario</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Scenario</th><th>Recommendation</th></tr></thead>
+  <tbody>
+    <tr><td>Single-machine demo</td>
+        <td>Defaults everywhere. Containers: just <code>scripts/run_all.sh</code>.</td></tr>
+    <tr><td>Backend on another LAN host</td>
+        <td>Leave <code>ws_bind = "0.0.0.0"</code>; set the frontend's
+        <code>websocket.host</code> to the backend host (or let users set it in
+        Settings). Open 47000/udp + 8765/tcp on the backend's firewall.</td></tr>
+    <tr><td>DIS exercise ingest</td>
+        <td><code>[input] mode="dis"</code>, set <code>dis_satellite_entity_id</code> to the
+        exercise's satellite entity, and set <code>dis_exercise_id</code> to filter a
+        shared network. Consider <code>logging.level = "debug"</code> initially to see
+        filtered/ignored PDU lines.</td></tr>
+    <tr><td>Load / soak testing</td>
+        <td>Simulator <code>--generate 5000 --duration 0</code>; consider backend
+        <code>logging.level = "warn"</code> to keep the log small (accepted-packet
+        lines are debug-level anyway).</td></tr>
+    <tr><td>Slow client displays</td>
+        <td>Keep <code>broadcast.hz = 1.0</code>; the per-session outbox drops frames
+        beyond 5 pending, so slow clients degrade gracefully without config.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Full key tables with types, ranges, and source-code line references:
+<a href="../reference/configuration.html">Configuration Reference</a>. CLI flags:
+<a href="../reference/cli.html">Command-Line Reference</a>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build System — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/build-system" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Build System</h1>
+<p class="lead">CMake &ge; 3.20 with an aggregating top level, shared settings in
+<code>cmake/common.cmake</code>, and independently configurable
+<code>backend/</code> and <code>simulator/</code> subprojects. The frontend has no
+build step at all.</p>
+
+<h2 id="targets">Target map</h2>
+<figure class="diagram">
+<svg viewBox="0 0 860 330" role="img" aria-label="CMake target dependency graph">
+  <defs>
+    <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <!-- interface targets -->
+  <rect class="d-box2" x="20" y="20" width="820" height="70"/>
+  <text class="d-small" x="430" y="38" text-anchor="middle" font-weight="600">INTERFACE / imported targets</text>
+  <rect class="d-box" x="50" y="48" width="120" height="32"/>
+  <text class="d-mono" x="110" y="68" text-anchor="middle">olv_proto</text>
+  <rect class="d-box" x="200" y="48" width="140" height="32"/>
+  <text class="d-mono" x="270" y="68" text-anchor="middle">olv_warnings</text>
+  <rect class="d-box" x="370" y="48" width="160" height="32"/>
+  <text class="d-mono" x="450" y="68" text-anchor="middle">olv_test_support</text>
+  <rect class="d-box" x="560" y="48" width="130" height="32"/>
+  <text class="d-mono" x="625" y="68" text-anchor="middle">Boost::headers</text>
+  <rect class="d-box" x="710" y="48" width="120" height="32"/>
+  <text class="d-mono" x="770" y="68" text-anchor="middle">open_dis_cpp</text>
+
+  <!-- libs -->
+  <rect class="d-box" x="80" y="140" width="130" height="36"/>
+  <text class="d-mono" x="145" y="162" text-anchor="middle">olv_core</text>
+  <rect class="d-box" x="240" y="140" width="130" height="36"/>
+  <text class="d-mono" x="305" y="162" text-anchor="middle">olv_net</text>
+  <rect class="d-box" x="420" y="140" width="140" height="36"/>
+  <text class="d-mono" x="490" y="162" text-anchor="middle">olv_sim_lib</text>
+
+  <!-- exes -->
+  <rect class="d-box" x="40" y="240" width="140" height="36"/>
+  <text class="d-mono" x="110" y="262" text-anchor="middle">olv_backend</text>
+  <rect class="d-box" x="200" y="240" width="170" height="36"/>
+  <text class="d-mono" x="285" y="262" text-anchor="middle">olv_backend_tests</text>
+  <rect class="d-box" x="390" y="240" width="110" height="36"/>
+  <text class="d-mono" x="445" y="262" text-anchor="middle">olv_sim</text>
+  <rect class="d-box" x="520" y="240" width="140" height="36"/>
+  <text class="d-mono" x="590" y="262" text-anchor="middle">olv_sim_tests</text>
+  <rect class="d-box" x="690" y="240" width="130" height="36"/>
+  <text class="d-mono" x="755" y="262" text-anchor="middle">olv_ws_probe</text>
+
+  <line class="d-line" x1="145" y1="140" x2="118" y2="92" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="305" y1="140" x2="628" y2="92" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="490" y1="140" x2="762" y2="92" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="470" y1="140" x2="130" y2="88" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="110" y1="240" x2="135" y2="178" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="130" y1="240" x2="290" y2="178" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="285" y1="240" x2="160" y2="178" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="310" y1="240" x2="460" y2="90" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="445" y1="240" x2="480" y2="178" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="590" y1="240" x2="510" y2="178" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="755" y1="240" x2="648" y2="92" marker-end="url(#arr5)"/>
+</svg>
+<figcaption>Static libraries <code>olv_core</code> (logger/state/json/input sources),
+<code>olv_net</code> (ws_server + config), and <code>olv_sim_lib</code> feed the
+executables; INTERFACE targets carry headers and flags.</figcaption>
+</figure>
+
+<h2 id="common">cmake/common.cmake</h2>
+<ul>
+  <li>Include-guarded (<code>OLV_COMMON_INCLUDED</code>) so subprojects can bootstrap it
+  standalone.</li>
+  <li>C++20 required, extensions off; <code>CMAKE_BUILD_TYPE</code> defaults to
+  <strong>Release</strong> when unset.</li>
+  <li>Options: <code>OLV_BUILD_TESTS</code> (default ON — builds test binaries and calls
+  <code>enable_testing()</code>) and <code>OLV_WERROR</code> (default OFF).</li>
+  <li>Homebrew handling: appends <code>$HOMEBREW_PREFIX</code> (or
+  <code>/home/linuxbrew/.linuxbrew</code>) to <code>CMAKE_PREFIX_PATH</code> — this is
+  why Bazzite/Silverblue builds usually work with no extra flags.</li>
+  <li><code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG mode (required by
+  CMake 4-era Boost packages), header-only usage.</li>
+  <li>INTERFACE targets: <code>olv_proto</code> (adds <code>backend/include</code>),
+  <code>olv_test_support</code> (adds <code>tests/support</code>),
+  <code>olv_warnings</code> (<code>-Wall -Wextra -Wpedantic</code> [+
+  <code>-Werror</code>]).</li>
+</ul>
+
+<h2 id="open-dis">cmake/open_dis_cpp.cmake</h2>
+<p>Locates the prefix installed by <code>scripts/install_open_dis.sh</code>:
+search order is <code>-DOLV_OPEN_DIS_PREFIX</code>, then <code>/usr/local</code>,
+<code>/opt/open-dis</code>, <code>$HOME/.local</code>. On success it defines the
+imported static target <code>open_dis_cpp</code> with its headers marked SYSTEM
+(so upstream-generated code doesn't trip our warning set); on failure it stops with
+a FATAL_ERROR that includes the install instructions.</p>
+
+<h2 id="subprojects">Subproject layout</h2>
+<ul>
+  <li><strong>backend/CMakeLists.txt</strong> — static libs <code>olv_core</code> and
+  <code>olv_net</code>, the <code>olv_backend</code> executable, the
+  <code>olv_ws_probe</code> tool, and <code>olv_backend_tests</code>
+  (registered as CTest <code>backend_unit</code>).</li>
+  <li><strong>simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
+  (everything except <code>main.cpp</code>, so tests link the real code),
+  <code>olv_sim</code>, and <code>olv_sim_tests</code> (CTest <code>sim_unit</code>).</li>
+  <li>Both begin with an <code>if(NOT DEFINED PROJECT_NAME)</code> standalone header —
+  you can configure either directory in isolation:
+  <code>cmake -S backend -B build-backend</code>.</li>
+  <li><strong>Top level</strong> additionally registers the <code>integration</code>
+  test (UNIX only): runs <code>scripts/integration_test.sh</code> with the three
+  target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
+</ul>
+
+<h2 id="flags">Compiler options</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Setting</th><th>Value</th><th>Where</th></tr></thead>
+  <tbody>
+    <tr><td>Standard</td><td>C++20, no GNU extensions</td><td>common.cmake</td></tr>
+    <tr><td>Warnings</td><td><code>-Wall -Wextra -Wpedantic</code> via <code>olv_warnings</code>
+        (PRIVATE on every first-party target)</td><td>common.cmake</td></tr>
+    <tr><td>Warnings-as-errors</td><td><code>-DOLV_WERROR=ON</code> (off by default)</td><td>common.cmake</td></tr>
+    <tr><td>Optimization</td><td>whatever <code>CMAKE_BUILD_TYPE</code> implies (Release = <code>-O3</code>)</td><td>CMake defaults</td></tr>
+    <tr><td>Third-party isolation</td><td>open-dis headers included as SYSTEM</td><td>open_dis_cpp.cmake</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="quality-targets">Quality targets</h2>
+<pre><code class="language-sh">cmake --build build --target format         # clang-format -i over backend+simulator+tests
+cmake --build build --target format-check   # --dry-run --Werror (CI-suitable)
+cmake --build build --target lint           # cppcheck warning/performance/portability, exit 1 on findings
+</code></pre>
+<p>Both no-op with a notice if the tool isn't installed. The <code>format</code>
+targets carry a Homebrew keg-only HINT path so brew-installed clang-format is found.
+clang-tidy is configured (<code>.clang-tidy</code>) but not wired into a target —
+it needs a compilation database:</p>
+<pre><code class="language-sh">cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+clang-tidy -p build backend/src/*.cpp simulator/src/*.cpp
+</code></pre>
+
+<h2 id="dependency-mgmt">Dependency management</h2>
+<ul>
+  <li><strong>Boost</strong>: system-provided, never vendored (size). Header-only usage
+  means no Boost link libraries and no Boost ABI concerns.</li>
+  <li><strong>open-dis-cpp</strong>: pinned v1.2.0, sha256-verified tarball, compiled
+  once into a prefix by <code>scripts/install_open_dis.sh</code> (only the
+  self-contained <code>dis6</code> tree; builds with <code>-O2 -w -std=c++17</code>;
+  honors <code>CXX</code>/<code>AR</code>; installs LICENSE + provenance). No package
+  manager (vcpkg/Conan) is used anywhere — deliberate, for air-gap simplicity.</li>
+  <li><strong>Frontend</strong>: zero dependencies; no npm, no lockfiles.</li>
+</ul>
+
+<h2 id="ctest">CTest &amp; CI integration</h2>
+<pre><code class="language-sh">ctest --test-dir build --output-on-failure            # all three tests
+ctest --test-dir build -R backend_unit                # one suite
+ctest --test-dir build -L integration                 # by label
+</code></pre>
+<div class="note"><strong>No CI pipeline exists yet.</strong> Everything a pipeline
+needs is already a clean, non-interactive command:
+<code>cmake --build build --target format-check lint</code>,
+<code>ctest --test-dir build</code>, and
+<code>node --test "frontend/tests/*.test.mjs"</code>. A minimal CI job is literally
+those three lines after configure (plus <code>scripts/install_open_dis.sh</code> in
+the image). See <a href="release-process.html">Release Process</a>.</div>
+
+<h2 id="containers-build">Container builds</h2>
+<p><code>containers/Containerfile.cpp</code> is a multi-stage build: a
+<code>build</code> stage (debian:bookworm-slim + g++/cmake/libboost-dev) runs
+<code>install_open_dis.sh --prefix /usr/local</code> <em>before</em>
+<code>COPY . .</code> for layer-cache friendliness, configures with
+<code>-DOLV_BUILD_TESTS=OFF</code>, and builds only <code>olv_backend olv_sim</code>;
+the <code>backend</code> and <code>simulator</code> runtime targets copy a single
+binary each into a fresh slim base with a non-root user (UID 10001).
+<code>Containerfile.frontend</code> is a one-stage nginx:alpine-slim copy of
+<code>frontend/</code> and <code>docs/</code> — no toolchain at all.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

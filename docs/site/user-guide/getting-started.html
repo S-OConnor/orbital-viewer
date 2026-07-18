@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting Started — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/getting-started" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Getting Started</h1>
+<p class="lead">A beginner-friendly first run, two ways. If you haven't installed
+anything yet, do <a href="installation.html">Installation</a> first.</p>
+
+<h2 id="first-run-containers">First run — containers (recommended)</h2>
+<ol>
+  <li>From the repository root, run:
+<pre><code class="language-sh">scripts/run_all.sh</code></pre></li>
+  <li>Watch the output. Expected sequence:
+<pre><code class="language-sh">[run_all] using: podman compose
+[run_all] starting stack (ws=8765 udp=47000 http=8000) ...
+# ... image builds on first run (a few minutes) ...
+[run_all] waiting for backend on port 8765 ...
+[run_all] backend is up.
+
+  Frontend:   http://localhost:8000/
+  WebSocket:  ws://localhost:8765/
+  UDP intake: 47000/udp
+
+[run_all] streaming logs (Ctrl-C stops and removes the stack) ...
+</code></pre>
+  (Exact wording may differ; the key line is that the backend came up and the URLs
+  are printed.)</li>
+  <li>Open <a href="http://localhost:8000/">http://localhost:8000/</a>.</li>
+</ol>
+
+<h3 id="what-you-see">What you should see</h3>
+<figure class="shot">
+  <img src="../assets/screenshot-main.png" alt="Orbital LOS Viewer showing the Earth globe with tracked objects and side panels">
+  <figcaption>First run with the example mission: sun-lit globe, ~25 tracked objects,
+  populated panels.</figcaption>
+</figure>
+<ul>
+  <li><strong>Globe</strong>: textured Earth with day/night terminator and a 15&deg; graticule.</li>
+  <li><strong>Connection panel</strong>: green status, WebSocket URL, and a "latest data
+  time" that updates every second.</li>
+  <li><strong>Stats panel</strong>: UDP received/accepted counting up at ~1&nbsp;Hz,
+  <code>WS clients: 1</code>, and an object count around 25.</li>
+  <li><strong>Objects panel</strong>: a filterable list of debris, satellites, comets,
+  stars, and ground-hot objects from the example mission.</li>
+  <li><strong>Satellite panel</strong>: live ECEF position, speed (~7.6&nbsp;km/s), and
+  altitude (~550&nbsp;km).</li>
+</ul>
+<p>Press <kbd>Ctrl-C</kbd> in the terminal when done — the stack stops and removes
+itself.</p>
+
+<h2 id="first-run-native">First run — native binaries</h2>
+<p>Three processes in three terminals (all from the repo root, after building):</p>
+<pre><code class="language-sh"># Terminal 1 — backend
+./build/backend/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+
+# Terminal 2 — simulator, replaying the example mission on loop
+./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
+
+# Terminal 3 — static file server for the frontend
+scripts/serve_frontend.sh 8000
+</code></pre>
+<p>Then open <a href="http://localhost:8000/frontend/">http://localhost:8000/frontend/</a>
+(note the <code>/frontend/</code> path — the dev server serves the repo root so the
+About modal's links into <code>docs/</code> resolve).</p>
+<p>Expected terminal output:</p>
+<ul>
+  <li><em>Backend</em>: silent on stdout by default; check <code>olv_backend.log</code> for a
+  <code>startup</code> line and later <code>client connected</code> events. (Add
+  <code>--log-level debug</code> to also log each accepted packet.)</li>
+  <li><em>Simulator</em>: a per-cycle progress line (suppress with <code>--quiet</code>);
+  on exit, a summary like <code>done: cycles=61 packets=61 bytes=... send_errors=0</code>.</li>
+</ul>
+
+<h2 id="config-walkthrough">Configuration walkthrough (5 minutes)</h2>
+<p>Let's move the WebSocket to port 9000 to see the config system end to end.</p>
+<ol>
+  <li>Copy and edit the example config:
+<pre><code class="language-sh">cp config/backend.toml my-backend.toml
+# edit: [network] ws_port = 9000
+./build/backend/olv_backend --config my-backend.toml
+</code></pre></li>
+  <li>Reload the frontend. The status panel shows a stalled/disconnected state —
+  it is still trying port 8765.</li>
+  <li>Open <strong>Settings</strong> (gear icon), set <em>WebSocket port</em> to
+  <code>9000</code>, and click <strong>Reconnect</strong>. The status turns green.
+  Your choice persists in <code>localStorage</code> across reloads.</li>
+  <li>Try a typo: change <code>ws_port</code> to <code>ws_prt</code> in the file and
+  restart the backend — it refuses to start and names the bad key and line.
+  That strictness is deliberate.</li>
+</ol>
+
+<h2 id="try-features">Five things to try next</h2>
+<ol>
+  <li><strong>Satellite view</strong>: press <kbd>V</kbd> (or click <em>SAT</em>) for the
+  170&deg; fisheye nadir view from the satellite; press again to return.</li>
+  <li><strong>Trails</strong>: Settings &rarr; <em>Show trails</em>, slide duration to
+  60&nbsp;s — watch orbits streak.</li>
+  <li><strong>Sky</strong>: Settings &rarr; <em>Show sky</em> is on by default — find the
+  Moon (with its illuminated %) and planet labels; they are placed for the actual
+  message timestamp.</li>
+  <li><strong>Selection</strong>: click any object on the globe or in the list — it
+  highlights in both places.</li>
+  <li><strong>Load test</strong>: stop the simulator and run
+  <code>./build/simulator/olv_sim --generate 5000 --rate 1</code> — 5,000 objects,
+  the protocol maximum. The object list caps at 1,000 rows and says
+  "showing 1000 of 5000".</li>
+</ol>
+
+<h2 id="verification">Verification steps</h2>
+<pre><code class="language-sh"># 1. Everything green?
+ctest --test-dir build --output-on-failure
+
+# 2. Is the backend accepting packets? (watch the log)
+tail -f olv_backend.log        # expect: accepted seq=... (at debug level)
+
+# 3. Is JSON flowing? Capture two frames with the probe:
+./build/backend/olv_ws_probe --host 127.0.0.1 --port 8765 --count 2 \
+    --timeout 10 --out /tmp/frames.jsonl
+head -c 300 /tmp/frames.jsonl  # expect {"type":"hello",... then {"type":"state",...
+</code></pre>
+
+<p>Where to next: <a href="usage.html">Usage</a> for every feature in depth,
+<a href="tutorials.html">Tutorials</a> for guided scenarios (including DIS mode), or
+<a href="troubleshooting.html">Troubleshooting</a> if anything above didn't match.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

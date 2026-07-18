@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coding Standards — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/coding-standards" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Coding Standards</h1>
+<p class="lead">Formatting is enforced by tools; conventions are enforced by review.
+Both are described here.</p>
+
+<h2 id="formatting">Formatting (enforced)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Tool / file</th><th>Rules</th></tr></thead>
+  <tbody>
+    <tr><td><code>.clang-format</code></td>
+        <td>Google style base; 2-space indent; 100-column limit; left pointer
+        alignment (<code>int* p</code>); short functions inline allowed; include
+        blocks preserved, includes not re-sorted.</td></tr>
+    <tr><td><code>.editorconfig</code></td>
+        <td>UTF-8, LF, final newline, trimmed trailing whitespace everywhere;
+        2-space indent for C++/JS/CSS/HTML/YAML/CMake; 4-space for Python;
+        tabs (width 8) for Makefiles.</td></tr>
+    <tr><td><code>.clang-tidy</code></td>
+        <td>Checks: <code>bugprone-*, performance-*, portability-*, modernize-*,
+        readability-*</code> minus trailing-return-type, identifier-length,
+        magic-numbers, implicit-bool-conversion, easily-swappable-parameters,
+        cognitive-complexity. Header filter covers
+        <code>(backend|simulator)/(src|include|tools)/</code>.</td></tr>
+  </tbody>
+</table>
+</div>
+<pre><code class="language-sh">cmake --build build --target format         # fix in place
+cmake --build build --target format-check   # verify (CI-suitable, --Werror)
+cmake --build build --target lint           # cppcheck
+</code></pre>
+
+<h2 id="naming">Naming conventions (as practiced in the codebase)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Element</th><th>Convention</th><th>Examples</th></tr></thead>
+  <tbody>
+    <tr><td>C++ types</td><td>PascalCase</td><td><code>StateStore</code>, <code>ObjectRecord</code>, <code>DisInputSource</code></td></tr>
+    <tr><td>C++ functions/methods</td><td>camelCase</td><td><code>countReceived</code>, <code>parseDisEntityId</code>, <code>makeInputSource</code></td></tr>
+    <tr><td>C++ member variables</td><td>snake_case with trailing underscore</td><td><code>mutex_</code>, <code>last_seq_</code>, <code>object_fold_</code></td></tr>
+    <tr><td>C++ locals/params, struct fields</td><td>snake_case</td><td><code>object_total</code>, <code>expiry_seconds</code></td></tr>
+    <tr><td>Constants</td><td><code>k</code>-prefix PascalCase</td><td><code>kMaxObjectsPerPacket</code>, <code>kFlagHasVelocity</code></td></tr>
+    <tr><td>Enums</td><td><code>enum class</code>, <code>k</code>-prefixed values</td><td><code>DecodeError::kBadCrc</code></td></tr>
+    <tr><td>Namespaces</td><td>lowercase, shallow</td><td><code>olv</code>, <code>olv::proto</code>, <code>olv::toml</code>, <code>detail</code></td></tr>
+    <tr><td>Files</td><td>snake_case</td><td><code>state_store.cpp</code>, <code>dis_input_source.hpp</code></td></tr>
+    <tr><td>JS functions/vars</td><td>camelCase; factories <code>createX</code></td><td><code>createRenderer</code>, <code>parseStateMessage</code></td></tr>
+    <tr><td>JS constants</td><td>UPPER_SNAKE</td><td><code>SAT_FOV_DEG</code>, <code>STAR_CATALOG</code>, <code>TRAIL_CAP</code></td></tr>
+    <tr><td>TOML keys</td><td>snake_case, one table level</td><td><code>[input] dis_satellite_entity_id</code></td></tr>
+    <tr><td>CLI flags</td><td>kebab-case</td><td><code>--input-mode</code>, <code>--broadcast-hz</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="organization">Code organization rules</h2>
+<ul>
+  <li><strong>Shared wire/parsing code is header-only</strong> under
+  <code>backend/include/olv/</code> and consumed via the <code>olv_proto</code> target —
+  never duplicated.</li>
+  <li><strong>Testability drives structure:</strong> simulator logic lives in
+  <code>olv_sim_lib</code> (main.cpp is thin); frontend pure logic is import-safe
+  (no DOM at import time); network-touching code gets injectable seams
+  (<code>wsFactory</code>, <code>processDatagram</code>).</li>
+  <li><strong>One owner per concern:</strong> DOM only in <code>main.js</code>/<code>ui.js</code>;
+  GL only in the renderer cluster; the mutex only in <code>StateStore</code>.</li>
+  <li><strong>Third-party isolation:</strong> open-dis-cpp headers are SYSTEM includes;
+  its types don't leak past <code>dis_input_source.cpp</code> /
+  <code>dis_builder.cpp</code>.</li>
+  <li><strong>No exceptions for control flow:</strong> parse/validation paths return
+  error enums or result structs; exceptions are reserved for constructor-time
+  resource failures and third-party boundaries (caught immediately).</li>
+</ul>
+
+<h2 id="documentation">Documentation expectations</h2>
+<ul>
+  <li><strong>Specs are normative and updated first.</strong> Wire-format changes edit
+  <code>docs/PROTOCOL_*.md</code> together with the code; each spec names its
+  reference implementation, which wins on conflict.</li>
+  <li><strong>Nontrivial features start as a frozen interface doc</strong> in
+  <code>docs/features/</code> (see FEATURE_SATVIEW / FEATURE_SKY /
+  FEATURE_INPUT_SOURCES as templates) — module APIs, constants, and behavior are
+  agreed before implementation.</li>
+  <li><strong>Comments state constraints, not narration.</strong> The codebase's
+  best examples: the TOML grammar block in <code>toml.hpp</code>, the LOCKSTEP
+  warning in <code>renderer.js</code>/<code>sat_camera.js</code>, the
+  carry-forward note in <code>state_store.cpp</code>. Follow that register.</li>
+  <li><strong>Config keys are documented in the sample TOML files</strong> — a new key
+  isn't done until <code>config/*.toml</code> shows it commented with its default.</li>
+</ul>
+
+<h2 id="review">Review checklist</h2>
+<p>No CI exists, so review carries the enforcement load. Before approving:</p>
+<ol>
+  <li><code>cmake --build build --target format-check lint</code> — clean.</li>
+  <li><code>ctest --test-dir build --output-on-failure</code> and
+  <code>node --test "frontend/tests/*.test.mjs"</code> — green, including
+  integration.</li>
+  <li>New behavior has tests at the right layer (unit for logic, integration for
+  cross-component contracts).</li>
+  <li>Wire/config/API changes updated the normative docs and sample configs.</li>
+  <li>The five invariants hold (see
+  <a href="extending.html">Extending</a>): all-or-nothing drops, counted+logged
+  drops, StateStore-only writes from thread 1, GLSL/JS fisheye lockstep,
+  strict-backend/lenient-frontend config.</li>
+  <li>No new third-party dependency without an explicit decision (update
+  <code>THIRD_PARTY.md</code>, SBOM generator, and the air-gap notes if one is truly
+  needed).</li>
+</ol>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

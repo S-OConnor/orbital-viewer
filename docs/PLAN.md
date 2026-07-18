@@ -15,10 +15,14 @@ Orbital LOS Viewer visualizes one primary satellite in Earth orbit plus up to
 objects) in a browser. All coordinates are ECEF meters. Data flows:
 
 - **Simulator** (C++) replays CSV files (or synthesizes load-test data) as
-  custom binary UDP packets at a configurable rate (target 1 Hz).
+  custom binary UDP packets at a configurable rate (target 1 Hz); it can also
+  emit IEEE 1278.1 DIS Entity State PDUs instead (`--protocol dis`).
 - **Backend** (C++17/20, Boost.Asio + Boost.Beast) receives UDP on a dedicated
   thread, validates and decodes packets, maintains the latest world state, and
-  broadcasts a JSON snapshot at 1 Hz over WebSocket from a second thread.
+  broadcasts a JSON snapshot at 1 Hz over WebSocket from a second thread. The
+  intake side is a pluggable boot-time strategy (`InputSource`): the default
+  OLV1 binary protocol, or DIS Entity State PDU ingestion (`--input-mode dis`,
+  docs/PROTOCOL_DIS.md, docs/features/FEATURE_INPUT_SOURCES.md).
 - **Frontend** (plain HTML/CSS/JS, no frameworks, no runtime internet) renders
   a simplified Earth globe, the satellite, an approximate Sun, and all objects
   with a custom minimal WebGL renderer, plus UI panels and a settings menu.
@@ -37,8 +41,8 @@ flowchart LR
   FB -- "UDP · OLV1 binary<br/>little-endian · CRC-32" --> RX
 
   subgraph BE["olv_backend (C++ · Boost.Asio/Beast)"]
-    subgraph T1["Thread 1 — UDP receive"]
-      RX["UdpReceiver"] --> DEC["proto::decode<br/>+ validation"]
+    subgraph T1["Thread 1 — UDP receive (InputSource, chosen at boot)"]
+      RX["Olv1InputSource (default)<br/>or DisInputSource"] --> DEC["proto::decode / DIS<br/>Entity State translate<br/>+ validation"]
     end
     DEC -->|apply| ST[("StateStore<br/>mutex-protected<br/>object table + stats")]
     subgraph T2["Thread 2 (main) — WebSocket io_context"]
@@ -64,10 +68,16 @@ flowchart LR
 
 ### Threading & synchronization (backend)
 
-- **Thread 1 (UDP):** its own `io_context`, `async_receive_from` loop on a
-  `kMaxPacketSize`-sized buffer. Each datagram: `proto::decode` (structural +
-  CRC + finiteness/range checks) → `StateStore::apply` (sequence staleness
-  check, merge objects by ID). Invalid packets are counted + logged and dropped.
+- **Thread 1 (UDP):** owned by the boot-selected `InputSource` (exactly one
+  per process, `Config::input_mode`): its own `io_context`,
+  `async_receive_from` loop. The default `Olv1InputSource`: each datagram
+  runs `proto::decode` (structural + CRC + finiteness/range checks) →
+  `StateStore::apply` (sequence staleness check, merge objects by ID).
+  `DisInputSource` (`--input-mode dis`) instead translates IEEE 1278.1 DIS
+  Entity State PDUs into the same `StateStore` calls (docs/PROTOCOL_DIS.md).
+  Either way, invalid packets are counted + logged and dropped, and both
+  implementations feed the identical `countReceived`/`countDropped`/`apply`
+  API, so stats mean the same thing in both modes.
 - **Thread 2 (main/WS):** one `io_context` running the Beast acceptor, all
   WebSocket sessions, and a 1 Hz `steady_timer`. On each tick: take a
   `Snapshot` copy from `StateStore` (prunes objects not refreshed within the
@@ -96,7 +106,9 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 ├── docs/
 │   ├── PLAN.md                     # this file
 │   ├── PROTOCOL_UDP.md             # binary wire format (normative)
+│   ├── PROTOCOL_DIS.md             # DIS input mode: PDU subset & mapping (normative)
 │   ├── PROTOCOL_WS.md              # WebSocket JSON format (normative)
+│   ├── features/                   # per-feature design docs (input sources, sat view, sky)
 │   └── SBOM.md                     # SBOM strategy & instructions
 ├── config/
 │   ├── backend.toml                # commented example (olv_backend --config …)
@@ -108,7 +120,9 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 │   ├── src/
 │   │   ├── logger.{hpp,cpp}        # thread-safe file logger + ISO-8601 utils
 │   │   ├── state_store.{hpp,cpp}   # object table, stats, snapshot
-│   │   ├── udp_receiver.{hpp,cpp}  # thread 1
+│   │   ├── input_source.{hpp,cpp}  # intake strategy interface + boot-time factory
+│   │   ├── olv1_input_source.{hpp,cpp}  # thread 1, OLV1 mode (default)
+│   │   ├── dis_input_source.{hpp,cpp}   # thread 1, DIS mode (PROTOCOL_DIS.md)
 │   │   ├── json_writer.{hpp,cpp}   # snapshot → WS JSON text
 │   │   ├── ws_server.{hpp,cpp}     # Beast acceptor/sessions/broadcast timer
 │   │   ├── config.{hpp,cpp}        # TOML config file + CLI parsing
@@ -117,7 +131,7 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 │   └── tests/                      # unit tests (custom mini-framework)
 ├── simulator/
 │   ├── CMakeLists.txt              # standalone-configurable
-│   ├── src/{main.cpp, csv_reader.*, frame_builder.*, generator.*, sim_config.*}
+│   ├── src/{main.cpp, csv_reader.*, frame_builder.*, dis_builder.*, generator.*, sim_config.*}
 │   ├── data/example_mission.csv    # 60 s satellite pass + ~25 mixed objects
 │   └── tests/
 ├── frontend/
@@ -223,7 +237,7 @@ createRenderer(glCanvas, overlayCanvas) → {
 //                   pos:[3],vel:[3]|null,conf,intensity,flags}], lastDataTime}
 // s = {showTrails,trailSeconds,showLabels,
 //      categories:{debris,star,comet,satellite,groundHot},
-//      viewMode:'orbit'|'sat'}  // additive v0.3, docs/FEATURE_SATVIEW.md
+//      viewMode:'orbit'|'sat'}  // additive v0.3, docs/features/FEATURE_SATVIEW.md
 
 // sun.js
 sunDirectionEcef(dateOrMs) → [x,y,z]  // unit vector

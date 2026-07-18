@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture in Depth — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/architecture" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Architecture in Depth</h1>
+<p class="lead">The backend's threading and memory model, the input-source strategy
+seam, error handling, logging, and the frontend's runtime structure. Companion
+pages: <a href="../overview/architecture.html">Architecture at a Glance</a> (system
+level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file level).</p>
+
+<h2 id="threads">Backend threading &amp; concurrency model</h2>
+<p>Exactly two threads, each owning a private Boost.Asio <code>io_context</code>:</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 820 300" role="img" aria-label="Two threads sharing one mutex-protected StateStore">
+  <defs>
+    <marker id="arr4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <rect class="d-box2" x="10" y="15" width="330" height="260"/>
+  <text class="d-text" x="175" y="38" text-anchor="middle" font-weight="600">Thread 1 — InputSource (private io_context)</text>
+  <rect class="d-box" x="40" y="55" width="270" height="42"/>
+  <text class="d-small" x="175" y="80" text-anchor="middle">async_receive_from loop (UDP)</text>
+  <rect class="d-box" x="40" y="115" width="270" height="42"/>
+  <text class="d-small" x="175" y="140" text-anchor="middle">decode + validate (OLV1 or DIS)</text>
+  <rect class="d-box" x="40" y="175" width="270" height="42"/>
+  <text class="d-small" x="175" y="200" text-anchor="middle">countReceived / countDropped / apply</text>
+  <line class="d-line" x1="175" y1="97" x2="175" y2="113" marker-end="url(#arr4)"/>
+  <line class="d-line" x1="175" y1="157" x2="175" y2="173" marker-end="url(#arr4)"/>
+
+  <rect class="d-box" x="360" y="115" width="120" height="70" rx="14"/>
+  <text class="d-small" x="420" y="142" text-anchor="middle" font-weight="600">StateStore</text>
+  <text class="d-small" x="420" y="160" text-anchor="middle">std::mutex</text>
+  <line class="d-line" x1="310" y1="196" x2="358" y2="165" marker-end="url(#arr4)"/>
+
+  <rect class="d-box2" x="500" y="15" width="310" height="260"/>
+  <text class="d-text" x="655" y="38" text-anchor="middle" font-weight="600">Thread 2 — main (WsServer io_context)</text>
+  <rect class="d-box" x="525" y="55" width="260" height="42"/>
+  <text class="d-small" x="655" y="80" text-anchor="middle">acceptor + all WebSocket sessions</text>
+  <rect class="d-box" x="525" y="115" width="260" height="42"/>
+  <text class="d-small" x="655" y="140" text-anchor="middle">1 Hz steady_timer → snapshot()</text>
+  <rect class="d-box" x="525" y="175" width="260" height="42"/>
+  <text class="d-small" x="655" y="200" text-anchor="middle">serialize once → enqueue to sessions</text>
+  <line class="d-line" x1="523" y1="140" x2="482" y2="145" marker-end="url(#arr4)" stroke-dasharray="5 4"/>
+  <line class="d-line" x1="655" y1="157" x2="655" y2="173" marker-end="url(#arr4)"/>
+  <text class="d-small" x="420" y="230" text-anchor="middle">the only lock in the system</text>
+</svg>
+<figcaption>Thread 1 writes through three methods; thread 2 reads via
+<code>snapshot()</code>, which returns a full copy — serialization happens lock-free.</figcaption>
+</figure>
+
+<ul>
+  <li><strong>Thread 1 (input)</strong> is spawned by <code>InputSource::start()</code>
+  (<code>backend/src/olv1_input_source.cpp:26</code> /
+  <code>dis_input_source.cpp:103</code>). Exactly one input source exists per process,
+  chosen by <code>Config::input_mode</code> at boot.</li>
+  <li><strong>Thread 2 (main)</strong> runs <code>ioc.run()</code> from
+  <code>main.cpp:75</code>. The Beast acceptor, every session, and the broadcast
+  timer all live on this one thread, so the <code>sessions_</code> set needs no
+  locking — single-threaded by construction.</li>
+  <li><strong>StateStore</strong> (<code>backend/src/state_store.cpp</code>) is the sole
+  synchronization point: one <code>std::mutex</code> guards
+  <code>countReceived</code>, <code>countDropped</code>, <code>apply</code>, and
+  <code>snapshot</code>. The <code>Logger</code> has its own internal mutex and is safe
+  from both threads.</li>
+  <li><strong>Shutdown:</strong> an <code>asio::signal_set</code> (SIGINT/SIGTERM) on the
+  main context logs "shutting down", calls <code>ws.stop()</code>, then
+  <code>input-&gt;stop()</code> (joins thread 1), then stops the main context —
+  deterministic teardown order, no detached threads.</li>
+</ul>
+
+<h3 id="apply-semantics">StateStore::apply — the merge rules</h3>
+<ul>
+  <li><strong>Sequence gate (stateful):</strong> first packet always accepted; after
+  that, accept iff <code>(int32_t)(seq - last_seq) &gt; 0</code> — wraparound-safe.
+  This is validation step 11; it lives here, not in <code>proto::decode</code>,
+  because it needs state.</li>
+  <li><strong>Satellite:</strong> replaced wholesale on every accepted packet.</li>
+  <li><strong>Objects: upsert by id.</strong> Records merge into the table and stamp
+  <code>last_update</code>; objects <em>carry forward</em> across packets until the
+  expiry window (default 15&nbsp;s) prunes them at snapshot time. A packet never
+  clears objects it doesn't mention — this is what makes chunked and lossy delivery
+  safe.</li>
+  <li><strong>Rate window:</strong> accept timestamps are kept for a trailing 5&nbsp;s
+  window; <code>udpRateHz = count / 5</code>.</li>
+  <li><strong>snapshot(mono)</strong> prunes expired objects (boundary value retained,
+  +1&nbsp;ms pruned), copies everything, and returns objects sorted ascending by id.</li>
+</ul>
+
+<h3 id="input-seam">The InputSource strategy seam</h3>
+<pre><code class="language-cpp">class InputSource {
+ public:
+  virtual ~InputSource() = default;
+  virtual void start() = 0;   // idempotent; spawns the receive thread
+  virtual void stop()  = 0;   // idempotent; joins it
+};
+std::unique_ptr&lt;InputSource&gt; makeInputSource(const Config&amp;, StateStore&amp;, Logger&amp;);
+</code></pre>
+<p>Both implementations feed the identical
+<code>countReceived / countDropped / apply</code> API, so the Stats panel means the
+same thing in both modes. The DIS implementation additionally:</p>
+<ul>
+  <li>parses the 12-byte PDU header manually (version/exercise/type/timestamp) before
+  handing the body to open-dis-cpp's <code>EntityStatePdu::unmarshal</code> (wrapped in
+  try/catch — the library throws on truncation);</li>
+  <li>folds 48-bit EntityIDs to u32 via FNV-1a (collision &rarr; one WARN per pair);</li>
+  <li>keeps per-entity newest-timestamp staleness (<code>ts &gt;&gt; 1</code>, hourly
+  wraparound at 2<sup>30</sup>);</li>
+  <li><em>carries the satellite forward</em>: DIS updates one entity per PDU, but
+  <code>apply()</code> replaces the satellite wholesale — so the last-known satellite
+  state is stamped into every synthesized packet;</li>
+  <li>synthesizes a strictly-increasing sequence per accepted PDU so the OLV1
+  staleness gate in <code>apply()</code> never self-fires.</li>
+</ul>
+
+<h2 id="memory">Memory ownership</h2>
+<ul>
+  <li><strong>Backend:</strong> <code>main()</code> owns everything by value or
+  <code>unique_ptr</code> in declaration order — <code>Logger</code>,
+  <code>StateStore</code>, <code>InputSource</code>, <code>io_context</code>,
+  <code>WsServer</code> — so destruction order is the reverse of construction and
+  references passed down (e.g. <code>StateStore&amp;</code> into input sources) outlive
+  their users. Sessions are <code>shared_ptr</code>-owned by the Beast async chain and
+  registered in the server's session set; the broadcast payload is a
+  <code>shared_ptr&lt;const std::string&gt;</code> serialized once per tick and shared
+  by every session's outbox.</li>
+  <li><strong>No dynamic global state.</strong> There are no singletons; the test
+  framework's registry is the only static-init pattern in the repo.</li>
+  <li><strong>Frontend:</strong> factory functions returning closures
+  (<code>createModel()</code>, <code>createSettings()</code>, <code>createConnection()</code>,
+  <code>createRenderer()</code>, <code>createUi()</code>) — module-level state is avoided;
+  <code>main.js</code> owns all instances and wires callbacks. GL buffers are
+  preallocated for 5,000 objects at renderer creation.</li>
+</ul>
+
+<h2 id="errors">Error handling</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Failure class</th><th>Policy</th><th>Mechanism</th></tr></thead>
+  <tbody>
+    <tr><td>Bad CLI/config</td><td>Exit 2 before any thread starts</td>
+        <td><code>parseArgs</code> returns error text; strict TOML schema names key + line</td></tr>
+    <tr><td>Startup resource failure (log file, port bind)</td><td>Exit 1</td>
+        <td>Constructors throw <code>boost::system::system_error</code>; caught in
+        <code>main()</code>'s single try/catch, logged as <code>fatal:</code></td></tr>
+    <tr><td>Malformed / stale packet</td><td>Count + log + drop; never fatal, never partial</td>
+        <td><code>DecodeError</code> pipeline, then <code>apply()</code>'s sequence gate</td></tr>
+    <tr><td>Slow WS client</td><td>Drop frames past 5 pending; keep connection</td>
+        <td>Per-session outbox with rate-limited WARN</td></tr>
+    <tr><td>Frontend parse error</td><td>Count + console log; connection stays up</td>
+        <td><code>parseStateMessage</code> throws; caller catches and increments
+        <code>parseErrorCount</code></td></tr>
+    <tr><td>Frontend WebGL unavailable</td><td>Fatal overlay, page otherwise inert</td>
+        <td>try/catch around <code>createRenderer</code> in <code>boot()</code></td></tr>
+    <tr><td>Frontend bad site config</td><td>Warn + defaults (lenient by design)</td>
+        <td>Double-wrapped try/catch in <code>loadSiteConfig</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="logging">Logging</h2>
+<p>One line per event, written by the thread-safe <code>Logger</code>
+(<code>backend/src/logger.cpp</code>), flushed every line:</p>
+<pre><code class="language-sh">2026-07-01T12:34:56.789Z INFO  [main] startup udp=0.0.0.0:47000 ws=0.0.0.0:8765 ...
+2026-07-01T12:35:02.120Z INFO  [ws]   client connected 127.0.0.1:52344 clients=1
+2026-07-01T12:35:03.001Z WARN  [udp]  dropped bad_crc len=6204 from=10.0.0.7:58211
+2026-07-01T12:35:04.500Z DEBUG [udp]  accepted seq=42 objs=25 total=25 from=127.0.0.1:41000
+</code></pre>
+<ul>
+  <li>Levels: <code>debug &lt; info &lt; warn &lt; error</code>; below-threshold lines are
+  dropped. Info+ mirrors to stderr unless <code>--quiet</code>.</li>
+  <li>Components: <code>[main]</code> lifecycle, <code>[udp]</code>/<code>[dis]</code> intake
+  (accepted at debug, malformed at warn, stale/filtered at debug), <code>[ws]</code>
+  connections and outbox overflow.</li>
+  <li>The startup line intentionally appends <code>input_mode=</code>/<code>config_file=</code>
+  only when non-default, keeping the default run byte-identical to pre-DIS versions
+  (regression-tested property).</li>
+</ul>
+
+<h2 id="config-system">Configuration system</h2>
+<p>Both C++ binaries share the same two-pass pattern
+(<code>backend/src/config.cpp</code>, <code>simulator/src/sim_config.cpp</code>):
+pass 1 finds <code>--config</code> (order-independent, at most once) and applies the
+file over defaults; pass 2 applies remaining flags in argv order. The TOML schema
+is a closed set — every known key has a type check and range check, and anything
+else is <code>unknown key</code>. Cross-field invariants (e.g. DIS mode requires
+<code>dis_satellite_entity_id</code>) are checked on the merged result.</p>
+
+<h2 id="frontend-runtime">Frontend runtime model</h2>
+<ul>
+  <li><strong>Boot</strong> (<code>main.js</code>): fetch <code>config.toml</code> (lenient)
+  &rarr; <code>createSettings</code>(localStorage, siteDefaults) &rarr;
+  <code>createRenderer</code> (fatal overlay on failure) &rarr;
+  <code>createConnection</code> &rarr; <code>createUi</code> &rarr; start the
+  requestAnimationFrame loop + 1&nbsp;s UI tick.</li>
+  <li><strong>Data path:</strong> <code>net.js</code> validates every message
+  structurally (row length 11, category 1–5, all-or-none velocity, protocolVersion
+  1 on <code>hello</code>); <code>model.js</code> stores only the latest snapshot;
+  <code>renderer.setSnapshot</code> and <code>ui.updateData</code> consume it.</li>
+  <li><strong>Reconnect:</strong> backoff 1&nbsp;&rarr;&nbsp;2&nbsp;&rarr;&nbsp;4&nbsp;&rarr;&nbsp;8&nbsp;&rarr;&nbsp;10&nbsp;s
+  (capped); endpoint changes from Settings reconnect immediately; stale-socket
+  guards make handler races harmless.</li>
+  <li><strong>Scene clock:</strong> the renderer anchors an epoch to each snapshot's
+  <code>serverTime</code> and advances it with <code>performance.now()</code> deltas —
+  Sun, Moon, planets, and star GMST all derive from this single clock, which keeps
+  celestial positions correct even if the client's wall clock is wrong.</li>
+  <li><strong>Settings flow:</strong> one-way sync store &rarr; form; every control
+  writes back via <code>update()</code> (validated/clamped); <code>onChange</code>
+  re-applies renderer settings and reconnects only if host/port changed.</li>
+</ul>
+
+<h2 id="patterns">Design patterns in use</h2>
+<ul>
+  <li><strong>Strategy</strong> — <code>InputSource</code> (OLV1 vs DIS intake).</li>
+  <li><strong>Factory</strong> — <code>makeInputSource</code>; all frontend
+  <code>createX()</code> constructors.</li>
+  <li><strong>Snapshot/copy-on-read</strong> — <code>StateStore::snapshot()</code>
+  decouples the lock from serialization.</li>
+  <li><strong>Registrar/static-registration</strong> — <code>OLV_TEST</code> macro
+  self-registers test cases at static-init.</li>
+  <li><strong>Dependency injection for testability</strong> — <code>wsFactory</code> in
+  <code>net.js</code>, <code>storage</code> in <code>settings.js</code>,
+  <code>fetchFn</code> in <code>site_config.js</code>,
+  <code>processDatagram()</code> as the DIS test seam.</li>
+  <li><strong>Lockstep dual implementation</strong> — the fisheye GLSL block is a
+  byte-for-byte copy of <code>sat_camera.js</code> math; the TOML grammar exists in
+  C++ and JS. Both are guarded by parallel test suites and loud comments.</li>
+</ul>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OLV1 UDP Protocol — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/protocol-udp" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>OLV1 UDP Protocol (version 1)</h1>
+<div class="note"><strong>Normative sources:</strong> <code>docs/PROTOCOL_UDP.md</code>,
+and above it the reference implementation
+<code>backend/include/olv/protocol.hpp</code>. This page is a faithful summary.</div>
+
+<p class="lead"><strong>Little-endian</strong> binary datagrams, serialized
+field-by-field (no struct overlay, no padding). Floats are IEEE&nbsp;754
+binary32/binary64. Coordinates are ECEF meters, velocities ECEF m/s. No timestamp
+on the wire — receivers stamp arrival time; freshness is sequence-only. Default
+port <strong>47000/udp</strong>.</p>
+
+<h2 id="constants">Constants &amp; limits</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Constant</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td>Magic</td><td><code>'O','L','V','1'</code> = <code>4F 4C 56 31</code></td></tr>
+    <tr><td>Version</td><td>1</td></tr>
+    <tr><td><code>kHeaderSize</code></td><td>56 bytes</td></tr>
+    <tr><td><code>kRecordSize</code></td><td>48 bytes</td></tr>
+    <tr><td><code>kCrcSize</code></td><td>4 bytes</td></tr>
+    <tr><td><code>kMaxObjectsPerPacket</code></td><td>128</td></tr>
+    <tr><td><code>kMaxTrackedObjects</code> (per cycle)</td><td>5000</td></tr>
+    <tr><td><code>kMinPacketSize</code> / <code>kMaxPacketSize</code></td><td>60 / 6204 bytes (= 56 + 128&times;48 + 4)</td></tr>
+    <tr><td><code>kMaxCoordinateMeters</code></td><td>1&times;10<sup>13</sup> m per axis</td></tr>
+    <tr><td>Object expiry window (receiver default)</td><td>15 s</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Update cycles with more than 128 objects are split across packets; every packet is
+self-contained (satellite state + its chunk + <code>object_total</code>), so loss
+never corrupts state.</p>
+
+<h2 id="header">Packet header (STATE_UPDATE, msg_type = 1)</h2>
+<pre><code class="language-sh">offset size type  field
+------ ---- ----  -----------------------------------------------------------
+0      4    u8[4] magic            'O','L','V','1'
+4      1    u8    version          1
+5      1    u8    msg_type         1 = STATE_UPDATE
+6      2    u16   hdr_flags        reserved, MUST be 0
+8      4    u32   sequence         +1 per PACKET sent (wraps)
+12     4    u32   sat_id           primary satellite identifier
+16     8    f64   sat_pos_x        ECEF meters
+24     8    f64   sat_pos_y
+32     8    f64   sat_pos_z
+40     4    f32   sat_vel_x        ECEF m/s
+44     4    f32   sat_vel_y
+48     4    f32   sat_vel_z
+52     2    u16   object_count     records in THIS packet, &lt;= 128
+54     2    u16   object_total     objects in this update cycle, &lt;= 5000
+56     48*N       object records
+56+48N 4    u32   crc32            over bytes [0, 56+48N)
+</code></pre>
+<p>Total datagram length MUST equal <code>56 + 48*object_count + 4</code> exactly.</p>
+
+<h2 id="record">Object record (48 bytes)</h2>
+<pre><code class="language-sh">offset size type field
+------ ---- ---- ------------------------------------------------------------
++0     4    u32  object_id
++4     1    u8   object_type      enum below
++5     1    u8   flags            bit0 HAS_VELOCITY · bit1 HIGHLIGHT · rest 0
++6     1    u8   confidence       0-100 (%); &gt;100 clamped by receiver
++7     1    u8   reserved         send 0
++8     8    f64  pos_x            ECEF meters
++16    8    f64  pos_y
++24    8    f64  pos_z
++32    4    f32  vel_x            ECEF m/s; 0 when HAS_VELOCITY unset
++36    4    f32  vel_y
++40    4    f32  vel_z
++44    4    f32  intensity        GROUND_HOT: Kelvin · STAR: apparent
+                                  magnitude · others: 0
+</code></pre>
+
+<h2 id="types">Object type enum</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Value</th><th>Name</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td><code>DEBRIS</code></td><td>orbital debris</td></tr>
+    <tr><td>2</td><td><code>STAR</code></td><td>distant direction marker; position = direction &times; large radius
+        (e.g. 1e12 m); fixed in ECEF (Earth-rotation drift is a documented simplification)</td></tr>
+    <tr><td>3</td><td><code>COMET</code></td><td>—</td></tr>
+    <tr><td>4</td><td><code>SATELLITE</code></td><td>tracked satellite other than the primary</td></tr>
+    <tr><td>5</td><td><code>GROUND_HOT</code></td><td>hot surface object; stationary in ECEF</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Any other value rejects the whole packet (<code>kBadObjectType</code>).</p>
+
+<h2 id="crc">CRC</h2>
+<p>CRC-32 IEEE 802.3: reflected, polynomial <code>0x04C11DB7</code>
+(reflected table constant <code>0xEDB88320</code>), init and final XOR
+<code>0xFFFFFFFF</code> — i.e. zlib's <code>crc32</code>. Computed over all bytes
+before the CRC field. Reference vector: <code>crc32("123456789") =
+0xCBF43926</code>.</p>
+
+<h2 id="validation">Ordered validation (receiver MUST, in order)</h2>
+<ol>
+  <li>length &lt; 60 &rarr; <code>kTooShort</code>; length &gt; 6204 &rarr; <code>kTooLong</code></li>
+  <li>magic &ne; <code>OLV1</code> &rarr; <code>kBadMagic</code></li>
+  <li>version &ne; 1 &rarr; <code>kBadVersion</code></li>
+  <li>msg_type &ne; 1 &rarr; <code>kBadMsgType</code></li>
+  <li>object_count &gt; 128, or object_total &gt; 5000, or count &gt; total &rarr; <code>kTooManyObjects</code></li>
+  <li>length &ne; 56 + 48&middot;count + 4 &rarr; <code>kBadLength</code></li>
+  <li>CRC mismatch &rarr; <code>kBadCrc</code></li>
+  <li>any float NaN/&plusmn;Inf &rarr; <code>kNonFinite</code></li>
+  <li>any |position| &gt; 1e13 m &rarr; <code>kOutOfRange</code></li>
+  <li>unknown object_type &rarr; <code>kBadObjectType</code></li>
+</ol>
+<p><strong>State layer (step 11):</strong> with <code>last</code> = last accepted
+sequence, accept iff <code>(int32_t)(sequence - last) &gt; 0</code> — wraparound-safe;
+first packet always accepted; duplicates/older drop as <em>stale</em>.</p>
+<p>Every failure drops the <em>whole</em> packet (never partial application), is
+counted per reason, and is logged with the source address. Confidence &gt; 100 is
+the one soft case: clamped, not rejected.</p>
+
+<h2 id="versioning">Versioning rules</h2>
+<ul>
+  <li><code>version</code> bumps on any layout change; receivers reject unknown
+  versions.</li>
+  <li>New <code>msg_type</code> values may be added under version 1; receivers reject
+  unknown types, so deploy receiver support first.</li>
+</ul>
+
+<p>Related: <a href="protocol-dis.html">DIS input</a> ·
+<a href="protocol-ws.html">WebSocket output</a> ·
+<a href="../developer-guide/api.html#protocol">encode/decode API</a></p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

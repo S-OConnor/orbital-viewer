@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Command-Line Reference — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/cli" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Command-Line Reference</h1>
+<p class="lead">Every flag of every executable and script. Flags always override
+config-file values, regardless of argument order (two-pass parsing).</p>
+
+<h2 id="olv-backend">olv_backend</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Value</th><th>Default</th><th>Validation / notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>--config PATH</code></td><td>file</td><td>—</td><td>at most once; file must parse (strict schema)</td></tr>
+    <tr><td><code>--udp-bind ADDR</code></td><td>string</td><td><code>0.0.0.0</code></td><td>OLV1 listen address</td></tr>
+    <tr><td><code>--udp-port N</code></td><td>int</td><td><code>47000</code></td><td>1–65535</td></tr>
+    <tr><td><code>--ws-bind ADDR</code></td><td>string</td><td><code>0.0.0.0</code></td><td>WebSocket listen address</td></tr>
+    <tr><td><code>--ws-port N</code></td><td>int</td><td><code>8765</code></td><td>1–65535</td></tr>
+    <tr><td><code>--log-file PATH</code></td><td>string</td><td><code>olv_backend.log</code></td><td>appended, created if missing</td></tr>
+    <tr><td><code>--log-level LVL</code></td><td>enum</td><td><code>info</code></td><td><code>debug|info|warn|error</code>, case-insensitive</td></tr>
+    <tr><td><code>--expiry-seconds N</code></td><td>int</td><td><code>15</code></td><td>1–3600; object prune window</td></tr>
+    <tr><td><code>--broadcast-hz X</code></td><td>float</td><td><code>1.0</code></td><td>&gt; 0 and &le; 60</td></tr>
+    <tr><td><code>--input-mode MODE</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis</code>; DIS additionally requires
+        <code>dis_satellite_entity_id</code> from a config file (no flag exists)</td></tr>
+    <tr><td><code>--quiet</code></td><td>flag</td><td>off</td><td>disable stderr mirroring (file logging unaffected)</td></tr>
+    <tr><td><code>--help</code> / <code>-h</code></td><td>flag</td><td>—</td><td>print usage, exit 0</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Exit codes:</strong> 0 clean shutdown/help · 1 runtime failure (log file,
+port bind, fatal exception) · 2 bad arguments or config.</p>
+
+<h2 id="olv-sim">olv_sim</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Value</th><th>Default</th><th>Validation / notes</th></tr></thead>
+  <tbody>
+    <tr><td><code>--csv PATH</code></td><td>file</td><td>—</td><td>mission CSV replay; mutually exclusive with <code>--generate</code>; one source required</td></tr>
+    <tr><td><code>--generate N</code></td><td>int</td><td>—</td><td>1–5000 synthetic objects + primary satellite</td></tr>
+    <tr><td><code>--config PATH</code></td><td>file</td><td>—</td><td>simulator.toml; flags win</td></tr>
+    <tr><td><code>--dest HOST</code></td><td>string</td><td><code>127.0.0.1</code></td><td>IP or hostname (IPv4 preferred on resolve)</td></tr>
+    <tr><td><code>--port N</code></td><td>int</td><td><code>47000</code>; <code>47001</code> when <code>--protocol dis</code> and no explicit port</td><td>1–65535</td></tr>
+    <tr><td><code>--rate HZ</code></td><td>float</td><td><code>1.0</code></td><td>&gt; 0 and &le; 50</td></tr>
+    <tr><td><code>--loop</code></td><td>flag</td><td>off</td><td>CSV only: repeat forever</td></tr>
+    <tr><td><code>--chunk N</code></td><td>int</td><td><code>128</code></td><td>1–128 objects/packet (OLV1 only); ~24 stays under one MTU</td></tr>
+    <tr><td><code>--protocol P</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis</code>; DIS emission params come from config/defaults (no <code>--dis-*</code> flags)</td></tr>
+    <tr><td><code>--duration S</code></td><td>int</td><td><code>120</code></td><td>generate mode; &ge; 0, 0 = forever</td></tr>
+    <tr><td><code>--seed N</code></td><td>int</td><td><code>1</code></td><td>0–4294967295; deterministic</td></tr>
+    <tr><td><code>--quiet</code></td><td>flag</td><td>off</td><td>suppress per-cycle line (send errors still print)</td></tr>
+    <tr><td><code>--help</code></td><td>flag</td><td>—</td><td>usage, exit 0</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Exit:</strong> 0 after a completed run (prints
+<code>done: cycles= packets= bytes= send_errors=</code>); 1 on argument/CSV errors.</p>
+
+<h2 id="ws-probe">olv_ws_probe</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Flag</th><th>Required</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>--host H</code></td><td>yes</td><td>WebSocket server host</td></tr>
+    <tr><td><code>--port P</code></td><td>yes</td><td>1–65535</td></tr>
+    <tr><td><code>--count N</code></td><td>yes</td><td>frames to capture (&gt; 0); each must contain <code>"type":"..."</code></td></tr>
+    <tr><td><code>--timeout SECONDS</code></td><td>yes</td><td>global deadline (&gt; 0)</td></tr>
+    <tr><td><code>--out FILE</code></td><td>yes</td><td>output file, one JSON frame per line (truncated on open)</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Exit:</strong> 0 with <code>captured N frames</code>; 1 with
+<code>&lt;err&gt; (captured X of N)</code> (default err "timeout") or on unknown flags.</p>
+
+<h2 id="scripts">Scripts</h2>
+
+<h3 id="run-all">scripts/run_all.sh</h3>
+<pre><code class="language-sh">scripts/run_all.sh [--ws-port N] [--udp-port N] [--http-port N] [--build] [-- &lt;extra compose args&gt;]
+</code></pre>
+<p>Containerized bring-up: auto-detects the compose engine
+(<code>OLV_COMPOSE</code> &rarr; <code>podman compose</code> &rarr;
+<code>docker compose</code> &rarr; <code>podman-compose</code> &rarr;
+<code>docker-compose</code>), project name <code>olv</code>, exports the port env
+vars, <code>up -d</code> (+<code>--build</code> with the flag), waits up to 30&nbsp;s
+for the WS port, prints URLs, streams logs. <kbd>Ctrl-C</kbd> (or any exit) tears the
+stack down. Exit 130/143 on INT/TERM; 1 if the backend never comes up (dumps its
+logs first).</p>
+
+<h3 id="install-open-dis">scripts/install_open_dis.sh</h3>
+<pre><code class="language-sh">scripts/install_open_dis.sh [--prefix DIR] [--src DIR]
+# env: OLV_OPEN_DIS_TARBALL (pre-fetched file), OLV_OPEN_DIS_URL (mirror), CXX, AR
+</code></pre>
+<p>Default prefix <code>/usr/local</code>. Source resolution: <code>--src</code> &rarr;
+<code>$OLV_OPEN_DIS_TARBALL</code> &rarr; <code>$OLV_OPEN_DIS_URL</code> &rarr; GitHub;
+tarball always sha256-verified before compiling. Installs
+<code>include/dis6</code>, <code>lib/libopendis6.a</code>, and license/provenance
+docs.</p>
+
+<h3 id="integration-test">scripts/integration_test.sh</h3>
+<pre><code class="language-sh">scripts/integration_test.sh BACKEND_BIN SIM_BIN PROBE_BIN [REPO_ROOT]
+</code></pre>
+<p>End-to-end test on random ephemeral ports; normally invoked by CTest as the
+<code>integration</code> test. Prints <code>INTEGRATION PASS</code> / non-zero exit.</p>
+
+<h3 id="serve-frontend">scripts/serve_frontend.sh</h3>
+<pre><code class="language-sh">scripts/serve_frontend.sh [PORT]      # default 8000
+</code></pre>
+<p>Python stdlib HTTP server bound to 0.0.0.0, serving the <em>repo root</em> — open
+<code>http://localhost:PORT/frontend/</code>.</p>
+
+<h3 id="serve-docs">scripts/serve_docs.sh</h3>
+<pre><code class="language-sh">scripts/serve_docs.sh [PORT]          # default 8090
+</code></pre>
+<p>Serves this documentation site (<code>docs/site/</code>) and opens the index page in
+your default browser.</p>
+
+<h3 id="gen-sbom">scripts/gen_sbom.py</h3>
+<pre><code class="language-sh">python3 scripts/gen_sbom.py [--out DIR] [--print]     # default out: sbom/
+</code></pre>
+<p>Writes CycloneDX 1.5 <code>backend.cdx.json</code> + <code>frontend.cdx.json</code>;
+always exits 0 (missing optional inputs warn).</p>
+
+<h3 id="make-csv">scripts/make_example_csv.py</h3>
+<pre><code class="language-sh">python3 scripts/make_example_csv.py
+</code></pre>
+<p>Deterministically regenerates <code>simulator/data/example_mission.csv</code>
+(fixed seed 20260701; 61 frames, fixed object mix).</p>
+
+<h3 id="cleanup">scripts/cleanup.sh</h3>
+<pre><code class="language-sh">scripts/cleanup.sh
+</code></pre>
+<p>Stops the compose stack (<code>down --remove-orphans</code>), force-stops any
+<code>olv_*</code> containers, and kills stray <code>run_all.sh</code> /
+<code>serve_frontend.sh</code> / dev-server processes.</p>
+
+<h2 id="quality">Build-tree quality targets</h2>
+<pre><code class="language-sh">cmake --build build --target format         # clang-format in place
+cmake --build build --target format-check   # verify only (--Werror)
+cmake --build build --target lint           # cppcheck
+ctest --test-dir build [--output-on-failure] [-R name] [-L label]
+node --test "frontend/tests/*.test.mjs"
+node frontend/tests/validate_message.mjs FILE [--min-objects N]
+</code></pre>
+
+<h2 id="ports">Default ports summary</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Port</th><th>Protocol</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>47000/udp</code></td><td>OLV1</td><td>backend OLV1 intake (simulator default destination)</td></tr>
+    <tr><td><code>47001/udp</code></td><td>DIS</td><td>backend DIS intake (<code>--input-mode dis</code>)</td></tr>
+    <tr><td><code>8765/tcp</code></td><td>WebSocket</td><td>backend broadcast to browsers</td></tr>
+    <tr><td><code>8000/tcp</code></td><td>HTTP</td><td>frontend (dev server / nginx container)</td></tr>
+    <tr><td><code>8090/tcp</code></td><td>HTTP</td><td>this documentation site (<code>serve_docs.sh</code>)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration Reference — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/configuration" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Configuration Reference</h1>
+<p class="lead">Every configuration key, environment variable, and persisted setting.
+Precedence everywhere: <strong>built-in defaults &lt; config file &lt; explicit
+overrides</strong> (CLI flags / saved browser Settings). Backend and simulator are
+strict (unknown key, wrong type, or out-of-range aborts startup with key + line);
+the frontend is lenient (warn + defaults).</p>
+
+<h2 id="backend-toml">backend.toml (olv_backend --config)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Valid values / rule</th></tr></thead>
+  <tbody>
+    <tr><td><code>network.udp_bind</code></td><td>string</td><td><code>"0.0.0.0"</code></td><td>any bind address</td></tr>
+    <tr><td><code>network.udp_port</code></td><td>integer</td><td><code>47000</code></td><td>1–65535</td></tr>
+    <tr><td><code>network.ws_bind</code></td><td>string</td><td><code>"0.0.0.0"</code></td><td>any bind address</td></tr>
+    <tr><td><code>network.ws_port</code></td><td>integer</td><td><code>8765</code></td><td>1–65535</td></tr>
+    <tr><td><code>broadcast.hz</code></td><td>float or integer</td><td><code>1.0</code></td><td>&gt; 0 and &le; 60</td></tr>
+    <tr><td><code>state.expiry_seconds</code></td><td>integer</td><td><code>15</code></td><td>1–3600</td></tr>
+    <tr><td><code>logging.file</code></td><td>string</td><td><code>"olv_backend.log"</code></td><td>non-empty path</td></tr>
+    <tr><td><code>logging.level</code></td><td>string</td><td><code>"info"</code></td><td><code>debug | info | warn | error</code> (case-insensitive)</td></tr>
+    <tr><td><code>logging.stderr</code></td><td>boolean</td><td><code>true</code></td><td>mirror info+ lines to stderr</td></tr>
+    <tr><td><code>input.mode</code></td><td>string</td><td><code>"olv1"</code></td><td><code>olv1 | dis</code></td></tr>
+    <tr><td><code>input.dis_bind</code></td><td>string</td><td><code>"0.0.0.0"</code></td><td>DIS mode only</td></tr>
+    <tr><td><code>input.dis_port</code></td><td>integer</td><td><code>47001</code></td><td>1–65535</td></tr>
+    <tr><td><code>input.dis_exercise_id</code></td><td>integer</td><td>unset (accept all)</td><td>0–255; when set, other exercises are filtered</td></tr>
+    <tr><td><code>input.dis_satellite_entity_id</code></td><td>string</td><td>empty</td><td><code>"site:app:entity"</code>, three decimal 0–65535 values;
+        <strong>required when <code>mode="dis"</code></strong> (cross-field check); no CLI flag exists</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="simulator-toml">simulator.toml (olv_sim --config)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Valid values / rule</th></tr></thead>
+  <tbody>
+    <tr><td><code>target.host</code></td><td>string</td><td><code>"127.0.0.1"</code></td><td>non-empty; IP or hostname (compose service names work)</td></tr>
+    <tr><td><code>target.port</code></td><td>integer</td><td><code>47000</code> (olv1) / <code>47001</code> (dis, when not explicitly set)</td><td>1–65535</td></tr>
+    <tr><td><code>source.mode</code></td><td>string</td><td>—</td><td><code>csv | generate</code></td></tr>
+    <tr><td><code>source.csv_path</code></td><td>string</td><td>—</td><td>path to mission CSV</td></tr>
+    <tr><td><code>source.loop</code></td><td>boolean</td><td><code>false</code></td><td>CSV mode: replay repeatedly</td></tr>
+    <tr><td><code>source.generate_count</code></td><td>integer</td><td>—</td><td>1–5000 synthetic objects</td></tr>
+    <tr><td><code>source.duration_seconds</code></td><td>integer</td><td><code>120</code></td><td>&ge; 0; 0 = run forever (generate mode)</td></tr>
+    <tr><td><code>source.seed</code></td><td>integer</td><td><code>1</code></td><td>0–4294967295; deterministic generator seed</td></tr>
+    <tr><td><code>send.rate_hz</code></td><td>float or integer</td><td><code>1.0</code></td><td>&gt; 0 and &le; 50</td></tr>
+    <tr><td><code>send.chunk</code></td><td>integer</td><td><code>128</code></td><td>1–128 objects per packet (olv1 only)</td></tr>
+    <tr><td><code>send.protocol</code></td><td>string</td><td><code>"olv1"</code></td><td><code>olv1 | dis</code></td></tr>
+    <tr><td><code>send.dis_exercise_id</code></td><td>integer</td><td><code>1</code></td><td>0–255 (DIS emission)</td></tr>
+    <tr><td><code>send.dis_site</code></td><td>integer</td><td><code>1</code></td><td>0–65535 (DIS emission: site field)</td></tr>
+    <tr><td><code>send.dis_satellite_entity_id</code></td><td>string</td><td><code>"1:1:1"</code></td><td><code>"site:app:entity"</code> for the emitted satellite</td></tr>
+    <tr><td><code>output.quiet</code></td><td>boolean</td><td><code>false</code></td><td>suppress per-cycle console line</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="frontend-toml">frontend/config.toml (site defaults, lenient)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Type</th><th>Default</th><th>Maps to setting</th></tr></thead>
+  <tbody>
+    <tr><td><code>websocket.host</code></td><td>string</td><td><code>""</code> (page hostname)</td><td><code>host</code></td></tr>
+    <tr><td><code>websocket.port</code></td><td>integer 1–65535</td><td><code>8765</code></td><td><code>port</code></td></tr>
+    <tr><td><code>display.show_trails</code></td><td>boolean</td><td><code>false</code></td><td><code>showTrails</code></td></tr>
+    <tr><td><code>display.trail_seconds</code></td><td>integer 0–60</td><td><code>30</code></td><td><code>trailSeconds</code></td></tr>
+    <tr><td><code>display.show_labels</code></td><td>boolean</td><td><code>false</code></td><td><code>showLabels</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>Only these five keys are read from the file. Invalid or missing file &rarr;
+<code>console.warn</code> + defaults; never an error.</p>
+
+<h2 id="settings">Browser settings (localStorage <code>olv.settings.v1</code>)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Setting</th><th>Default</th><th>Validation</th><th>Site-configurable?</th></tr></thead>
+  <tbody>
+    <tr><td><code>showTrails</code></td><td><code>false</code></td><td>boolean coerce</td><td>yes</td></tr>
+    <tr><td><code>trailSeconds</code></td><td><code>30</code></td><td>clamped int 0–60</td><td>yes</td></tr>
+    <tr><td><code>showLabels</code></td><td><code>false</code></td><td>boolean coerce</td><td>yes</td></tr>
+    <tr><td><code>showSky</code></td><td><code>true</code></td><td>boolean coerce</td><td>no</td></tr>
+    <tr><td><code>viewMode</code></td><td><code>"orbit"</code></td><td>only <code>"orbit"</code> / <code>"sat"</code></td><td>no</td></tr>
+    <tr><td><code>categories.*</code></td><td>all <code>true</code></td><td>per-key boolean (debris, star, comet, satellite, groundHot)</td><td>no</td></tr>
+    <tr><td><code>host</code></td><td><code>""</code></td><td>string</td><td>yes</td></tr>
+    <tr><td><code>port</code></td><td><code>8765</code></td><td>clamped int 1–65535</td><td>yes</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Corrupt or quota-blocked storage is tolerated (falls back to defaults).
+"Reset to defaults" returns to the site-config-merged baseline.</p>
+
+<h2 id="env">Environment variables</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Variable</th><th>Used by</th><th>Default</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>OLV_HTTP_PORT</code></td><td><code>compose.yaml</code> / <code>run_all.sh</code></td><td><code>8000</code></td><td>published host port &rarr; frontend container :80</td></tr>
+    <tr><td><code>OLV_WS_PORT</code></td><td>same</td><td><code>8765</code></td><td>published host port &rarr; backend :8765</td></tr>
+    <tr><td><code>OLV_UDP_PORT</code></td><td>same</td><td><code>47000</code></td><td>published host port &rarr; backend :47000/udp</td></tr>
+    <tr><td><code>OLV_COMPOSE</code></td><td><code>run_all.sh</code>, <code>cleanup.sh</code></td><td>auto-detect</td><td>compose command override (e.g. <code>"docker compose"</code>)</td></tr>
+    <tr><td><code>OLV_OPEN_DIS_TARBALL</code></td><td><code>install_open_dis.sh</code></td><td>—</td><td>path to a pre-fetched tarball (air gap); sha256 still verified</td></tr>
+    <tr><td><code>OLV_OPEN_DIS_URL</code></td><td><code>install_open_dis.sh</code>, Containerfile build arg</td><td>GitHub release URL</td><td>mirror URL for the pinned tarball</td></tr>
+    <tr><td><code>CXX</code> / <code>AR</code></td><td><code>install_open_dis.sh</code></td><td><code>c++</code> / <code>ar</code></td><td>toolchain override for the open-dis build</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="cmake-opts">CMake configure options</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Option</th><th>Default</th><th>Purpose</th></tr></thead>
+  <tbody>
+    <tr><td><code>OLV_BUILD_TESTS</code></td><td><code>ON</code></td><td>build test binaries + enable CTest</td></tr>
+    <tr><td><code>OLV_WERROR</code></td><td><code>OFF</code></td><td>add <code>-Werror</code> to the shared warning set</td></tr>
+    <tr><td><code>OLV_OPEN_DIS_PREFIX</code></td><td>unset</td><td>extra search prefix for open-dis-cpp</td></tr>
+    <tr><td><code>CMAKE_BUILD_TYPE</code></td><td><code>Release</code> when unset</td><td>standard CMake semantics</td></tr>
+    <tr><td><code>CMAKE_EXPORT_COMPILE_COMMANDS</code></td><td><code>OFF</code></td><td>compile DB for clang-tidy</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Related: <a href="cli.html">Command-Line Reference</a> ·
+<a href="file-formats.html#toml">TOML subset grammar</a> ·
+<a href="../user-guide/configuration.html">Configuration guide with examples</a></p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

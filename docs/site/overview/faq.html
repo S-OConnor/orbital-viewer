@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="overview/faq" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Frequently Asked Questions</h1>
+
+<h2 id="general">General</h2>
+
+<h3 id="what-does-los-mean">What does "LOS" stand for?</h3>
+<p>Line of sight. The viewer's satellite POV mode renders the geometric line-of-sight
+picture from the primary satellite — a 170&deg; fisheye nadir view wide enough to
+show space around Earth's limb.</p>
+
+<h3 id="is-this-real-data">Does it display real satellite data?</h3>
+<p>It displays whatever its inputs feed it. The bundled simulator produces synthetic
+or CSV-scripted data; the DIS input mode can ingest live IEEE&nbsp;1278.1 Entity
+State PDUs from a real simulation exercise. The <em>celestial</em> background (Sun,
+Moon, planets, bright stars) is astronomically computed from the state message's
+timestamp to roughly arcminute–half-degree accuracy.</p>
+
+<h3 id="internet">Does it need internet access?</h3>
+<p>No — never at runtime. All imagery and data are vendored or first-party. Network
+access is needed only once at build time to download the pinned
+<code>open-dis-cpp</code> tarball (and that can be mirrored for air-gapped hosts).</p>
+
+<h3 id="how-many-objects">How many objects can it handle?</h3>
+<p>5,000 tracked objects per update cycle (<code>kMaxTrackedObjects</code>), the
+protocol-level cap, at 1&nbsp;Hz. This is a design ceiling chosen so the whole
+pipeline stays simple: one WebGL points draw, one ~450&nbsp;KB JSON broadcast.
+<code>olv_sim --generate 5000</code> load-tests exactly this limit.</p>
+
+<h2 id="security-q">Security &amp; deployment</h2>
+
+<h3 id="why-no-tls">Why is there no TLS or authentication?</h3>
+<p>By explicit design decision, recorded in the plan and README: the project is
+scoped to trusted localhost/LAN deployments. UDP and WebSocket are plaintext.
+Do not expose the ports to untrusted networks; put a reverse proxy or VPN in front
+if you must cross one. What the backend <em>does</em> defend against is malformed
+input: every packet is fully validated (structure, CRC, NaN/Inf, range, staleness)
+before it can touch state.</p>
+
+<h3 id="run-as-root">Do the containers run as root?</h3>
+<p>The backend and simulator containers run as a dedicated non-root user (UID/GID
+10001, nologin). The frontend container uses the stock <code>nginx:alpine-slim</code>
+image's default user. Images are Podman-friendly and rootless-compatible.</p>
+
+<h2 id="usage-q">Usage</h2>
+
+<h3 id="empty-globe">The page loads but the globe is empty — why?</h3>
+<p>Almost always a WebSocket mismatch: open Settings and confirm host/port point at
+a running <code>olv_backend</code> (default <code>localhost:8765</code>). If the status
+panel shows "stalled", the backend is unreachable or not broadcasting. Full
+checklist: <a href="../user-guide/troubleshooting.html">Troubleshooting</a>.</p>
+
+<h3 id="file-url">Can I open <code>frontend/index.html</code> directly from disk?</h3>
+<p>No. The frontend uses ES modules, which browsers block from <code>file://</code>
+origins. Serve it over HTTP — <code>scripts/serve_frontend.sh</code>, the frontend
+container, or any static file server.</p>
+
+<h3 id="faster-than-1hz">Can it update faster than 1 Hz?</h3>
+<p>Yes, within limits: the simulator accepts <code>--rate</code> up to 50&nbsp;Hz and the
+backend broadcast rate (<code>--broadcast-hz</code>) up to 60&nbsp;Hz. 1&nbsp;Hz is the
+protocol's nominal target and what the UI's staleness heuristics assume; the
+integration test runs at 2&nbsp;Hz.</p>
+
+<h3 id="which-protocol">OLV1 or DIS — which input mode should I use?</h3>
+<p>Use <strong>OLV1</strong> (the default) with the bundled simulator: it is lossless
+and carries confidence, intensity, star types, and highlight flags. Use
+<strong>DIS</strong> when interoperating with existing IEEE&nbsp;1278.1 tooling.
+DIS mode has documented, deliberate losses: object ids become FNV-1a folds,
+confidence/intensity are fixed at 100/0, and the STAR category cannot be expressed
+(degrades to DEBRIS). See <a href="../reference/protocol-dis.html">the DIS
+reference</a>.</p>
+
+<h3 id="both-modes">Can the backend listen for OLV1 and DIS at the same time?</h3>
+<p>No — the input source is a boot-time choice (<code>--input-mode</code> /
+<code>[input] mode</code>). Exactly one input source exists per process. Run two
+backend instances on different ports if you need both simultaneously.</p>
+
+<h2 id="dev-q">Development</h2>
+
+<h3 id="why-no-frameworks">Why no Three.js / React / toml++ / Catch2?</h3>
+<p>Dependency minimalism is a core design goal (auditable, air-gap friendly). The
+scene is simple enough for a small first-party WebGL renderer; the config format
+needs only scalars and one table level; the test framework is ~120 lines. Each
+first-party replacement is deliberately less general than the library it avoids.</p>
+
+<h3 id="node-required">Do I need Node.js to run the frontend?</h3>
+<p>No. Node &ge; 18 is used only to run the frontend's logic tests and the
+integration test's parser check. The frontend itself is served as static files and
+runs entirely in the browser.</p>
+
+<h3 id="where-are-specs">Where are the authoritative protocol specs?</h3>
+<p>In the repository: <code>docs/PROTOCOL_UDP.md</code>, <code>docs/PROTOCOL_DIS.md</code>,
+<code>docs/PROTOCOL_WS.md</code> — with the further rule that the reference
+implementations (<code>backend/include/olv/protocol.hpp</code>,
+<code>backend/src/dis_input_source.cpp</code>, <code>backend/src/json_writer.cpp</code>)
+win over prose if they ever disagree. This site's
+<a href="../reference/protocol-udp.html">reference pages</a> summarize them.</p>
+
+<h3 id="deterministic">Are simulator runs reproducible?</h3>
+<p>Yes. The synthetic generator uses a fixed-seed LCG (default seed 1, settable with
+<code>--seed</code>) and is never seeded from time. Two runs with the same seed, rate,
+and duration produce identical packet streams.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

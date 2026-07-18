@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DIS Input Protocol — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/protocol-dis" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>DIS Input Protocol (IEEE 1278.1 Entity State PDUs)</h1>
+<div class="note"><strong>Normative sources:</strong> <code>docs/PROTOCOL_DIS.md</code>,
+and above it the reference implementation
+<code>backend/src/dis_input_source.cpp</code>. Enabled with
+<code>olv_backend --input-mode dis</code>; default port <strong>47001/udp</strong>.</div>
+
+<h2 id="rules">General rules</h2>
+<ul>
+  <li>Transport UDP, <strong>one PDU per datagram</strong> (DIS bundling unsupported;
+  trailing bytes after the first Entity State PDU are ignored).</li>
+  <li><strong>Big-endian</strong> (network order) — the opposite of OLV1.</li>
+  <li>Decoded with <code>open-dis-cpp</code> v1.2.0 (BSD-2-Clause), DIS&nbsp;6 class set.</li>
+  <li>DIS world coordinates are geocentric (ECEF) meters and m/s — the same frame as
+  OLV, so positions/velocities pass through <em>numerically unchanged</em>.</li>
+  <li>PDU timestamps are used only for per-entity staleness; the backend stamps its
+  own receive time as <code>lastDataTime</code>.</li>
+</ul>
+
+<h2 id="accepted">Accepted PDU subset</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Header field</th><th>Accepted</th><th>Anything else</th></tr></thead>
+  <tbody>
+    <tr><td><code>protocolVersion</code> (byte 0)</td><td>5, 6, or 7</td><td>dropped as <em>malformed</em></td></tr>
+    <tr><td><code>exerciseID</code> (byte 1)</td><td>all, or the configured <code>dis_exercise_id</code></td><td><em>ignored</em> (received-only)</td></tr>
+    <tr><td><code>pduType</code> (byte 2)</td><td>1 = Entity State</td><td><em>ignored</em> (received-only)</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Consumed fields:</strong> <code>EntityID</code> (site, application, entity),
+<code>EntityType</code> (kind, domain), <code>entityLocation</code> (3&times;f64),
+<code>entityLinearVelocity</code> (3&times;f32), header timestamp. Orientation, dead
+reckoning, markings, appearance, and articulation parameters are decoded but
+unused.</p>
+
+<h2 id="satellite">Satellite promotion</h2>
+<p>DIS has no privileged satellite record, so the required config key
+<code>dis_satellite_entity_id = "site:application:entity"</code> (three
+colon-separated decimal uint16s) names it. The entity matching all three parts
+becomes the primary satellite; everyone else becomes a tracked object. The decision
+never consults <code>EntityType</code>. Because DIS updates one entity at a time,
+the last-known satellite state is <em>carried forward</em> into every update
+(zeroed until first seen). Running <code>mode="dis"</code> without this key — or with
+a malformed value — is a hard startup error.</p>
+
+<h2 id="id-fold">EntityID &rarr; OLV id (FNV-1a fold)</h2>
+<p>OLV ids are u32; DIS EntityIDs are 48 bits. Both satellite and object ids use the
+same deterministic fold: <strong>FNV-1a 32-bit</strong> over the six bytes
+<code>site_hi, site_lo, app_hi, app_lo, entity_hi, entity_lo</code>
+(offset basis 2166136261, prime 16777619). Collisions are a documented limitation,
+not an error: one WARN per colliding pair, later entity wins — negligible at
+&le;5000 entities.</p>
+
+<h2 id="mapping">EntityType &rarr; category mapping</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>DIS kind</th><th>DIS domain</th><th>OLV category</th></tr></thead>
+  <tbody>
+    <tr><td>1 (Platform)</td><td>5 (Space)</td><td><code>SATELLITE</code> (4)</td></tr>
+    <tr><td>1 (Platform)</td><td>1 (Land)</td><td><code>GROUND_HOT</code> (5)</td></tr>
+    <tr><td>3 (Lifeform)</td><td>1 (Land)</td><td><code>GROUND_HOT</code> (5)</td></tr>
+    <tr><td>2 (Munition)</td><td>any</td><td><code>COMET</code> (3)</td></tr>
+    <tr><td>anything else</td><td>anything else</td><td><code>DEBRIS</code> (1) — normal fallback, no log</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Fixed values</strong> (no DIS analogue): <code>confidence = 100</code>,
+<code>intensity = 0.0</code>, <code>flags = HAS_VELOCITY</code> (HIGHLIGHT never set).
+No mapping produces <code>STAR</code> — DIS cannot express OLV star markers.</p>
+
+<h2 id="staleness">Per-entity timestamp staleness</h2>
+<p>Let <code>ts = timestamp &gt;&gt; 1</code> (31 MSBs = ticks into the hour; the
+absolute/relative LSB is ignored for ordering). Keyed by the full 48-bit
+EntityID:</p>
+<ol>
+  <li>First PDU from an entity, or <code>ts == 0</code>: <strong>accept</strong>.</li>
+  <li><code>ts &ge; last_ts</code>: <strong>accept</strong>, update.</li>
+  <li><code>ts &lt; last_ts</code> and difference &lt; 2<sup>30</sup>:
+  <strong>stale</strong> — dropped, counted, debug-logged.</li>
+  <li><code>ts &lt; last_ts</code> and difference &ge; 2<sup>30</sup>: hourly
+  <strong>wraparound</strong> — accept, update.</li>
+</ol>
+<p>The shared state layer's OLV1 sequence gate is satisfied by a synthesized,
+strictly-increasing per-process sequence (one per accepted PDU), so it never
+self-fires in DIS mode.</p>
+
+<h2 id="validation">Validation order &amp; stats accounting</h2>
+<p>Every datagram first increments <code>udpReceived</code>. Then, in order:</p>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>#</th><th>Condition</th><th>Outcome / log</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>length &lt; 12 (PDU header)</td><td>drop <em>malformed</em> — <code>warn: dropped too_short</code></td></tr>
+    <tr><td>2</td><td>version &notin; {5,6,7}</td><td>drop <em>malformed</em> — <code>warn: dropped bad_version</code></td></tr>
+    <tr><td>3</td><td>exercise filter mismatch</td><td><em>ignored</em> — <code>debug: filtered exercise=N</code> (received-only)</td></tr>
+    <tr><td>4</td><td>pduType &ne; 1</td><td><em>ignored</em> — <code>debug: ignored pdu kind=N</code> (received-only)</td></tr>
+    <tr><td>5</td><td>Entity State body fails decode</td><td>drop <em>malformed</em> — <code>warn: dropped malformed_body</code></td></tr>
+    <tr><td>6</td><td>per-entity timestamp stale</td><td>drop <em>stale</em> — <code>debug: dropped stale</code></td></tr>
+    <tr><td>7</td><td>otherwise</td><td><strong>accepted</strong> — applied to the state store</td></tr>
+  </tbody>
+</table>
+</div>
+<p><strong>Stats identity:</strong> OLV1 mode:
+<code>received == accepted + malformed + stale</code> (exact). DIS mode:
+<code>received &ge; accepted + malformed + stale</code> — the remainder is
+unsupported PDU kinds + filtered exercises. No new drop kinds exist in DIS mode.</p>
+
+<h2 id="config">Configuration keys</h2>
+<pre><code class="language-toml">[input]
+mode = "dis"                        # select DIS intake at boot ("olv1" default)
+dis_bind = "0.0.0.0"                # UDP listen address
+dis_port = 47001                    # UDP listen port
+# dis_exercise_id = 1               # optional filter, 0-255; unset = accept all
+dis_satellite_entity_id = "1:1:1"   # REQUIRED in DIS mode
+</code></pre>
+<p>The only DIS-related CLI flag is <code>--input-mode olv1|dis</code>; all
+<code>dis_*</code> values come from the config file.</p>
+
+<h2 id="emission">Simulator DIS emission (<code>olv_sim --protocol dis</code>)</h2>
+<ul>
+  <li>One Entity State PDU per entity per cycle, satellite first, protocolVersion 6,
+  marshaled big-endian.</li>
+  <li>Satellite uses the configured <code>dis_satellite_entity_id</code>; each
+  object's 32-bit OLV id is spread losslessly as
+  <code>application = id &gt;&gt; 16</code>, <code>entity = id &amp; 0xFFFF</code>, with
+  the configured fixed <code>dis_site</code>.</li>
+  <li>Timestamps: 31-bit ticks-into-hour derived from the cycle counter (monotone
+  across CSV loop wraps), relative-flag LSB = 0.</li>
+  <li>EntityType emitted: satellite (1,5), ground_hot (1,1), comet (2,0), everything
+  else (0,0).</li>
+  <li><strong>Round-trip losses</strong> (inherent to DIS, by spec): backend-side ids
+  become FNV-1a folds (not the raw OLV ids); confidence/intensity fixed at 100/0.0;
+  STAR degrades to DEBRIS.</li>
+</ul>
+
+<p>Related: <a href="protocol-udp.html">OLV1 UDP</a> ·
+<a href="configuration.html#backend-toml">backend config</a> ·
+<a href="../developer-guide/new-interface.html">Adding a new interface</a> (the
+process that produced this one)</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Release Process — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/release-process" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Release Process</h1>
+<p class="lead">The repository has no formal release automation yet; this page
+documents the versioning scheme actually in use, the manual release workflow the
+repo's tooling supports today, and the assumptions involved.</p>
+
+<h2 id="versioning">Versioning</h2>
+<ul>
+  <li><strong>Project version:</strong> <code>0.1.0</code>, declared in the top-level
+  <code>CMakeLists.txt</code> (<code>project(orbital_los_viewer VERSION 0.1.0)</code>)
+  and mirrored as <code>OLV_VERSION</code> in <code>scripts/gen_sbom.py</code> and the
+  frontend's About text. These three must be bumped together.</li>
+  <li><strong>Protocol versions</strong> are independent of the project version:
+  OLV1 wire version 1 (<code>kVersion</code> in <code>protocol.hpp</code>) and WS
+  <code>protocolVersion: 1</code>. They bump only on breaking layout changes;
+  receivers reject unknown versions.</li>
+  <li><strong>Feature versions</strong> (v0.3 sat-view, v0.4 sky) label additive
+  frontend feature specs in <code>docs/features/</code>, not releases.</li>
+  <li><strong>Dependency pins:</strong> open-dis-cpp v1.2.0 is pinned by URL + SHA-256
+  in <code>scripts/install_open_dis.sh</code> and echoed in
+  <code>gen_sbom.py</code>/<code>THIRD_PARTY.md</code> — a bump touches all three.</li>
+</ul>
+<div class="note"><strong>Assumption:</strong> no git tags or changelog file exist in
+the repository; the scheme below (semver tags + generated changelog) is the
+recommended practice, not an established one.</div>
+
+<h2 id="workflow">Recommended release workflow</h2>
+<ol>
+  <li><strong>Freeze &amp; verify.</strong>
+<pre><code class="language-sh">cmake --build build --target format-check lint
+ctest --test-dir build --output-on-failure
+node --test "frontend/tests/*.test.mjs"
+</code></pre></li>
+  <li><strong>Bump the version</strong> in <code>CMakeLists.txt</code>,
+  <code>scripts/gen_sbom.py</code> (<code>OLV_VERSION</code>), and the About text;
+  reconfigure and rebuild.</li>
+  <li><strong>Regenerate artifacts:</strong>
+<pre><code class="language-sh">python3 scripts/gen_sbom.py --out sbom/     # SBOMs record the new version
+python3 scripts/make_example_csv.py         # only if the CSV contract changed
+</code></pre></li>
+  <li><strong>Changelog:</strong> generate from history since the last tag
+  (<code>git log --oneline vPREV..HEAD</code>) and curate by area
+  (backend/simulator/frontend/protocols/docs). Call out any protocol or config
+  changes prominently — they affect interop.</li>
+  <li><strong>Tag:</strong> annotated semver tag, e.g.
+  <code>git tag -a v0.2.0 -m "..."</code>; push the tag.</li>
+  <li><strong>Build release artifacts:</strong>
+<pre><code class="language-sh"># Native binaries (Release)
+cmake -S . -B build-rel -DCMAKE_BUILD_TYPE=Release -DOLV_BUILD_TESTS=OFF
+cmake --build build-rel -j
+# Container images, tagged with the version
+podman build -f containers/Containerfile.cpp --target backend   -t olv-backend:v0.2.0 .
+podman build -f containers/Containerfile.cpp --target simulator -t olv-sim:v0.2.0 .
+podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
+</code></pre></li>
+  <li><strong>Smoke the release exactly as users run it:</strong>
+  <code>scripts/run_all.sh --build</code>, open the page, confirm data flows and the
+  About modal shows the new version.</li>
+</ol>
+
+<h2 id="packaging">Packaging &amp; deployment</h2>
+<ul>
+  <li><strong>Deliverables:</strong> the three container images (preferred), or a
+  tarball of <code>olv_backend</code> + <code>olv_sim</code> + the <code>frontend/</code>
+  directory + <code>config/</code> examples + <code>docs/</code>. There is no
+  <code>make install</code>, .deb/.rpm, or registry push script — distribution is
+  manual or site-specific.</li>
+  <li><strong>Ship the SBOMs</strong> (<code>sbom/*.cdx.json</code>) alongside
+  artifacts; they are deterministic except for their timestamp.</li>
+  <li><strong>Air-gapped consumers</strong> additionally need the open-dis tarball and
+  base images — include them in the release bundle for such sites (see
+  <a href="../user-guide/installation.html#air-gapped">Installation</a>).</li>
+</ul>
+
+<h2 id="compat">Compatibility rules for releases</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Change</th><th>Impact</th><th>Release note requirement</th></tr></thead>
+  <tbody>
+    <tr><td>New OLV1 message type</td><td>Old receivers reject it (<code>kBadMsgType</code>) — deploy receivers first</td><td>Interop callout</td></tr>
+    <tr><td>OLV1 layout change</td><td>Wire version bump; mixed fleets stop interoperating</td><td>Breaking-change banner</td></tr>
+    <tr><td>WS JSON additive field</td><td>Frontend parser tolerates unknown <em>types</em>, but row shape is strict — additive object-row columns are <strong>breaking</strong></td><td>Breaking-change banner if rows change</td></tr>
+    <tr><td>New config key</td><td>Old configs keep working (defaults); <em>new</em> configs on old binaries fail (strict unknown-key)</td><td>Note minimum version for new keys</td></tr>
+    <tr><td>Settings/localStorage shape</td><td>Coerce-with-default pattern means no migration needed for additive keys</td><td>None</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="future-ci">Toward automated releases</h2>
+<p>Everything above is scriptable today: configure + build, the three test commands,
+SBOM generation, image builds, and the container smoke test
+(<code>run_all.sh</code> already waits for readiness and exits non-zero on failure).
+A CI pipeline that runs the verification block on every commit and the full
+artifact build on tags would close the repo's main infrastructure gap — see
+<a href="../overview/repository.html#ci">CI/CD status</a>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

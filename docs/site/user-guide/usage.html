@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Usage — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/usage" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Usage</h1>
+<p class="lead">Every major feature: the viewer UI, the simulator, the backend, DIS
+mode, and automation. Flag-by-flag tables live in the
+<a href="../reference/cli.html">Command-Line Reference</a>.</p>
+
+<h2 id="viewer">The viewer</h2>
+
+<h3 id="views">View modes</h3>
+<ul>
+  <li><strong>3D (orbit)</strong> — default. Drag to orbit the camera, scroll to zoom.</li>
+  <li><strong>SAT</strong> — first-person from the primary satellite: boresight fixed at
+  nadir (Earth's center), screen-up along the velocity vector, rendered as a
+  170&deg; equidistant fisheye so the full Earth disc plus surrounding space is
+  visible. The satellite's own marker/trail/label are hidden in this mode. If no
+  satellite data has arrived yet, the badge reads "awaiting satellite data" and the
+  orbit view is used.</li>
+</ul>
+<p>Toggle with the <strong>3D/SAT</strong> control (top right) or <kbd>V</kbd>. A badge
+(top left) confirms the mode. The choice persists across reloads.</p>
+
+<h3 id="selection">Selection &amp; labels</h3>
+<ul>
+  <li>Click an object on the globe (12&nbsp;px hit radius; a &gt;5&nbsp;px drag is
+  treated as camera movement, not a click) or click a row in the object list.
+  Selection draws a ring and highlights the row.</li>
+  <li><em>Show labels</em> (Settings) labels the nearest 200 objects, the satellite,
+  and the current selection. Sun, Moon, and planet labels are independent of this
+  cap; off-screen Sun/Moon get edge chevron locators.</li>
+</ul>
+
+<h3 id="panels">Panels</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Panel</th><th>Shows</th></tr></thead>
+  <tbody>
+    <tr><td>Connection</td><td>Status dot, WebSocket URL, latest data time (absolute +
+        relative), and a stale warning when no state frame has arrived for &gt;3&nbsp;s.</td></tr>
+    <tr><td>Stats</td><td>UDP received / accepted / dropped totals, accepted-packet rate
+        (trailing 5&nbsp;s), connected WS clients, object count, broadcast sequence.</td></tr>
+    <tr><td>Satellite</td><td>Id, source sequence, ECEF X/Y/Z (km), speed (km/s),
+        altitude (km, spherical Earth R=6371&nbsp;km).</td></tr>
+    <tr><td>Objects</td><td>Category filter chips with live counts; table sorted by id,
+        capped at 1,000 rows with a "showing N of M" footer.</td></tr>
+  </tbody>
+</table>
+</div>
+<p>The left panel collapses with its toggle button (collapse state is not persisted).</p>
+
+<h3 id="settings-panel">Settings (persisted to localStorage)</h3>
+<ul>
+  <li>Trails on/off + duration slider (0–60&nbsp;s)</li>
+  <li>Labels on/off</li>
+  <li>Sky (stars, Moon, planets) on/off — on by default</li>
+  <li>Per-category visibility toggles (debris / star / comet / satellite / ground-hot)</li>
+  <li>WebSocket host + port with a <em>Reconnect</em> button</li>
+  <li><em>Reset to defaults</em> — returns to the site-config-merged baseline</li>
+</ul>
+
+<h3 id="keyboard">Keyboard shortcuts</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Key</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><kbd>V</kbd></td><td>Toggle orbit / satellite view (ignored while typing in a field or with a modal open)</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Close open modals</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="simulator">The simulator (<code>olv_sim</code>)</h2>
+
+<h3 id="csv-replay">CSV mission replay</h3>
+<pre><code class="language-sh">./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
+</code></pre>
+<p>Rows sharing a <code>time_s</code> value form one update cycle; the satellite state
+carries forward into frames without an explicit <code>sat</code> row. With
+<code>--loop</code> the mission repeats (sequence numbers keep increasing, so the
+backend never sees the wrap as stale). CSV column format:
+<a href="../reference/file-formats.html#csv">File Formats</a>.</p>
+
+<h3 id="generate">Synthetic generation (load testing)</h3>
+<pre><code class="language-sh">./build/simulator/olv_sim --generate 5000 --rate 1 --duration 0   # forever
+./build/simulator/olv_sim --generate 500 --seed 42 --duration 60  # reproducible minute
+</code></pre>
+<p>Generates one primary satellite (550&nbsp;km, 53&deg; circular LEO) plus N objects
+with a fixed category mix (~70% debris, 10% satellites, 10% ground-hot, 5% comets,
+5% stars). Runs are deterministic for a given <code>--seed</code> (default 1).</p>
+
+<h3 id="chunking">Destination, pacing, chunking</h3>
+<pre><code class="language-sh">./build/simulator/olv_sim --generate 1000 --dest 192.168.1.20 --port 47000 \
+    --rate 2 --chunk 24
+</code></pre>
+<ul>
+  <li><code>--dest</code> accepts an IP or hostname (e.g. the compose service name
+  <code>backend</code>).</li>
+  <li><code>--rate</code>: 0&nbsp;&lt;&nbsp;Hz&nbsp;&le;&nbsp;50; the protocol target is 1.</li>
+  <li><code>--chunk</code> caps objects per packet (max 128). Lower it (~24) to keep
+  datagrams under one Ethernet MTU and avoid IP fragmentation on real networks.</li>
+</ul>
+
+<h2 id="backend">The backend (<code>olv_backend</code>)</h2>
+<pre><code class="language-sh">./build/backend/olv_backend --udp-port 47000 --ws-port 8765 \
+    --log-file olv_backend.log --log-level info
+</code></pre>
+<ul>
+  <li>Broadcasts a snapshot every second (change with <code>--broadcast-hz</code>,
+  up to 60) — even when no data has arrived yet.</li>
+  <li>Objects not refreshed for 15&nbsp;s are pruned (<code>--expiry-seconds</code>,
+  1–3600).</li>
+  <li><code>--quiet</code> stops mirroring log lines to stderr; the file always gets them.</li>
+  <li>Stop with <kbd>Ctrl-C</kbd> (SIGINT/SIGTERM) — the log records a clean shutdown.</li>
+</ul>
+
+<h2 id="dis">DIS input mode</h2>
+<p>Ingest IEEE&nbsp;1278.1 Entity State PDUs instead of OLV1:</p>
+<pre><code class="language-sh"># 1. Edit config/backend.toml: uncomment dis_satellite_entity_id (required,
+#    no CLI flag exists for it) and optionally dis_exercise_id.
+./build/backend/olv_backend --config config/backend.toml --input-mode dis
+
+# 2. Any DIS source on port 47001 now feeds the display. The bundled simulator
+#    can emit DIS itself:
+./build/simulator/olv_sim --generate 100 --protocol dis
+</code></pre>
+<p>Semantics worth knowing (full detail:
+<a href="../reference/protocol-dis.html">DIS reference</a>):</p>
+<ul>
+  <li>The entity matching <code>dis_satellite_entity_id</code> (format
+  <code>site:application:entity</code>) becomes the primary satellite; all others
+  become tracked objects.</li>
+  <li>EntityType (kind, domain) maps to categories: space platforms &rarr; satellite,
+  land platforms/lifeforms &rarr; ground-hot, munitions &rarr; comet, everything
+  else &rarr; debris. Confidence is fixed at 100, intensity at 0.</li>
+  <li>Non-Entity-State PDUs and filtered exercises are counted as received but not
+  as dropped — so in DIS mode <code>received &ge; accepted + dropped</code> is normal
+  on a busy exercise network.</li>
+</ul>
+
+<h2 id="probe">WebSocket probe (<code>olv_ws_probe</code>)</h2>
+<p>A capture client for scripting and diagnosis — grabs N JSON frames to a file:</p>
+<pre><code class="language-sh">./build/backend/olv_ws_probe --host 127.0.0.1 --port 8765 \
+    --count 6 --timeout 30 --out frames.jsonl
+# one frame per line; exit 0 on success, 1 with "timeout (captured X of N)" otherwise
+</code></pre>
+
+<h2 id="automation">Automation examples</h2>
+<pre><code class="language-sh"># Nightly soak: 5,000 objects for an hour, then assert zero unexpected drops
+./build/backend/olv_backend --ws-port 8765 --log-file soak.log --quiet &amp;
+./build/simulator/olv_sim --generate 5000 --duration 3600 --quiet
+grep -c "dropped" soak.log        # expect 0
+
+# Capture one snapshot for external processing
+./build/backend/olv_ws_probe --host 127.0.0.1 --port 8765 --count 1 \
+    --timeout 10 --out snap.jsonl &amp;&amp; python3 -c \
+    "import json;d=[json.loads(l) for l in open('snap.jsonl')];print(d[-1]['stats'])"
+
+# Validate captured frames with the real frontend parser (Node >= 18)
+node frontend/tests/validate_message.mjs frames.jsonl --min-objects 100
+
+# Regenerate SBOMs after a dependency change
+python3 scripts/gen_sbom.py --out sbom/
+
+# Stop everything containerized + stray processes
+scripts/cleanup.sh
+</code></pre>
+
+<h2 id="common-tasks">Common tasks quick table</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Task</th><th>How</th></tr></thead>
+  <tbody>
+    <tr><td>Change the frontend's backend target</td><td>Settings &rarr; host/port &rarr; Reconnect (persists), or edit <code>frontend/config.toml</code> for the site default</td></tr>
+    <tr><td>Run two stacks side by side</td><td>Second backend with <code>--udp-port 47100 --ws-port 8766</code>; point a second simulator and browser tab at them</td></tr>
+    <tr><td>Keep datagrams under the MTU</td><td><code>olv_sim --chunk 24</code></td></tr>
+    <tr><td>See every accepted packet</td><td><code>olv_backend --log-level debug</code>, then <code>tail -f olv_backend.log</code></td></tr>
+    <tr><td>Regenerate the example CSV</td><td><code>python3 scripts/make_example_csv.py</code> (fixed seed, deterministic)</td></tr>
+    <tr><td>Eyeball the renderer without a backend</td><td>Serve the repo root and open <code>frontend/dev/smoke.html</code> (synthetic data, V/S keys)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

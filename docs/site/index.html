@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Orbital LOS Viewer — Documentation</title>
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="index" data-root=".">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+
+<h1>Orbital LOS Viewer</h1>
+<p class="lead">A self-contained, localhost/LAN visualization stack for one primary
+satellite in Earth orbit plus up to 5,000 tracked objects — debris, stars, comets,
+other satellites, and hot ground objects — rendered in a browser at 1&nbsp;Hz with
+no runtime internet access and (almost) no third-party code.</p>
+
+<figure class="shot">
+  <img src="assets/screenshot-main.png" alt="Orbital LOS Viewer main screen: WebGL Earth globe with tracked objects, object list, telemetry and status panels">
+  <figcaption>The viewer: sun-lit Earth globe, tracked-object markers, telemetry and status panels.</figcaption>
+</figure>
+
+<h2 id="what-is-it">What is it?</h2>
+<p>Orbital LOS Viewer is a three-component pipeline. A C++ <strong>simulator</strong>
+(<code>olv_sim</code>) replays CSV missions or synthesizes load-test data and sends it
+as binary UDP packets. A C++ <strong>backend</strong> (<code>olv_backend</code>,
+Boost.Asio/Beast) validates, aggregates, and rebroadcasts the world state as
+WebSocket JSON at 1&nbsp;Hz. A dependency-free <strong>WebGL frontend</strong> renders
+the globe, the objects, an optional astronomically-correct sky, and a satellite
+point-of-view fisheye mode — plain HTML/CSS/JS, no frameworks, no build step.</p>
+<p>The backend can ingest either the first-party <a href="reference/protocol-udp.html">OLV1
+binary UDP protocol</a> (default) or <a href="reference/protocol-dis.html">IEEE&nbsp;1278.1
+DIS Entity State PDUs</a>, selected at boot.</p>
+
+<h2 id="start-here">Start here</h2>
+<div class="card-grid">
+  <div class="card">
+    <h3>&#127919; Decision makers</h3>
+    <p>What the project is, what problem it solves, its architecture and technology
+    choices, licensing, and security posture.</p>
+    <a class="cta" href="overview/overview.html">Project Overview &rarr;</a>
+  </div>
+  <div class="card">
+    <h3>&#128101; Users</h3>
+    <p>Install the prerequisites, build or containerize the stack, run your first
+    mission, and configure every option.</p>
+    <a class="cta" href="user-guide/installation.html">Installation Guide &rarr;</a>
+  </div>
+  <div class="card">
+    <h3>&#128736; Developers</h3>
+    <p>Architecture in depth, source walkthrough, build system, testing, and how to
+    extend protocols, panels, and input sources.</p>
+    <a class="cta" href="developer-guide/repo-structure.html">Developer Guide &rarr;</a>
+  </div>
+  <div class="card">
+    <h3>&#128218; Reference</h3>
+    <p>Normative wire formats (OLV1, DIS, WebSocket JSON), every configuration key
+    and CLI flag, file formats, ports, and glossary.</p>
+    <a class="cta" href="reference/configuration.html">Reference &rarr;</a>
+  </div>
+</div>
+
+<h2 id="quick-start">60-second quick start</h2>
+<p>With Podman or Docker installed, one command brings up the whole stack
+(backend + looping example mission + nginx-served frontend):</p>
+<pre><code class="language-sh">git clone &lt;repo-url&gt; live-track-display-tool
+cd live-track-display-tool
+scripts/run_all.sh          # builds images on first run, waits for readiness
+# then open http://localhost:8000/
+</code></pre>
+<p>Prefer native binaries? See <a href="user-guide/installation.html#building-from-source">Building
+from source</a> and <a href="user-guide/getting-started.html">Getting Started</a>.</p>
+
+<h2 id="highlights">Highlights</h2>
+<ul>
+  <li><strong>Zero-trust input:</strong> every UDP packet passes an 11-step ordered
+  validation pipeline (structure, CRC-32, NaN/Inf, range, sequence staleness)
+  before it can touch shared state — a failure drops the whole packet, never part of it.</li>
+  <li><strong>Two view modes:</strong> a free orbit camera, and a 170&deg;
+  equidistant-fisheye nadir view rendered from the primary satellite
+  (<kbd>V</kbd> to toggle).</li>
+  <li><strong>Time-accurate sky:</strong> ~230 bright stars, the Moon (with
+  illuminated fraction), and the five naked-eye planets, positioned from the state
+  message's timestamp.</li>
+  <li><strong>Deterministic and testable:</strong> seeded synthetic generation,
+  a first-party C++ test framework, Node-based frontend logic tests, and an
+  end-to-end integration test that proves backend JSON is frontend-compatible.</li>
+  <li><strong>Air-gap friendly:</strong> no runtime internet access, vendored
+  public-domain NASA imagery, one pinned compiled dependency
+  (<code>open-dis-cpp</code>) with sha256-verified offline install.</li>
+</ul>
+
+<h2 id="doc-map">Documentation map</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Section</th><th>Contents</th></tr></thead>
+  <tbody>
+    <tr><td><a href="overview/overview.html">Overview</a></td>
+        <td>Executive summary, purpose, capabilities, architecture at a glance,
+        technology stack, FAQ.</td></tr>
+    <tr><td><a href="user-guide/installation.html">User Guide</a></td>
+        <td>Installation, configuration, getting started, usage of every feature,
+        tutorials, troubleshooting, best practices.</td></tr>
+    <tr><td><a href="developer-guide/repo-structure.html">Developer Guide</a></td>
+        <td>Repository structure, detailed architecture, build system, source
+        walkthrough, APIs, extension points, testing, debugging, coding standards,
+        release process.</td></tr>
+    <tr><td><a href="reference/configuration.html">Reference</a></td>
+        <td>Configuration keys, environment variables, CLI flags, the three wire
+        protocols, file formats, ports, glossary.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note"><strong>Note:</strong> the protocol pages in this site summarize and
+cross-link the <em>normative</em> specifications kept in the repository at
+<code>docs/PROTOCOL_UDP.md</code>, <code>docs/PROTOCOL_DIS.md</code>, and
+<code>docs/PROTOCOL_WS.md</code>. If this site and those files ever disagree, the
+Markdown specs win.</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License. Documentation generated from the repository; protocol specs in <code>docs/*.md</code> are normative.</footer>
+<script src="assets/search-index.js"></script>
+<script src="assets/docs.js"></script>
+</body>
+</html>

@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adding a New Interface — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/new-interface" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Adding a New Interface</h1>
+<p class="lead">The complete, end-to-end procedure for adding a new external
+interface to the system — most commonly a new <em>input source</em> (a third wire
+protocol besides OLV1 and DIS), but the same discipline applies to a new output
+interface. This is the project's designed-for extension point: DIS was added
+exactly this way, and <code>docs/features/FEATURE_INPUT_SOURCES.md</code> is the
+historical record of that work.</p>
+
+<h2 id="anatomy">1. Anatomy of an interface</h2>
+<p>In this codebase, an "interface" is not just a class — it is a bundle of five
+artifacts that must ship together:</p>
+<ol>
+  <li><strong>A protocol specification</strong> — a normative
+  <code>docs/PROTOCOL_&lt;NAME&gt;.md</code> defining the accepted wire subset, the
+  mapping into the internal model, the ordered validation list, and the stats
+  accounting identity.</li>
+  <li><strong>An implementation behind an existing seam</strong> — for inputs, a class
+  implementing <code>InputSource</code>; it may use a third-party decoder but must
+  not leak its types past the implementation file.</li>
+  <li><strong>A configuration surface</strong> — strict, flat keys under the relevant
+  TOML table, plus (optionally) a CLI mode flag.</li>
+  <li><strong>Tests at every layer it touches</strong> — unit tests against a
+  socket-free seam, config tests, and (ideally) an integration-test scenario.</li>
+  <li><strong>Documentation &amp; supply-chain updates</strong> — sample configs,
+  README, <code>THIRD_PARTY.md</code>/SBOM if a dependency was added.</li>
+</ol>
+
+<figure class="diagram">
+<svg viewBox="0 0 840 250" role="img" aria-label="Where a new input source plugs in">
+  <defs>
+    <marker id="arr9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <rect class="d-box" x="20" y="30" width="180" height="44"/>
+  <text class="d-small" x="110" y="57" text-anchor="middle">Olv1InputSource (default)</text>
+  <rect class="d-box" x="20" y="100" width="180" height="44"/>
+  <text class="d-small" x="110" y="127" text-anchor="middle">DisInputSource</text>
+  <rect class="d-box" x="20" y="170" width="180" height="44" stroke-dasharray="6 4"/>
+  <text class="d-small" x="110" y="197" text-anchor="middle">FooInputSource (yours)</text>
+
+  <rect class="d-box" x="300" y="100" width="180" height="44" rx="10"/>
+  <text class="d-small" x="390" y="120" text-anchor="middle" font-weight="600">InputSource</text>
+  <text class="d-small" x="390" y="136" text-anchor="middle">start() / stop()</text>
+
+  <rect class="d-box" x="580" y="100" width="230" height="44" rx="14"/>
+  <text class="d-small" x="695" y="120" text-anchor="middle" font-weight="600">StateStore</text>
+  <text class="d-small" x="695" y="136" text-anchor="middle">countReceived · countDropped · apply</text>
+
+  <line class="d-line" x1="200" y1="52" x2="298" y2="112" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="200" y1="122" x2="298" y2="122" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="200" y1="192" x2="298" y2="132" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="480" y1="122" x2="578" y2="122" marker-end="url(#arr9)"/>
+  <text class="d-small" x="529" y="112" text-anchor="middle">the only write path</text>
+</svg>
+<figcaption>Every input source — existing or new — is a strategy behind
+<code>InputSource</code>, and may talk to the rest of the system only through the
+three StateStore methods. Everything downstream (WsServer, JSON, frontend) is
+untouched by a new interface.</figcaption>
+</figure>
+
+<h2 id="design-first">2. Write the spec first</h2>
+<p>Before code, write two documents (this is the repo's frozen-interface process):</p>
+<ul>
+  <li><strong><code>docs/features/FEATURE_&lt;NAME&gt;.md</code></strong> — the design
+  record: motivation, decisions with rationale, module/config surface, phases,
+  acceptance criteria. Template: <code>FEATURE_INPUT_SOURCES.md</code>.</li>
+  <li><strong><code>docs/PROTOCOL_&lt;NAME&gt;.md</code></strong> — the normative
+  operator/implementer spec. It must answer, minimum:
+    <ul>
+      <li>Transport, byte order, one-message-per-datagram rules.</li>
+      <li>The <em>accepted subset</em> (versions, message kinds) and what happens to
+      everything else (drop-as-malformed vs ignore-as-received).</li>
+      <li>Field-by-field mapping to <code>StatePacket</code>/<code>ObjectRecord</code>,
+      including fixed values for fields your protocol can't express (DIS precedent:
+      confidence=100, intensity=0, flags=HAS_VELOCITY) and any lossy conversions
+      (DIS precedent: id folding, STAR&rarr;DEBRIS).</li>
+      <li>How the <strong>primary satellite</strong> is identified (config-driven,
+      like <code>dis_satellite_entity_id</code>) and whether its state is carried
+      forward.</li>
+      <li>The <strong>ordered validation list</strong> with a named outcome per step,
+      and the <strong>stats identity</strong> (<code>received == accepted +
+      malformed + stale</code>, or a documented inequality like DIS's).</li>
+      <li>Staleness semantics, and how the shared OLV1 sequence gate is satisfied
+      (synthesized strictly-increasing sequence is the standard answer).</li>
+      <li>The config keys (§4 below), verbatim, with defaults and ranges.</li>
+    </ul></li>
+</ul>
+
+<h2 id="implementation">3. Implement the InputSource</h2>
+<p>Skeleton for <code>backend/src/foo_input_source.{hpp,cpp}</code>, mirroring
+<code>DisInputSource</code>:</p>
+<pre><code class="language-cpp">// foo_input_source.hpp
+struct FooInputConfig {
+  std::string bind_address = "0.0.0.0";
+  int port = 47002;                       // pick an unclaimed default
+  // ... protocol-specific keys, defaults matching PROTOCOL_FOO.md §config
+};
+
+class FooInputSource : public InputSource {
+ public:
+  FooInputSource(const FooInputConfig&amp; cfg, StateStore&amp; store, Logger&amp; log);
+  void start() override;                  // idempotent: spawn io thread
+  void stop() override;                   // idempotent: stop + join
+
+  // PUBLIC TEST SEAM — full pipeline without a live socket:
+  void processDatagram(const uint8_t* data, std::size_t len,
+                       const boost::asio::ip::udp::endpoint&amp; from);
+ private:
+  // private io_context + socket + std::thread; carried-forward satellite
+  // state; uint32_t seq_ = 0 (synthesized, strictly increasing);
+  // per-source staleness bookkeeping.
+};
+</code></pre>
+<p>Rules the implementation must follow (these are the invariants every existing
+source obeys):</p>
+<ul>
+  <li><strong>Own your thread.</strong> A private <code>io_context</code> run on an
+  internal <code>std::thread</code>; <code>start()</code>/<code>stop()</code> idempotent;
+  the constructor binds the socket so bad config fails <em>before</em> threads exist.</li>
+  <li><strong>Three calls only.</strong> <code>countReceived(len)</code> first for every
+  datagram; then either <code>countDropped(kind)</code> + a log line, or
+  <code>apply(pkt, wall_now, mono_now)</code>. Never touch anything else.</li>
+  <li><strong>All-or-nothing.</strong> A datagram is fully applied or fully dropped;
+  no partial state.</li>
+  <li><strong>Validate in your spec's order</strong>, log every drop with its reason
+  and source address (WARN for malformed, DEBUG for stale/filtered), and prefer
+  reusing the existing <code>DropKind</code>s — DIS deliberately added none.</li>
+  <li><strong>Satisfy the sequence gate.</strong> Stamp <code>pkt.sequence =
+  ++seq_</code> per accepted message so <code>StateStore::apply</code>'s staleness
+  check never self-fires; do your protocol's own staleness before this point.</li>
+  <li><strong>Carry the satellite forward</strong> if your protocol updates entities
+  individually: <code>apply()</code> replaces the satellite wholesale, so stamp the
+  last-known satellite state into every synthesized packet.</li>
+  <li><strong>Contain third-party types.</strong> Decoder library includes and types
+  stay inside the .cpp; wrap decode calls in try/catch and convert exceptions to
+  <code>malformed</code> drops (the open-dis pattern).</li>
+</ul>
+
+<h2 id="factory">4. Wire the mode switch and configuration</h2>
+<ol>
+  <li><strong><code>input_source.hpp/cpp</code>:</strong> add
+  <code>InputMode::kFoo</code>, extend <code>parseInputMode</code>/<code>toString</code>,
+  and add the case to <code>makeInputSource()</code>.</li>
+  <li><strong><code>config.hpp</code>:</strong> add <code>FooInputConfig foo;</code> to
+  <code>Config</code>.</li>
+  <li><strong><code>config.cpp</code> — strict schema:</strong> flat keys under
+  <code>[input]</code> (the TOML subset has one table level — follow the
+  <code>dis_*</code> prefix convention):
+<pre><code class="language-cpp">// in applyConfigFile(): every key gets a type check AND a range check
+} else if (key == "input.foo_port") {
+  if (!requireInt(v, err)) return false;
+  if (v.i &lt; 1 || v.i &gt; 65535) return fail(err, key, line, "out of range");
+  cfg.foo.port = static_cast&lt;int&gt;(v.i);
+}
+</code></pre>
+  Keys must be schema-checked <em>whenever present</em>, even if
+  <code>mode != "foo"</code> (the DIS keys behave this way). Add cross-field
+  invariants on the merged config (e.g. "mode=foo requires foo_whatever") after
+  both passes.</li>
+  <li><strong>CLI:</strong> extend <code>--input-mode</code>'s accepted values and
+  <code>printUsage</code>. Follow the DIS precedent: protocol-specific settings live
+  in the config file only — don't grow a flag per key.</li>
+  <li><strong>Samples:</strong> add commented keys with defaults to
+  <code>config/backend.toml</code>.</li>
+</ol>
+
+<h2 id="testing-new">5. Test the interface</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Layer</th><th>What to write</th><th>Model to copy</th></tr></thead>
+  <tbody>
+    <tr><td>Pipeline unit tests</td>
+        <td>New <code>backend/tests/test_foo_input_source.cpp</code>: build raw
+        protocol byte arrays in the test and drive <code>processDatagram()</code>.
+        Cover: every drop reason, the accept path, mapping of each field, satellite
+        identification + carry-forward, staleness (first message, newer, older,
+        wraparound if applicable), and "synthesized sequence never self-stales".</td>
+        <td><code>test_dis_input_source.cpp</code> (505 lines — the exhaustive example)</td></tr>
+    <tr><td>Config tests</td>
+        <td>Extend <code>test_config.cpp</code>: each new key valid / wrong type /
+        out of range / unknown-key still rejected; mode parsing; cross-field
+        invariant; precedence with <code>--config</code>.</td>
+        <td>the existing <code>dis_*</code> cases</td></tr>
+    <tr><td>Emitter (optional)</td>
+        <td>If the simulator learns to emit the protocol
+        (<code>--protocol foo</code>): a <code>foo_builder</code> in
+        <code>olv_sim_lib</code> + marshal unit tests + a round-trip test
+        (emit &rarr; processDatagram &rarr; expect equivalent state).</td>
+        <td><code>dis_builder.cpp</code> + its tests</td></tr>
+    <tr><td>Integration</td>
+        <td>A scenario in (or parallel to) <code>scripts/integration_test.sh</code>:
+        backend in foo mode on random ports, drive it, capture frames with
+        <code>olv_ws_probe</code>, re-validate with
+        <code>validate_message.mjs</code>, grep the log for accepted/connected.</td>
+        <td>the existing script</td></tr>
+    <tr><td>Regression</td>
+        <td>Prove the default path is untouched: full existing suite green
+        <em>unmodified</em>, and a default-config run's startup log line
+        byte-identical to before your change.</td>
+        <td>the DIS feature's Phase-5 acceptance</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="deps">6. If the interface needs a third-party decoder</h2>
+<p>Follow the open-dis-cpp dependency pattern exactly — it is the repo's template
+for "one more compiled dependency without breaking the air gap":</p>
+<ol>
+  <li>Pin an exact upstream version; install via a
+  <code>scripts/install_&lt;lib&gt;.sh</code> that sha256-verifies the tarball
+  <em>before</em> building, supports <code>OLV_&lt;LIB&gt;_TARBALL</code>/<code>_URL</code>
+  mirrors, and installs headers + a static lib + LICENSE into a prefix.</li>
+  <li>Locate it with a <code>cmake/&lt;lib&gt;.cmake</code> exposing an imported target
+  with SYSTEM headers; search the standard prefixes plus a
+  <code>-DOLV_&lt;LIB&gt;_PREFIX</code> override; FATAL_ERROR with install
+  instructions when missing.</li>
+  <li>Run the installer in the Containerfile's build stage (before
+  <code>COPY . .</code>, for layer caching) and document the air-gap build args.</li>
+  <li>Update <code>THIRD_PARTY.md</code>, <code>scripts/gen_sbom.py</code> (new
+  component + pinned version), and regenerate <code>sbom/</code>.</li>
+</ol>
+
+<h2 id="output-interfaces">7. Output interfaces (new consumers)</h2>
+<p>Adding a new <em>output</em> (say, a REST snapshot endpoint or a second broadcast
+format) has a smaller but analogous shape:</p>
+<ul>
+  <li>Read state only via <code>StateStore::snapshot()</code> — never hold the mutex
+  across serialization or I/O.</li>
+  <li>Run on the existing main-thread <code>io_context</code> (like
+  <code>WsServer</code>) unless you have a measured reason for another thread; if
+  you do add one, it must not touch the WS sessions.</li>
+  <li>Serialize once per tick and share the buffer
+  (<code>shared_ptr&lt;const string&gt;</code>) if fanning out; bound per-consumer
+  queues and drop data, not connections, under back-pressure (the 5-frame outbox
+  precedent).</li>
+  <li>Spec the format normatively (a <code>docs/PROTOCOL_*.md</code> with a sample
+  message and field table, like PROTOCOL_WS.md), version it explicitly, and give
+  the integration test a capture-and-validate path for it.</li>
+</ul>
+
+<h2 id="checklist">8. Ship checklist</h2>
+<ol>
+  <li>&#9744; <code>docs/PROTOCOL_&lt;NAME&gt;.md</code> (normative) +
+  <code>docs/features/FEATURE_&lt;NAME&gt;.md</code> (design record)</li>
+  <li>&#9744; <code>FooInputSource</code> with private io thread, three-call contract,
+  all-or-nothing drops, public <code>processDatagram</code> seam</li>
+  <li>&#9744; <code>InputMode</code> + factory + strict config keys + cross-field
+  invariants + sample TOML + usage text</li>
+  <li>&#9744; Unit tests (pipeline + config), optional emitter + round-trip,
+  integration scenario</li>
+  <li>&#9744; Existing suite green unmodified; default startup log byte-identical</li>
+  <li>&#9744; Dependency plumbing (installer, cmake module, Containerfile,
+  THIRD_PARTY.md, SBOM) if applicable</li>
+  <li>&#9744; README: build/run snippet + port table entry; this doc site's
+  <a href="../reference/cli.html">CLI</a>/<a href="../reference/configuration.html">config</a>
+  references</li>
+</ol>
+
+<p>Shorter recipes for other extension types (object categories, config options,
+UI panels, CLI tools): <a href="extending.html">Extending the Software</a>.</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

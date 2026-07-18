@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Testing — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/testing" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Testing</h1>
+<p class="lead">Three layers: C++ unit tests (first-party framework), frontend logic
+tests (<code>node:test</code>), and a shell-driven end-to-end integration test —
+all wired into two commands.</p>
+
+<h2 id="run-everything">Running everything</h2>
+<pre><code class="language-sh">ctest --test-dir build --output-on-failure     # backend_unit + sim_unit + integration
+node --test "frontend/tests/*.test.mjs"        # frontend logic tests (quote the glob!)
+</code></pre>
+<div class="note"><strong>Quote the glob.</strong> <code>node --test</code> expands the
+pattern itself; an unquoted glob can behave differently across shells. The quoted
+form is the project's canonical invocation.</div>
+
+<h2 id="cpp-unit">C++ unit tests</h2>
+<p>Framework: <code>tests/support/olv_test.hpp</code> (~120 lines, zero third-party) —
+<code>OLV_TEST</code> self-registration, non-fatal <code>OLV_CHECK*</code> macros,
+<code>--list</code> support. See the <a href="api.html#test-api">API page</a> for
+macro semantics.</p>
+
+<h3 id="backend-tests">olv_backend_tests (CTest: <code>backend_unit</code>)</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>File</th><th>Covers</th></tr></thead>
+  <tbody>
+    <tr><td><code>test_protocol.cpp</code></td><td>CRC reference vector
+        (<code>0xCBF43926</code>), empty packet = 60 bytes, 3-object round-trip incl.
+        confidence clamp, 128-object max = 6204 bytes, encode truncation.
+        Holds <code>OLV_TEST_MAIN()</code>.</td></tr>
+    <tr><td><code>test_validation.cpp</code></td><td>Every <code>DecodeError</code> path via
+        crafted bytes — the mutate-a-field-then-refresh-CRC pattern.</td></tr>
+    <tr><td><code>test_state_store.cpp</code></td><td>Sequence staleness (duplicate, older,
+        wraparound), upsert-merge, 15&nbsp;s expiry boundary, satellite wholesale
+        replace, rate window, sorted snapshots.</td></tr>
+    <tr><td><code>test_json_writer.cpp</code></td><td>Empty/populated snapshot JSON shape,
+        float formatting, <code>udpDropped = malformed + stale</code>, hello message.</td></tr>
+    <tr><td><code>test_toml.cpp</code></td><td>Happy path (CRLF, escapes, table reopen) +
+        every rejected construct with line numbers.</td></tr>
+    <tr><td><code>test_config.cpp</code></td><td>Full TOML schema (types, ranges, unknown
+        keys), <code>parseArgs</code> precedence, <code>--config</code> handling, input
+        mode + all <code>dis_*</code> keys, DIS cross-field invariant.</td></tr>
+    <tr><td><code>test_dis_input_source.cpp</code></td><td>Builds raw DIS PDU byte arrays
+        and drives <code>processDatagram()</code>: entity-id parsing, satellite vs
+        object mapping, EntityType table, FNV fold + collisions, carry-forward,
+        exercise filter, malformed/version rejection, per-entity timestamp staleness
+        incl. zero and wraparound, synthesized sequence never self-stales.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 id="sim-tests">olv_sim_tests (CTest: <code>sim_unit</code>)</h3>
+<p>CSV happy path and malformed-row handling (each bad field class), frame grouping
+and satellite carry-forward, chunking edge cases (1, 128, &gt;128), sequence
+monotonicity, generator determinism, DIS builder marshaling.</p>
+
+<h3 id="run-one">Running a single case</h3>
+<pre><code class="language-sh">./build/backend/olv_backend_tests --list        # enumerate case names
+./build/backend/olv_backend_tests               # run all (no per-case filter exists)
+ctest --test-dir build -R backend_unit          # via ctest
+</code></pre>
+
+<h2 id="frontend-tests">Frontend logic tests</h2>
+<p>Eleven suites under <code>frontend/tests/</code>, all DOM-free — they import the
+pure modules directly under Node &ge; 18:</p>
+<ul>
+  <li><code>net_parse</code> — every accept/reject path of
+  <code>parseStateMessage</code>; connection status sequencing and reconnect gating
+  with an injected fake WebSocket factory.</li>
+  <li><code>model</code>, <code>settings</code>, <code>site_config</code>,
+  <code>toml</code> — state, clamping/persistence/precedence, lenient config, grammar
+  acceptance/rejection with line numbers.</li>
+  <li><code>sun</code>, <code>sky</code>, <code>star_catalog</code> — ephemeris sanity:
+  equinox/solstice declination, GMST ranges, Moon phase, catalog invariants
+  (Sirius/Vega spot checks).</li>
+  <li><code>sat_camera</code> — view-matrix orthonormality, up-vector fallback chain,
+  fisheye radius/theta/depth math (the JS half of the GLSL lockstep).</li>
+  <li><code>atlas</code>, <code>textures</code> — frozen constants, painted-cell
+  determinism, POT downsizing math, GL handle lifecycle against a stub GL.</li>
+</ul>
+<pre><code class="language-sh">node --test "frontend/tests/*.test.mjs"          # all
+node --test frontend/tests/net_parse.test.mjs    # one suite
+</code></pre>
+
+<h2 id="integration">Integration test (CTest: <code>integration</code>)</h2>
+<p><code>scripts/integration_test.sh</code> — the full pipeline on ephemeral random
+ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout:</p>
+<ol>
+  <li>Writes a backend TOML with a <em>bogus</em> UDP port + debug logging, then
+  overrides the port by CLI flag — proving defaults &lt; file &lt; flags precedence
+  live.</li>
+  <li>Starts <code>olv_backend</code>, polls the WS port up (50 &times; 0.2&nbsp;s).</li>
+  <li>Runs <code>olv_sim --generate 500 --rate 2 --duration 60</code>.</li>
+  <li>Captures 6 frames with <code>olv_ws_probe</code> (30&nbsp;s timeout).</li>
+  <li>Structural checks (<code>"type":"state"</code>, <code>satellite</code>,
+  <code>lastDataTime</code>), then — if Node is present — re-parses every frame with
+  the <em>real frontend parser</em>
+  (<code>node frontend/tests/validate_message.mjs --min-objects 100</code>).</li>
+  <li>Asserts the backend log recorded <code>accepted</code> packets and a
+  <code>client connected</code> event; prints <code>INTEGRATION PASS</code>.</li>
+</ol>
+<p>A cleanup trap kills both processes and removes the temp dir on any exit path.</p>
+
+<h2 id="system-regression">System &amp; regression testing</h2>
+<ul>
+  <li><strong>Renderer smoke test:</strong> no automated browser tests exist (no
+  headless browser dependency, by design). <code>frontend/dev/smoke.html</code> is the
+  manual harness: synthetic snapshot at 1&nbsp;Hz, all five categories, trails +
+  labels + sky on, <kbd>V</kbd>/<kbd>S</kbd> toggles. Eyeball it after renderer
+  changes, in both view modes.</li>
+  <li><strong>Regression discipline:</strong> behavior-preserving refactors are held to
+  byte-identical observable output where feasible — the input-source refactor
+  verified an identical default-run startup log against the pre-feature commit.</li>
+  <li><strong>Determinism as regression tooling:</strong> <code>olv_sim --seed N</code>
+  produces identical packet streams; capture frames with <code>olv_ws_probe</code>
+  before and after a change and diff them.</li>
+</ul>
+
+<h2 id="performance-testing">Performance testing</h2>
+<pre><code class="language-sh"># Protocol-ceiling soak (backend + renderer under max load)
+./build/simulator/olv_sim --generate 5000 --rate 1 --duration 600
+# Watch: Stats panel rate ~40 pkt/s, no drops in the log, smooth frame rate.
+
+# Faster-than-spec stress
+./build/simulator/olv_sim --generate 5000 --rate 4 --duration 60
+./build/backend/olv_backend --broadcast-hz 4
+</code></pre>
+<p>There is no automated perf harness or budget; the acceptance bar from the plan is
+"5,000 objects at 1&nbsp;Hz renders smoothly on localhost". Use browser DevTools
+(Performance tab) for frame timing and the Stats panel for pipeline throughput.</p>
+
+<h2 id="coverage-gaps">Known gaps</h2>
+<ul>
+  <li>No automated browser/E2E UI tests (manual smoke.html only).</li>
+  <li>No CI to run any of this automatically — see
+  <a href="../overview/repository.html#ci">CI/CD status</a>.</li>
+  <li><code>ws_server.cpp</code> concurrency (multi-client fan-out, slow-client drops)
+  is exercised only indirectly via the integration test.</li>
+</ul>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

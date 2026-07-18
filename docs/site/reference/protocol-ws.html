@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WebSocket Protocol — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/protocol-ws" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>WebSocket JSON Protocol (version 1)</h1>
+<div class="note"><strong>Normative sources:</strong> <code>docs/PROTOCOL_WS.md</code>;
+serializer <code>backend/src/json_writer.{hpp,cpp}</code>, parser
+<code>frontend/js/net.js</code>. Default endpoint
+<code>ws://&lt;host&gt;:8765/</code>.</div>
+
+<p class="lead">Backend &rarr; browser only: UTF-8 JSON text frames, one JSON object
+per frame. Clients never send (input is read and ignored). One <code>hello</code>
+on connect, then <code>state</code> at the broadcast rate (default 1&nbsp;Hz) —
+every tick, even before any UDP data has arrived.</p>
+
+<h2 id="hello">hello (once, immediately after the handshake)</h2>
+<pre><code class="language-json">{
+  "type": "hello",
+  "protocolVersion": 1,
+  "serverTime": "2026-07-01T12:34:56.789Z",
+  "broadcastHz": 1.0,
+  "limits": { "maxObjects": 5000 }
+}
+</code></pre>
+<p>Clients MUST reject a <code>protocolVersion</code> other than 1.</p>
+
+<h2 id="state">state (broadcast at broadcastHz)</h2>
+<pre><code class="language-json">{
+  "type": "state",
+  "serverTime": "2026-07-01T12:34:56.789Z",
+  "lastDataTime": "2026-07-01T12:34:56.500Z",
+  "satellite": { "id": 1, "seq": 42,
+                 "pos": [4126540.2, -4681712.5, 1003432.1],
+                 "vel": [1234.56, 2345.67, -6543.21] },
+  "objects": [
+    [1001, 1, 6923371.4, 12000.0, -55000.2, 7611.0, 0.0, 0.0, 87, 0.0, 0],
+    [2001, 5, 1113194.9, -4842330.0, 3985029.2, null, null, null, 95, 1450.0, 1]
+  ],
+  "stats": { "udpReceived": 480, "udpAccepted": 478, "udpDropped": 2,
+             "udpRateHz": 8.0, "wsClients": 1, "objectCount": 2,
+             "broadcastSeq": 12 }
+}
+</code></pre>
+
+<h2 id="fields">Field semantics</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Field</th><th>Type</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td><code>serverTime</code></td><td>ISO-8601 UTC, ms</td>
+        <td>backend wall clock at serialization; drives the frontend's scene clock
+        (Sun/Moon/planets/star positions)</td></tr>
+    <tr><td><code>lastDataTime</code></td><td>ISO-8601 UTC, ms · or <code>null</code></td>
+        <td>receive time of the last <em>accepted</em> UDP packet; <code>null</code>
+        until first data</td></tr>
+    <tr><td><code>satellite</code></td><td>object · or <code>null</code></td>
+        <td>primary satellite; <code>seq</code> = sequence of the packet that provided
+        it; <code>pos</code> m ECEF, <code>vel</code> m/s ECEF</td></tr>
+    <tr><td><code>objects</code></td><td>array of 11-element rows</td>
+        <td>all objects not yet expired (15&nbsp;s default window), sorted by id</td></tr>
+    <tr><td><code>stats.udpReceived/Accepted/Dropped</code></td><td>counters</td>
+        <td>totals since backend start; dropped = malformed + stale (see the
+        <a href="protocol-dis.html#validation">DIS accounting note</a>)</td></tr>
+    <tr><td><code>stats.udpRateHz</code></td><td>number</td><td>accepted packets/s over a trailing 5&nbsp;s window</td></tr>
+    <tr><td><code>stats.wsClients</code></td><td>int</td><td>currently connected clients</td></tr>
+    <tr><td><code>stats.objectCount</code></td><td>int</td><td>rows in <code>objects</code></td></tr>
+    <tr><td><code>stats.broadcastSeq</code></td><td>counter</td><td>+1 per broadcast tick</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="rows">Object row columns (fixed order, 11 columns)</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td><code>id</code></td><td>u32</td><td>—</td></tr>
+    <tr><td>1</td><td><code>cat</code></td><td>int 1–5</td><td>1 debris · 2 star · 3 comet · 4 satellite · 5 groundHot</td></tr>
+    <tr><td>2–4</td><td><code>px, py, pz</code></td><td>number</td><td>ECEF meters, rounded to 0.1&nbsp;m</td></tr>
+    <tr><td>5–7</td><td><code>vx, vy, vz</code></td><td>number or <code>null</code></td>
+        <td>m/s rounded to 0.01; all three <code>null</code> when the source sent no
+        HAS_VELOCITY (all-or-none — partial is a parse error)</td></tr>
+    <tr><td>8</td><td><code>conf</code></td><td>int 0–100</td><td>confidence %</td></tr>
+    <tr><td>9</td><td><code>intensity</code></td><td>number</td><td>Kelvin (groundHot), magnitude (star), else 0</td></tr>
+    <tr><td>10</td><td><code>flags</code></td><td>int</td><td>bit1 (value 2) HIGHLIGHT; bit0 mirrors has-velocity</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Row-array encoding is a deliberate size optimization: ~450&nbsp;KB vs ~800&nbsp;KB
+per broadcast at 5,000 objects compared with key/value objects.</p>
+
+<h2 id="client-rules">Required client behavior</h2>
+<ul>
+  <li>Reconnect with backoff (1&nbsp;s doubling to a 10&nbsp;s cap — the reference
+  frontend uses 1/2/4/8/10).</li>
+  <li>Treat unknown message <code>type</code>s as ignorable (forward compatibility).
+  Note the row shape itself is strict — new columns would be a breaking change.</li>
+  <li>Reject malformed messages: non-JSON, missing/unknown <code>type</code>, missing
+  <code>objects</code> on state, rows of length &ne; 11, non-numeric id/cat/pos,
+  partial velocity triples. The reference implementation
+  (<code>parseStateMessage</code>) counts errors and keeps the connection alive.</li>
+  <li>Client-side staleness: no <code>state</code> frame for &gt; 3&nbsp;s &rarr; show
+  a stalled-connection indicator.</li>
+</ul>
+
+<h2 id="server-behavior">Server behavior notes</h2>
+<ul>
+  <li>The snapshot is serialized once per tick and shared across sessions
+  (<code>shared_ptr&lt;const string&gt;</code>).</li>
+  <li>A session with more than 5 pending frames has new frames dropped (the frame,
+  not the connection), with a rate-limited warning in the log.</li>
+  <li>Connect/disconnect events are logged with the peer endpoint and client count.</li>
+</ul>
+
+<p>Related: <a href="protocol-udp.html">OLV1 UDP input</a> ·
+<a href="../developer-guide/api.html#js-api">frontend parser API</a> ·
+<a href="cli.html#ws-probe">olv_ws_probe</a> for capturing frames</p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

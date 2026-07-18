@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="user-guide/troubleshooting" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Troubleshooting</h1>
+<p class="lead">Symptoms, causes, and fixes — build problems first, then runtime, then
+display. The backend log (default <code>olv_backend.log</code>) is the primary
+diagnostic tool throughout.</p>
+
+<h2 id="logs">Where the logs are</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Component</th><th>Location</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>Backend</td><td><code>olv_backend.log</code> (or <code>--log-file</code>; container:
+        <code>/tmp/olv_backend.log</code> inside the backend container)</td>
+        <td>One line per event: <code>&lt;ISO-8601 ms&gt; LEVEL [component] message</code>.
+        Info+ lines also mirror to stderr unless <code>--quiet</code>. Set
+        <code>--log-level debug</code> to log every accepted packet.</td></tr>
+    <tr><td>Simulator</td><td>stdout/stderr only</td>
+        <td>Per-cycle progress + final <code>done:</code> summary; send errors always print.</td></tr>
+    <tr><td>Frontend</td><td>Browser DevTools console</td>
+        <td>Config warnings, WebSocket errors, parse-error counts.</td></tr>
+    <tr><td>Containers</td><td><code>podman compose -p olv logs backend</code> (or
+        <code>frontend</code>/<code>simulator</code>)</td>
+        <td><code>run_all.sh</code> already streams these.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="build">Build-time problems</h2>
+
+<h3 id="boost-not-found"><code>Could NOT find Boost</code></h3>
+<p>Common on immutable distros with Homebrew/Linuxbrew-installed Boost:</p>
+<pre><code class="language-sh">cmake -S . -B build -DCMAKE_PREFIX_PATH=$(brew --prefix)</code></pre>
+<p><code>cmake/common.cmake</code> auto-adds <code>$HOMEBREW_PREFIX</code> and
+<code>/home/linuxbrew/.linuxbrew</code> to the prefix path, so this is usually only
+needed for nonstandard Homebrew locations. Boost is found in CONFIG mode; very old
+Boost packages without CMake config files won't work — use &ge; 1.74.</p>
+
+<h3 id="open-dis-not-found"><code>open-dis-cpp not found</code> at configure time</h3>
+<p>The DIS library isn't installed yet:</p>
+<pre><code class="language-sh">scripts/install_open_dis.sh --prefix ~/.local
+cmake -S . -B build            # reconfigure
+</code></pre>
+<p>Prefixes outside <code>/usr/local</code>, <code>/opt/open-dis</code>, <code>~/.local</code>
+need <code>-DOLV_OPEN_DIS_PREFIX=DIR</code>. Air-gapped hosts: see
+<a href="installation.html#air-gapped">air-gapped installation</a>.</p>
+
+<h3 id="stale-cache">Weird CMake errors after moving/copying the repo</h3>
+<p>A stale <code>build/</code> directory with an old <code>CMakeCache.txt</code> from
+another path. Delete <code>build/</code> and reconfigure.</p>
+
+<h2 id="runtime">Runtime problems</h2>
+
+<h3 id="config-error">Backend/simulator exits immediately with a config error</h3>
+<p>Working as designed: strict config. The message names the file, key, and line —
+e.g. <code>backend.toml:7: network.udp_port out of range</code>. Fix the named key.
+Remember the TOML subset: no arrays, no dotted keys, no single quotes
+(<a href="../reference/file-formats.html#toml">grammar</a>). Exit code 2 = bad
+arguments/config; exit code 1 = runtime failure (e.g. log file unwritable, port
+bind).</p>
+
+<h3 id="ws-busy"><code>bind: address already in use</code> on 8765</h3>
+<p>Another <code>olv_backend</code> (or anything else) already owns the port:</p>
+<pre><code class="language-sh">ss -tlnp | grep 8765            # who owns it
+scripts/cleanup.sh              # stops containerized stacks + stray processes
+# or run on a different port:
+./build/backend/olv_backend --ws-port 8766   # update frontend Settings to match
+</code></pre>
+
+<h3 id="udp-blocked">Simulator packets never arrive (Stats stays at 0)</h3>
+<ol>
+  <li>Confirm the simulator is pointing at the right host/port
+  (<code>--dest</code>/<code>--port</code> vs the backend's <code>--udp-port</code> —
+  and note DIS mode listens on 47001, not 47000).</li>
+  <li>Check the firewall (typical on Fedora-family hosts):
+<pre><code class="language-sh">sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp     # runtime only
+sudo firewall-cmd --permanent --add-port=47000/udp --add-port=8765/tcp
+sudo firewall-cmd --reload
+</code></pre></li>
+  <li>Check the log: if packets arrive but are rejected, you'll see
+  <code>dropped &lt;reason&gt;</code> WARN lines with the sender's address — a version
+  mismatch, wrong protocol on the port (OLV1 vs DIS), or corruption.</li>
+</ol>
+
+<h3 id="drops">Stats shows drops climbing</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Log reason</th><th>Meaning</th><th>Likely cause</th></tr></thead>
+  <tbody>
+    <tr><td><code>bad_magic</code> / <code>bad_version</code> / <code>bad_msg_type</code></td>
+        <td>Not a valid OLV1 packet</td><td>Wrong sender/protocol pointed at the port</td></tr>
+    <tr><td><code>bad_length</code> / <code>bad_crc</code></td><td>Truncated or corrupted datagram</td>
+        <td>Network corruption; a non-OLV1 sender; IP fragmentation issues (try <code>--chunk 24</code>)</td></tr>
+    <tr><td><code>non_finite</code> / <code>out_of_range</code> / <code>bad_object_type</code></td>
+        <td>Structurally valid but bad content</td><td>Buggy or malicious data source</td></tr>
+    <tr><td><code>stale</code></td><td>Sequence not newer than the last accepted</td>
+        <td>Two simulators feeding one backend (their sequences interleave) — run one
+        source per backend, or restart the backend to reset the sequence baseline</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 id="dis-nothing">DIS mode: PDUs arrive but nothing displays</h3>
+<ul>
+  <li><code>filtered exercise=N</code> in the debug log &rarr; your
+  <code>dis_exercise_id</code> filter doesn't match the traffic.</li>
+  <li><code>ignored pdu kind=N</code> &rarr; only Entity State (type 1) PDUs are
+  consumed; heartbeats/fire/detonation etc. are ignored by design.</li>
+  <li>Satellite panel empty but objects show &rarr; no entity matches
+  <code>dis_satellite_entity_id</code>; check the three-part id against the exercise's
+  actual EntityIDs.</li>
+  <li><code>dropped bad_version</code> &rarr; source is emitting a DIS protocol version
+  outside 5–7.</li>
+</ul>
+
+<h2 id="display">Display problems</h2>
+
+<h3 id="globe-empty">Page loads but the globe stays empty / status "stalled"</h3>
+<ol>
+  <li>Open Settings — do host/port match a running backend? (Default:
+  <code>localhost:8765</code>; "stalled" means no state frame for &gt;3&nbsp;s.)</li>
+  <li>Click <em>Reconnect</em>. Watch the DevTools console for WebSocket errors.</li>
+  <li>Confirm the backend is broadcasting: <code>olv_ws_probe --count 1 ...</code>
+  (see <a href="usage.html#probe">Usage</a>) — if the probe captures a frame, the
+  problem is in the browser's settings/network, not the backend.</li>
+  <li>Globe visible but no objects: check the category toggles in Settings and the
+  expiry window — a paused source means objects expire after 15&nbsp;s.</li>
+</ol>
+
+<h3 id="file-origin">Blank page when opening <code>index.html</code> directly</h3>
+<p>ES modules are blocked from <code>file://</code>. Serve over HTTP:
+<code>scripts/serve_frontend.sh 8000</code> &rarr;
+<code>http://localhost:8000/frontend/</code>.</p>
+
+<h3 id="webgl">"WebGL initialization failed" overlay</h3>
+<p>The browser couldn't create a WebGL&nbsp;1 context. Check
+<code>about:gpu</code> / hardware acceleration settings, try another browser, or
+update GPU drivers. The app requires WebGL but degrades nothing else — the fatal
+overlay is the intended behavior.</p>
+
+<h3 id="settings-stuck">Settings seem stuck or corrupted</h3>
+<p>Settings live in <code>localStorage</code> key <code>olv.settings.v1</code>. Use
+<em>Reset to defaults</em> in the Settings panel, or clear the key manually in
+DevTools (corrupt JSON is tolerated and falls back to defaults automatically).</p>
+
+<h2 id="recovery">Recovery procedures</h2>
+<ul>
+  <li><strong>Full stop, containers:</strong> <kbd>Ctrl-C</kbd> in <code>run_all.sh</code>,
+  or <code>scripts/cleanup.sh</code> (also kills stray native processes and dev
+  servers, and force-stops <code>olv_*</code> containers).</li>
+  <li><strong>State reset:</strong> the backend keeps no persistent state — restarting
+  it resets counters, sequence baseline, and the object table. The frontend's only
+  persistence is <code>localStorage</code> settings.</li>
+  <li><strong>Rebuild from scratch:</strong> <code>rm -rf build &amp;&amp; cmake -S . -B build
+  -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build build -j</code>; containers:
+  <code>scripts/run_all.sh --build</code>.</li>
+  <li><strong>Sanity baseline:</strong> <code>ctest --test-dir build
+  --output-on-failure</code> — if <code>integration</code> passes, the entire
+  sim &rarr; backend &rarr; WS &rarr; parser pipeline works on this machine, and the
+  problem is configuration or environment.</li>
+</ul>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

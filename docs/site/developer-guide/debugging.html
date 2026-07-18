@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Debugging — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/debugging" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Debugging</h1>
+<p class="lead">Workflows and tools for each layer. User-facing symptom lookup lives
+in <a href="../user-guide/troubleshooting.html">Troubleshooting</a>; this page is the
+engineer's toolbox.</p>
+
+<h2 id="workflow">The general workflow</h2>
+<ol>
+  <li><strong>Localize with the pipeline's own instrumentation first.</strong> The
+  Stats panel + backend log tell you which stage is failing: packets not received
+  (network), received-but-dropped (validation — the reason is logged), accepted but
+  not displayed (frontend). Only then reach for a debugger.</li>
+  <li><strong>Reproduce deterministically.</strong> <code>olv_sim --seed N --duration
+  10</code> gives an identical packet stream every run; most bugs can be pinned to a
+  seed + timestamp.</li>
+  <li><strong>Shrink to a unit test.</strong> Nearly every seam has a test-friendly
+  entry point: <code>proto::decode</code> on crafted bytes,
+  <code>DisInputSource::processDatagram</code>, <code>parseStateMessage</code> on a
+  captured frame, <code>fisheyeProjectNdc</code> on a single point. Encode the repro
+  as a test before fixing.</li>
+</ol>
+
+<h2 id="logging">Logging &amp; tracing</h2>
+<pre><code class="language-sh"># Everything the backend does, live:
+./build/backend/olv_backend --log-level debug --log-file dbg.log
+tail -f dbg.log
+# debug level adds: every accepted packet (seq/objs/total/source),
+# stale drops, DIS filtered/ignored PDU lines.
+</code></pre>
+<ul>
+  <li>The logger flushes every line — logs are complete even after a crash.</li>
+  <li>Simulator: watch the per-cycle stdout line; send errors always print with
+  errno text.</li>
+  <li>Frontend: DevTools console shows config warnings and parse errors;
+  <code>connection.getStats()</code> and the parse-error counter are inspectable from
+  the console via the module registry if you expose them, or add temporary logging
+  in <code>net.js</code>'s catch block.</li>
+</ul>
+
+<h2 id="wire-debugging">Watching the wire</h2>
+<pre><code class="language-sh"># UDP: is anything arriving? (loopback capture)
+sudo tcpdump -i lo -X udp port 47000
+
+# Decode-level check without the backend: any packet whose 4 first bytes
+# aren't 4F 4C 56 31 ("OLV1") is not an OLV1 packet.
+
+# WebSocket: capture frames as text
+./build/backend/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
+    --timeout 10 --out frames.jsonl
+python3 -m json.tool &lt;(head -1 frames.jsonl)     # pretty-print the hello
+node frontend/tests/validate_message.mjs frames.jsonl   # strict re-parse
+</code></pre>
+
+<h2 id="gdb">Native debugging (gdb/lldb)</h2>
+<pre><code class="language-sh">cmake -S . -B build-dbg -DCMAKE_BUILD_TYPE=Debug
+cmake --build build-dbg -j
+gdb --args ./build-dbg/backend/olv_backend --udp-port 47000 --ws-port 8765
+</code></pre>
+<ul>
+  <li>Remember the thread model: <code>info threads</code> shows the main (WS) thread
+  and the input thread. Useful breakpoints: <code>StateStore::apply</code> (every
+  accepted packet), <code>WsServer</code>'s broadcast tick, <code>proto::decode</code>
+  return paths.</li>
+  <li>Deadlock suspicion: there is exactly one application mutex
+  (<code>StateStore::mutex_</code>) — if both threads are stuck, one of them is
+  holding it across something blocking, which the design forbids
+  (<code>snapshot()</code> copies precisely to avoid this).</li>
+  <li>Unit tests are ordinary binaries: <code>gdb ./build-dbg/backend/olv_backend_tests</code>
+  and break on a failing case's function (find names via <code>--list</code>).</li>
+</ul>
+
+<h2 id="sanitizers">Sanitizers</h2>
+<p>No preconfigured sanitizer build exists; add flags at configure time:</p>
+<pre><code class="language-sh">cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
+cmake --build build-asan -j
+ctest --test-dir build-asan --output-on-failure
+
+# Thread races (the StateStore/two-thread contract):
+#   use -fsanitize=thread in a separate build tree (TSan and ASan don't mix)
+</code></pre>
+<p>TSan on the integration test is the strongest automated check of the threading
+model — worth running after any change to <code>state_store</code>,
+<code>ws_server</code>, or an input source.</p>
+
+<h2 id="frontend-debugging">Frontend debugging</h2>
+<ul>
+  <li><strong>Renderer without a backend:</strong> serve the repo root and open
+  <code>frontend/dev/smoke.html</code> — deterministic synthetic scene, all
+  categories, <kbd>V</kbd>/<kbd>S</kbd> toggles. Ideal for shader and projection
+  work.</li>
+  <li><strong>Pure-module REPL:</strong> <code>node</code> can import any pure module
+  directly: <code>const {sunDirectionEcef} = await import('./frontend/js/sun.js')</code>
+  — reproduce math bugs outside the browser.</li>
+  <li><strong>WebGL:</strong> browser DevTools + the <em>Spector.js</em> extension (or
+  <code>about:gpu</code> for context issues). The renderer's four programs are named
+  in source (<code>earthProg</code>, <code>lineProg</code>, <code>pointsProg</code>,
+  <code>markerProg</code>); GLSL compile errors are surfaced in the console with the
+  shader source.</li>
+  <li><strong>Fisheye lockstep bugs</strong> (objects picking wrong in SAT view, or
+  drawn vs picked positions diverging): compare <code>fisheyeProjectNdc</code> output
+  in Node against what the shader draws for the same world point — the two
+  implementations must match; <code>sat_camera.test.mjs</code> has the harness
+  pattern.</li>
+  <li><strong>State inspection:</strong> the app exposes no globals by design; set a
+  breakpoint in <code>main.js</code>'s <code>onState</code> callback and inspect the
+  parsed message / model there.</li>
+</ul>
+
+<h2 id="profiling">Profiling</h2>
+<pre><code class="language-sh"># Backend CPU profile under load (perf, Linux)
+perf record -g ./build/backend/olv_backend --quiet --log-file /dev/null &amp;
+./build/simulator/olv_sim --generate 5000 --rate 4 --duration 30
+perf report
+# Expect hotspots in json_writer (serialization) and decode/crc32.
+</code></pre>
+<ul>
+  <li>Frontend: DevTools Performance tab during a 5,000-object + trails run; the
+  known heavy paths are the trail buffer rebuild and label overlay pass.</li>
+  <li>Broadcast cost scales with <code>objectCount &times; broadcastHz &times;
+  clients</code> for enqueue, but serialization happens once per tick regardless of
+  client count (shared string) — measure before optimizing.</li>
+</ul>
+
+<h2 id="container-debugging">Container debugging</h2>
+<pre><code class="language-sh">podman compose -p olv ps                         # service state
+podman compose -p olv logs backend               # per-service logs
+podman exec -it olv_backend_1 sh                 # poke inside (path may vary)
+podman exec olv_backend_1 cat /tmp/olv_backend.log
+# Simulator can't reach backend? It resolves the literal hostname "backend" —
+# that only works on the compose network, not from the host.
+</code></pre>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

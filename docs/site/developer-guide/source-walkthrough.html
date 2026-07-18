@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Source Walkthrough — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="developer-guide/source-walkthrough" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Source Walkthrough</h1>
+<p class="lead">The lifecycle of each process and what every major class/module does,
+in execution order. Pair with the <a href="api.html">API Documentation</a> for
+signatures.</p>
+
+<h2 id="backend-lifecycle">Backend lifecycle (olv_backend)</h2>
+<p><code>backend/src/main.cpp</code>, top to bottom:</p>
+<ol>
+  <li><strong><code>parseArgs()</code></strong> (config.cpp) — two passes: resolve
+  <code>--config</code> first, then apply flags in order. Errors print usage and exit 2;
+  <code>--help</code> exits 0.</li>
+  <li><strong><code>Logger::open()</code></strong> — appends to the log file; failure
+  exits 1. A single <code>startup ...</code> INFO line records the effective config
+  (mode/config-file fields appended only when non-default).</li>
+  <li><strong>Construction</strong> (inside one try/catch):
+  <code>StateStore store(expiry)</code> &rarr;
+  <code>makeInputSource(cfg, store, log)</code> — the factory returns
+  <code>Olv1InputSource</code> or <code>DisInputSource</code>; the DIS constructor
+  parses the satellite EntityID and binds its socket, so bad DIS config fails here,
+  before threads — &rarr; <code>io_context</code> &rarr;
+  <code>WsServer(ioc, bind, port, store, log, hz)</code> (binds the TCP acceptor).</li>
+  <li><strong><code>input-&gt;start()</code></strong> spawns thread 1;
+  <strong><code>ws.start()</code></strong> arms the acceptor + broadcast timer.</li>
+  <li><strong><code>signal_set(SIGINT, SIGTERM)</code></strong> — on signal:
+  log, <code>ws.stop()</code>, <code>input-&gt;stop()</code> (join), <code>ioc.stop()</code>.</li>
+  <li><strong><code>ioc.run()</code></strong> — the main thread becomes the WS thread
+  until shutdown; returns &rarr; "clean shutdown" &rarr; exit 0. Any escaped exception
+  logs <code>fatal:</code> and exits 1.</li>
+</ol>
+
+<h3 id="protocol-hpp">olv/protocol.hpp — the wire format in one header</h3>
+<ul>
+  <li>Constants: magic <code>"OLV1"</code>, version 1, header 56&nbsp;B, record 48&nbsp;B,
+  max 128 objects/packet, 5000/cycle, packet size 60–6204&nbsp;B, coordinate bound
+  1e13&nbsp;m.</li>
+  <li><code>ObjectRecord</code>/<code>StatePacket</code> — plain structs; serialization is
+  field-by-field little-endian via <code>detail::putU32/getF64/...</code> helpers (no
+  struct overlay, no alignment traps).</li>
+  <li><code>crc32()</code> — compile-time table, zlib-compatible; reference vector
+  <code>0xCBF43926</code> for <code>"123456789"</code> is unit-tested.</li>
+  <li><code>encode()</code> truncates &gt;128 objects and clamps confidence/total;
+  <code>decode()</code> runs the ordered <code>DecodeError</code> pipeline
+  (<a href="../reference/protocol-udp.html#validation">reference</a>) and only fills
+  the output packet on full success.</li>
+</ul>
+
+<h3 id="statestore">StateStore</h3>
+<p>Object table (<code>unordered_map</code> by id), satellite, counters, accept-time
+ring for the 5&nbsp;s rate window. Four public methods, each fully locked:
+<code>countReceived(bytes)</code>, <code>countDropped(kind)</code>,
+<code>apply(pkt, wall, mono)</code> (sequence gate &rarr; satellite replace &rarr;
+object upsert &rarr; timestamps), <code>snapshot(mono)</code> (prune &rarr; copy
+&rarr; sort by id). Carry-forward is a property of <em>not clearing</em>: objects
+persist until expiry, which is what makes 40-packet chunked cycles coherent.</p>
+
+<h3 id="wsserver">WsServer &amp; sessions</h3>
+<p>Beast async accept loop; each session does the WebSocket handshake, sends the
+<code>hello</code> message, then participates in broadcasts. The timer tick calls
+<code>store.snapshot()</code>, <code>json_writer</code> serializes once into a
+<code>shared_ptr&lt;const string&gt;</code>, and each session queues it — over 5
+pending frames, the frame is dropped for that session with a rate-limited WARN.
+Client-to-server input is read and discarded (keeps the connection healthy).
+Connect/disconnect log lines carry the endpoint and client count.</p>
+
+<h3 id="json-writer">json_writer</h3>
+<p>Hand-rolled serializer (<code>snprintf</code> floats): positions rounded to 0.1&nbsp;m,
+velocities to 0.01&nbsp;m/s, objects as 11-element row arrays,
+<code>udpDropped = malformed + stale</code>. Produces <code>hello</code> and
+<code>state</code> messages exactly as specified in
+<a href="../reference/protocol-ws.html">PROTOCOL_WS</a>.</p>
+
+<h3 id="dis-source">DisInputSource</h3>
+<p><code>processDatagram()</code> (public test seam) implements the seven-step DIS
+pipeline: count &rarr; length &ge; 12 &rarr; version 5–7 &rarr; exercise filter &rarr;
+PDU type 1 &rarr; <code>EntityStatePdu::unmarshal</code> (try/catch) &rarr; per-entity
+timestamp staleness &rarr; map + apply. Mapping: FNV-1a EntityID fold,
+EntityType (kind,domain) &rarr; category table, fixed confidence 100 / intensity 0 /
+HAS_VELOCITY. The satellite (matched by full EntityID) is carried forward into
+every synthesized packet, and a strictly-increasing local sequence keeps the shared
+staleness gate quiet.</p>
+
+<h2 id="sim-lifecycle">Simulator lifecycle (olv_sim)</h2>
+<ol>
+  <li><strong><code>parseSimArgs()</code></strong> — same two-pass config/flag model;
+  picks destination port 47001 automatically in DIS mode when no port given.</li>
+  <li><strong>Source setup</strong>: CSV mode — <code>parseCsv()</code> (strict,
+  line-numbered errors) then <code>buildFrames()</code> (group by <code>time_s</code>,
+  satellite carry-forward, first frame must contain a <code>sat</code> row).
+  Generate mode — <code>Generator(count, seed)</code>.</li>
+  <li><strong>Socket</strong>: resolve <code>--dest</code> (IPv4 preferred — this is what
+  makes compose service names like <code>backend</code> work), connect the UDP socket.</li>
+  <li><strong>Send loop</strong>: <code>steady_clock</code> pacing at
+  <code>1/rate</code>; per cycle either <code>buildPackets()</code> (OLV1: chunk
+  &le;128, monotonic sequence, <code>proto::encode</code>) or
+  <code>buildDisPdus()</code> (one big-endian Entity State PDU per entity, satellite
+  first; timestamps derived from the cycle counter so CSV loops stay monotone).
+  Send errors log and count but never abort.</li>
+  <li><strong>Exit</strong>: after CSV pass (unless <code>--loop</code>) or
+  <code>--duration</code>; prints <code>done: cycles= packets= bytes= send_errors=</code>.</li>
+</ol>
+<p><strong>Generator details</strong>: deterministic LCG (Numerical Recipes constants);
+primary satellite in a 550&nbsp;km, 53&deg; circular orbit with analytically exact
+velocity; object mix 70% debris / 10% satellite / 10% ground-hot / 5% comet / 5%
+star; stars at 1e12&nbsp;m fixed directions; ground-hot on the surface at
+400–1800&nbsp;K. Earth rotation is deliberately not modeled.</p>
+
+<h2 id="frontend">Frontend module walkthrough</h2>
+
+<h3 id="frontend-graph">Module dependency graph</h3>
+<figure class="diagram">
+<svg viewBox="0 0 840 360" role="img" aria-label="Frontend module dependency graph">
+  <defs>
+    <marker id="arr6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <rect class="d-box" x="360" y="15" width="120" height="36"/>
+  <text class="d-mono" x="420" y="38" text-anchor="middle">main.js</text>
+
+  <rect class="d-box" x="40" y="110" width="100" height="34"/>
+  <text class="d-mono" x="90" y="131" text-anchor="middle">net.js</text>
+  <rect class="d-box" x="170" y="110" width="100" height="34"/>
+  <text class="d-mono" x="220" y="131" text-anchor="middle">model.js</text>
+  <rect class="d-box" x="300" y="110" width="110" height="34"/>
+  <text class="d-mono" x="355" y="131" text-anchor="middle">settings.js</text>
+  <rect class="d-box" x="440" y="110" width="90" height="34"/>
+  <text class="d-mono" x="485" y="131" text-anchor="middle">ui.js</text>
+  <rect class="d-box" x="560" y="110" width="120" height="34"/>
+  <text class="d-mono" x="620" y="131" text-anchor="middle">renderer.js</text>
+  <rect class="d-box" x="710" y="110" width="120" height="34"/>
+  <text class="d-mono" x="770" y="131" text-anchor="middle">site_config.js</text>
+
+  <rect class="d-box" x="430" y="220" width="100" height="34"/>
+  <text class="d-mono" x="480" y="241" text-anchor="middle">camera.js</text>
+  <rect class="d-box" x="550" y="220" width="120" height="34"/>
+  <text class="d-mono" x="610" y="241" text-anchor="middle">sat_camera.js</text>
+  <rect class="d-box" x="690" y="220" width="90" height="34"/>
+  <text class="d-mono" x="735" y="241" text-anchor="middle">sky.js</text>
+  <rect class="d-box" x="310" y="220" width="100" height="34"/>
+  <text class="d-mono" x="360" y="241" text-anchor="middle">atlas.js</text>
+  <rect class="d-box" x="190" y="220" width="100" height="34"/>
+  <text class="d-mono" x="240" y="241" text-anchor="middle">textures.js</text>
+  <rect class="d-box" x="70" y="220" width="100" height="34"/>
+  <text class="d-mono" x="120" y="241" text-anchor="middle">sun.js</text>
+
+  <rect class="d-box" x="440" y="300" width="110" height="34"/>
+  <text class="d-mono" x="495" y="321" text-anchor="middle">math3.js</text>
+  <rect class="d-box" x="660" y="300" width="150" height="34"/>
+  <text class="d-mono" x="735" y="321" text-anchor="middle">star_catalog.js</text>
+  <rect class="d-box" x="120" y="300" width="100" height="34"/>
+  <text class="d-mono" x="170" y="321" text-anchor="middle">toml.js</text>
+
+  <line class="d-line" x1="380" y1="51" x2="100" y2="108" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="395" y1="51" x2="225" y2="108" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="412" y1="51" x2="358" y2="108" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="432" y1="51" x2="480" y2="108" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="450" y1="51" x2="608" y2="108" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="470" y1="45" x2="758" y2="108" marker-end="url(#arr6)"/>
+
+  <line class="d-line" x1="600" y1="144" x2="490" y2="218" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="615" y1="144" x2="612" y2="218" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="640" y1="144" x2="728" y2="218" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="595" y1="144" x2="372" y2="218" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="585" y1="144" x2="252" y2="218" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="575" y1="144" x2="135" y2="218" marker-end="url(#arr6)"/>
+
+  <line class="d-line" x1="485" y1="254" x2="493" y2="298" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="605" y1="254" x2="510" y2="298" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="740" y1="254" x2="738" y2="298" marker-end="url(#arr6)"/>
+  <line class="d-line" x1="723" y1="254" x2="150" y2="252" marker-end="url(#arr6)" stroke-dasharray="5 4"/>
+  <line class="d-line" x1="775" y1="144" x2="200" y2="300" marker-end="url(#arr6)" stroke-dasharray="5 4"/>
+</svg>
+<figcaption>Only <code>main.js</code> and <code>ui.js</code> touch the DOM; everything in
+the bottom two rows is pure and Node-testable. Dashed: <code>sky.js &rarr; sun.js</code>
+(shared GMST) and <code>site_config.js &rarr; toml.js</code>.</figcaption>
+</figure>
+
+<h3 id="frontend-modules">Module responsibilities</h3>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Module</th><th>Responsibility / key exports</th></tr></thead>
+  <tbody>
+    <tr><td><code>main.js</code></td><td><code>boot()</code>: wiring, resize handling,
+        click-vs-drag picking (5&nbsp;px threshold), render loop, 1&nbsp;s UI tick.</td></tr>
+    <tr><td><code>net.js</code></td><td><code>parseStateMessage()</code> (strict message
+        validation, throws) and <code>createConnection()</code> (backoff reconnect
+        1&rarr;10&nbsp;s, injectable <code>wsFactory</code>, parse-error tolerance).</td></tr>
+    <tr><td><code>model.js</code></td><td>Latest-snapshot store;
+        <code>getListRows(filter, cap=1000)</code> sorted by id;
+        <code>secondsSinceLastState()</code> for staleness.</td></tr>
+    <tr><td><code>settings.js</code></td><td>Validated, clamped settings store over
+        <code>localStorage</code> (<code>olv.settings.v1</code>); defaults &larr; site
+        config &larr; user; <code>onChange</code> notifications.</td></tr>
+    <tr><td><code>site_config.js</code></td><td>Fetches/validates <code>config.toml</code>
+        against a 5-key schema; any failure &rarr; <code>{}</code>.</td></tr>
+    <tr><td><code>ui.js</code></td><td>All panels, modals, chips, table, keyboard
+        shortcuts, view badge, stale warning.</td></tr>
+    <tr><td><code>renderer.js</code></td><td>~1,500-line WebGL&nbsp;1 renderer: 4 GLSL
+        programs (earth/line/points/marker) sharing a prepended fisheye GLSL block;
+        globe (64&times;96 sphere, day/night shader), graticule, sky, Sun, trails
+        (per-object 64-sample rings), one points draw for &le;5,000 objects, overlay
+        labels/rings/chevrons; <code>pick()</code>; scene clock from
+        <code>serverTime</code>. Scene units: 1 = 1,000&nbsp;km.</td></tr>
+    <tr><td><code>camera.js</code> / <code>sat_camera.js</code></td><td>Orbit camera;
+        satellite nadir view matrix + equidistant fisheye projection
+        (<code>SAT_FOV_DEG=170</code>) — the JS twin of the GLSL block
+        (<strong>lockstep rule</strong>: change both together).</td></tr>
+    <tr><td><code>atlas.js</code> / <code>textures.js</code></td><td>Procedural sprite
+        atlas (7 painted cells, deterministic); async NASA texture loading with
+        power-of-two downsizing and procedural fallback.</td></tr>
+    <tr><td><code>sun.js</code> / <code>sky.js</code> / <code>star_catalog.js</code></td>
+        <td>Low-precision analytic ephemerides (~arcmin–0.5&deg;): solar ECEF
+        direction, GMST, Moon direction + illuminated fraction, five planets,
+        ~230-star catalog rotated by GMST.</td></tr>
+    <tr><td><code>toml.js</code></td><td>JS mirror of the C++ TOML-subset grammar.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3 id="frame">One render frame (renderer.frame)</h3>
+<ol>
+  <li>Compute the active view: orbit matrices, or the sat-view matrix + fisheye
+  uniforms (fall back to orbit if no satellite).</li>
+  <li>Draw globe &rarr; graticule &rarr; (if <code>showSky</code>) stars/Moon/planets on
+  a 300-unit shell with depth writes off &rarr; Sun disc &rarr; trails &rarr; all
+  objects in one <code>GL_POINTS</code> draw &rarr; satellite marker + velocity vector
+  (orbit mode only).</li>
+  <li>2D overlay pass: selection ring, nearest-200 labels, Sun/Moon/planet labels,
+  off-screen chevrons.</li>
+</ol>
+<p>Objects farther than 120 units (120,000&nbsp;km) are clamped onto a celestial
+shell direction-preserved, so stars at 1e12&nbsp;m still render sensibly.</p>
+
+<h2 id="sequence">End-to-end sequence (one update cycle)</h2>
+<figure class="diagram">
+<svg viewBox="0 0 800 330" role="img" aria-label="Sequence diagram of one update cycle">
+  <defs>
+    <marker id="arr7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+  <text class="d-text" x="90"  y="25" text-anchor="middle" font-weight="600">olv_sim</text>
+  <text class="d-text" x="300" y="25" text-anchor="middle" font-weight="600">InputSource (T1)</text>
+  <text class="d-text" x="490" y="25" text-anchor="middle" font-weight="600">StateStore</text>
+  <text class="d-text" x="680" y="25" text-anchor="middle" font-weight="600">WsServer (T2) / Browser</text>
+  <line class="d-line" x1="90"  y1="35" x2="90"  y2="315" stroke-dasharray="3 4"/>
+  <line class="d-line" x1="300" y1="35" x2="300" y2="315" stroke-dasharray="3 4"/>
+  <line class="d-line" x1="490" y1="35" x2="490" y2="315" stroke-dasharray="3 4"/>
+  <line class="d-line" x1="680" y1="35" x2="680" y2="315" stroke-dasharray="3 4"/>
+
+  <line class="d-line" x1="90" y1="60" x2="298" y2="60" marker-end="url(#arr7)"/>
+  <text class="d-small" x="195" y="52" text-anchor="middle">UDP packet(s), seq=N</text>
+  <line class="d-line" x1="300" y1="90" x2="300" y2="110"/>
+  <text class="d-small" x="392" y="86" text-anchor="middle">decode + validate (steps 1-10)</text>
+  <line class="d-line" x1="300" y1="120" x2="488" y2="120" marker-end="url(#arr7)"/>
+  <text class="d-small" x="392" y="112" text-anchor="middle">apply() — seq gate, upsert</text>
+  <line class="d-line" x1="680" y1="170" x2="492" y2="170" marker-end="url(#arr7)"/>
+  <text class="d-small" x="585" y="162" text-anchor="middle">1 Hz tick: snapshot()</text>
+  <line class="d-line" x1="490" y1="200" x2="678" y2="200" marker-end="url(#arr7)"/>
+  <text class="d-small" x="585" y="192" text-anchor="middle">copy (pruned, sorted)</text>
+  <line class="d-line" x1="680" y1="230" x2="680" y2="250"/>
+  <text class="d-small" x="700" y="228" text-anchor="start">serialize once,</text>
+  <text class="d-small" x="700" y="244" text-anchor="start">fan out to sessions</text>
+  <line class="d-line" x1="680" y1="280" x2="680" y2="300" marker-end="url(#arr7)"/>
+  <text class="d-small" x="700" y="284" text-anchor="start">browser: parse → model →</text>
+  <text class="d-small" x="700" y="300" text-anchor="start">render @ rAF</text>
+</svg>
+<figcaption>Validation happens entirely on thread 1; serialization entirely on
+thread 2; the only synchronized moment is the <code>apply()</code>/<code>snapshot()</code>
+pair on the StateStore mutex.</figcaption>
+</figure>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

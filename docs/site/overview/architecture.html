@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Architecture at a Glance — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="overview/architecture" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Architecture at a Glance</h1>
+<p class="lead">The complete system on one page: components, threads, data flow, and
+the major software modules. For implementation-level detail (memory ownership,
+error handling, class walkthroughs), see the
+<a href="../developer-guide/architecture.html">Developer Guide: Architecture in Depth</a>.</p>
+
+<h2 id="system-diagram">System diagram</h2>
+
+<figure class="diagram">
+<svg viewBox="0 0 900 620" role="img" aria-label="Full system architecture diagram">
+  <defs>
+    <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
+    </marker>
+  </defs>
+
+  <!-- Simulator -->
+  <rect class="d-box2" x="10" y="10" width="270" height="150"/>
+  <text class="d-text" x="145" y="32" text-anchor="middle" font-weight="600">olv_sim (C++ CLI)</text>
+  <rect class="d-box" x="30" y="45" width="100" height="46"/>
+  <text class="d-small" x="80" y="64" text-anchor="middle">CSV reader /</text>
+  <text class="d-small" x="80" y="79" text-anchor="middle">generator</text>
+  <rect class="d-box" x="160" y="45" width="100" height="46"/>
+  <text class="d-small" x="210" y="64" text-anchor="middle">frame_builder</text>
+  <text class="d-small" x="210" y="79" text-anchor="middle">&le;128 obj/pkt</text>
+  <rect class="d-box" x="95" y="105" width="100" height="40"/>
+  <text class="d-small" x="145" y="129" text-anchor="middle">OLV1 / DIS encode</text>
+  <line class="d-line" x1="130" y1="68" x2="158" y2="68" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="210" y1="91" x2="160" y2="105" marker-end="url(#arr2)"/>
+
+  <!-- Backend -->
+  <rect class="d-box2" x="320" y="10" width="560" height="360"/>
+  <text class="d-text" x="600" y="32" text-anchor="middle" font-weight="600">olv_backend (C++20 · Boost.Asio / Beast)</text>
+
+  <rect class="d-box2" x="335" y="45" width="250" height="180"/>
+  <text class="d-small" x="460" y="63" text-anchor="middle" font-weight="600">Thread 1 — input source (boot-selected)</text>
+  <rect class="d-box" x="355" y="75" width="210" height="55"/>
+  <text class="d-small" x="460" y="96" text-anchor="middle">Olv1InputSource (default)</text>
+  <text class="d-small" x="460" y="112" text-anchor="middle">or DisInputSource (--input-mode dis)</text>
+  <rect class="d-box" x="355" y="150" width="210" height="55"/>
+  <text class="d-small" x="460" y="171" text-anchor="middle">decode + validate</text>
+  <text class="d-small" x="460" y="187" text-anchor="middle">CRC · NaN/Inf · range · staleness</text>
+  <line class="d-line" x1="460" y1="130" x2="460" y2="148" marker-end="url(#arr2)"/>
+
+  <rect class="d-box" x="620" y="120" width="130" height="70" rx="14"/>
+  <text class="d-small" x="685" y="146" text-anchor="middle" font-weight="600">StateStore</text>
+  <text class="d-small" x="685" y="162" text-anchor="middle">one mutex</text>
+  <text class="d-small" x="685" y="177" text-anchor="middle">objects + stats</text>
+  <line class="d-line" x1="565" y1="177" x2="618" y2="160" marker-end="url(#arr2)"/>
+  <text class="d-mono" x="592" y="152" text-anchor="middle">apply()</text>
+
+  <rect class="d-box2" x="335" y="240" width="545" height="115"/>
+  <text class="d-small" x="607" y="258" text-anchor="middle" font-weight="600">Thread 2 (main) — WebSocket io_context</text>
+  <rect class="d-box" x="350" y="270" width="120" height="50"/>
+  <text class="d-small" x="410" y="290" text-anchor="middle">1 Hz</text>
+  <text class="d-small" x="410" y="305" text-anchor="middle">steady_timer</text>
+  <rect class="d-box" x="500" y="270" width="120" height="50"/>
+  <text class="d-small" x="560" y="290" text-anchor="middle">snapshot()</text>
+  <text class="d-small" x="560" y="305" text-anchor="middle">prune + copy</text>
+  <rect class="d-box" x="650" y="270" width="100" height="50"/>
+  <text class="d-small" x="700" y="290" text-anchor="middle">json_writer</text>
+  <rect class="d-box" x="775" y="270" width="90" height="50"/>
+  <text class="d-small" x="820" y="290" text-anchor="middle">WsServer</text>
+  <text class="d-small" x="820" y="305" text-anchor="middle">N sessions</text>
+  <line class="d-line" x1="470" y1="295" x2="498" y2="295" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="620" y1="295" x2="648" y2="295" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="750" y1="295" x2="773" y2="295" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="685" y1="190" x2="577" y2="268" marker-end="url(#arr2)" stroke-dasharray="5 4"/>
+
+  <!-- UDP arrow sim->backend -->
+  <line class="d-line" x1="195" y1="125" x2="353" y2="102" marker-end="url(#arr2)"/>
+  <text class="d-mono" x="268" y="98" text-anchor="middle">UDP 47000/47001</text>
+
+  <!-- Browser -->
+  <rect class="d-box2" x="320" y="420" width="560" height="185"/>
+  <text class="d-text" x="600" y="442" text-anchor="middle" font-weight="600">Browser — plain HTML/CSS/JS (ES modules)</text>
+  <rect class="d-box" x="340" y="460" width="110" height="50"/>
+  <text class="d-small" x="395" y="480" text-anchor="middle">net.js</text>
+  <text class="d-small" x="395" y="495" text-anchor="middle">parse + reconnect</text>
+  <rect class="d-box" x="480" y="460" width="100" height="50"/>
+  <text class="d-small" x="530" y="480" text-anchor="middle">model.js</text>
+  <text class="d-small" x="530" y="495" text-anchor="middle">latest snapshot</text>
+  <rect class="d-box" x="610" y="460" width="120" height="50"/>
+  <text class="d-small" x="670" y="480" text-anchor="middle">renderer.js</text>
+  <text class="d-small" x="670" y="495" text-anchor="middle">WebGL globe/objects</text>
+  <rect class="d-box" x="760" y="460" width="100" height="50"/>
+  <text class="d-small" x="810" y="480" text-anchor="middle">ui.js</text>
+  <text class="d-small" x="810" y="495" text-anchor="middle">panels/modals</text>
+  <rect class="d-box" x="480" y="535" width="140" height="50"/>
+  <text class="d-small" x="550" y="555" text-anchor="middle">settings.js</text>
+  <text class="d-small" x="550" y="570" text-anchor="middle">&#8646; localStorage</text>
+  <rect class="d-box" x="650" y="535" width="150" height="50"/>
+  <text class="d-small" x="725" y="555" text-anchor="middle">sun.js · sky.js</text>
+  <text class="d-small" x="725" y="570" text-anchor="middle">ephemerides (serverTime)</text>
+  <line class="d-line" x1="450" y1="485" x2="478" y2="485" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="580" y1="485" x2="608" y2="485" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="580" y1="472" x2="758" y2="472" marker-end="url(#arr2)"/>
+  <line class="d-line" x1="620" y1="560" x2="640" y2="560" marker-end="url(#arr2)" stroke-dasharray="5 4"/>
+  <line class="d-line" x1="725" y1="533" x2="690" y2="512" marker-end="url(#arr2)" stroke-dasharray="5 4"/>
+
+  <!-- WS arrow backend->browser -->
+  <line class="d-line" x1="820" y1="322" x2="420" y2="458" marker-end="url(#arr2)"/>
+  <text class="d-mono" x="660" y="400" text-anchor="middle">ws:// JSON "state" @ 1 Hz · port 8765</text>
+</svg>
+<figcaption>Component and thread structure. Dashed arrows are reads/derived data;
+solid arrows are the main data path. This mirrors the normative Mermaid diagram in
+<code>docs/PLAN.md</code>.</figcaption>
+</figure>
+
+<h2 id="components">Major software components</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Component</th><th>Language / libs</th><th>Responsibility</th></tr></thead>
+  <tbody>
+    <tr><td><code>olv_sim</code></td><td>C++20, Boost.Asio (socket only), open-dis-cpp</td>
+        <td>Read a CSV mission or synthesize deterministic objects; group rows into
+        1&nbsp;Hz frames; chunk into &le;128-object packets; encode as OLV1 or DIS
+        and send over UDP at a paced rate.</td></tr>
+    <tr><td><code>olv_backend</code></td><td>C++20, Boost.Asio + Beast, open-dis-cpp</td>
+        <td>Receive datagrams on a dedicated thread; validate exhaustively; merge into
+        the mutex-protected <code>StateStore</code>; broadcast JSON snapshots at 1&nbsp;Hz
+        to all WebSocket clients; log accepts/drops/connections.</td></tr>
+    <tr><td>Frontend</td><td>HTML/CSS/JS, WebGL&nbsp;1</td>
+        <td>Connect/reconnect to the WebSocket; parse and validate messages; render
+        globe, objects, trails, sky, and satellite POV; present panels, settings, and
+        object list.</td></tr>
+    <tr><td><code>olv_ws_probe</code></td><td>C++20, Boost</td>
+        <td>Test-support WebSocket capture client used by the integration test.</td></tr>
+    <tr><td>Scripts</td><td>Bash, Python&nbsp;3 (stdlib)</td>
+        <td>Container orchestration (<code>run_all.sh</code>), dependency install
+        (<code>install_open_dis.sh</code>), integration test, SBOM generation, CSV
+        regeneration, dev HTTP server, cleanup.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="data-flow">Data flow, step by step</h2>
+<ol>
+  <li><strong>Source:</strong> <code>olv_sim</code> produces one <em>frame</em> per update
+  cycle (satellite state + object list). CSV rows sharing a <code>time_s</code> value form
+  one frame; in generate mode, frames are computed analytically from circular-orbit math.</li>
+  <li><strong>Chunking:</strong> frames are split into packets of at most 128 objects
+  (<code>kMaxObjectsPerPacket</code>); each packet is self-contained and carries the
+  satellite state plus <code>object_total</code>, so packet loss never corrupts state.</li>
+  <li><strong>Transport:</strong> packets go out as UDP datagrams — OLV1 (little-endian,
+  CRC-32 trailer, port 47000) or DIS Entity State PDUs (big-endian, one PDU per
+  datagram, port 47001).</li>
+  <li><strong>Validation:</strong> the backend's input thread runs the full ordered
+  validation pipeline; any failure drops the entire packet, increments a per-reason
+  counter, and is logged. Nothing is partially applied.</li>
+  <li><strong>State merge:</strong> accepted packets replace the satellite state
+  wholesale and upsert objects by id. Objects not refreshed within the expiry
+  window (default 15&nbsp;s) are pruned at snapshot time.</li>
+  <li><strong>Broadcast:</strong> every second (configurable up to 60&nbsp;Hz) the main
+  thread takes a snapshot copy, serializes it once, and enqueues the shared string
+  to every connected WebSocket session. Slow clients drop frames (never the
+  connection) beyond a 5-frame outbox.</li>
+  <li><strong>Render:</strong> the browser parses and validates each <code>state</code>
+  message, stores the latest snapshot, and renders continuously at display refresh
+  rate, interpolating the scene clock from <code>serverTime</code> for Sun/Moon/planet/
+  star positions.</li>
+</ol>
+
+<h2 id="threading">Threading model (summary)</h2>
+<ul>
+  <li><strong>Backend, thread 1 — input.</strong> Owned by the boot-selected
+  <code>InputSource</code>; runs a private <code>io_context</code> and an async UDP
+  receive loop. Writes to <code>StateStore</code> only through
+  <code>countReceived / countDropped / apply</code>.</li>
+  <li><strong>Backend, thread 2 — main.</strong> Runs the WebSocket acceptor, all
+  sessions, and the broadcast timer on one <code>io_context</code>. Sessions are
+  single-threaded by construction — no session locking exists or is needed.</li>
+  <li><strong>The only lock</strong> in the system is the single
+  <code>std::mutex</code> inside <code>StateStore</code>; <code>snapshot()</code> returns a
+  full copy so the broadcast path never holds the lock while serializing.</li>
+  <li><strong>Frontend</strong> is single-threaded JavaScript: a
+  <code>requestAnimationFrame</code> render loop, a WebSocket message handler, and a
+  1&nbsp;s UI tick.</li>
+</ul>
+<p>Details, including the DIS carry-forward semantics and shutdown sequencing:
+<a href="../developer-guide/architecture.html">Architecture in Depth</a>.</p>
+
+<h2 id="interfaces">Interface summary</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Interface</th><th>Direction</th><th>Format</th><th>Normative spec</th></tr></thead>
+  <tbody>
+    <tr><td>OLV1 UDP (port 47000)</td><td>sim &rarr; backend</td>
+        <td>Little-endian binary, 56&nbsp;B header + 48&nbsp;B/object + CRC-32</td>
+        <td><code>docs/PROTOCOL_UDP.md</code> · <a href="../reference/protocol-udp.html">summary</a></td></tr>
+    <tr><td>DIS (port 47001)</td><td>any DIS source &rarr; backend</td>
+        <td>IEEE 1278.1 Entity State PDU, big-endian, versions 5–7</td>
+        <td><code>docs/PROTOCOL_DIS.md</code> · <a href="../reference/protocol-dis.html">summary</a></td></tr>
+    <tr><td>WebSocket (port 8765)</td><td>backend &rarr; browser</td>
+        <td>UTF-8 JSON text frames: <code>hello</code> once, then <code>state</code> @ 1&nbsp;Hz</td>
+        <td><code>docs/PROTOCOL_WS.md</code> · <a href="../reference/protocol-ws.html">summary</a></td></tr>
+    <tr><td>Mission CSV</td><td>author &rarr; sim</td>
+        <td>13-column CSV with exact header line</td>
+        <td><a href="../reference/file-formats.html#csv">File formats</a></td></tr>
+    <tr><td>TOML configs</td><td>operator &rarr; all three components</td>
+        <td>First-party TOML subset (single-level tables, scalars only)</td>
+        <td><a href="../reference/configuration.html">Configuration reference</a></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="tech-choices">Notable architecture decisions</h2>
+<ul>
+  <li><strong>Custom WebGL renderer, no Three.js</strong> — the scene is one sphere, a
+  graticule, one points draw, line trails, and a 2D overlay; a framework would
+  dominate the dependency budget for little gain. The renderer API is
+  engine-agnostic, so swapping later is localized to <code>renderer.js</code>.</li>
+  <li><strong>Row-array JSON</strong> — object rows are 11-element arrays, roughly
+  halving message size versus key/value objects at 5,000 objects (~450&nbsp;KB vs
+  ~800&nbsp;KB per broadcast).</li>
+  <li><strong>Sequence-only staleness, no wire timestamps</strong> — receivers stamp
+  arrival time; a wraparound-safe signed-difference check rejects stale/duplicate
+  packets.</li>
+  <li><strong>Pluggable input source at one seam</strong> — the OLV1 and DIS paths are
+  strategy implementations behind the <code>InputSource</code> interface; everything
+  downstream of <code>StateStore</code> is identical in both modes.</li>
+  <li><strong>Loss tolerance without reassembly</strong> — each packet independently
+  refreshes the satellite and merges its object chunk by id; there is no
+  multi-packet reassembly state to corrupt.</li>
+</ul>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

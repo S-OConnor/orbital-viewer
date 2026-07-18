@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary &amp; Acronyms — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/glossary" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>Glossary &amp; Acronyms</h1>
+
+<h2 id="terms">Project terms</h2>
+<dl class="api">
+  <dt>OLV / Orbital LOS Viewer</dt>
+  <dd>This project. "LOS" = line of sight.</dd>
+  <dt>OLV1</dt>
+  <dd>The first-party binary UDP wire protocol, version 1
+  (<a href="protocol-udp.html">reference</a>).</dd>
+  <dt>Primary satellite</dt>
+  <dd>The single privileged satellite whose telemetry fills the Satellite panel and
+  whose position the SAT view renders from. Carried in every OLV1 packet header; in
+  DIS mode, promoted by <code>dis_satellite_entity_id</code>.</dd>
+  <dt>Tracked object</dt>
+  <dd>Any of the up-to-5,000 non-primary objects: debris, star, comet, satellite,
+  ground-hot.</dd>
+  <dt>Ground-hot</dt>
+  <dd>Object category 5 — a hot object on Earth's surface, stationary in ECEF; its
+  <code>intensity</code> is a temperature in Kelvin (drives its rendered tint).</dd>
+  <dt>Update cycle / frame</dt>
+  <dd>One coherent world state at one instant — a satellite state plus an object
+  set. Cycles over 128 objects are split into multiple self-contained packets.</dd>
+  <dt>Input source</dt>
+  <dd>The backend's boot-selected intake strategy (<code>InputSource</code>):
+  <code>Olv1InputSource</code> (default) or <code>DisInputSource</code>. Exactly one
+  per process.</dd>
+  <dt>StateStore</dt>
+  <dd>The backend's single mutex-protected shared state: object table, satellite,
+  counters. The only synchronization point in the system.</dd>
+  <dt>Snapshot</dt>
+  <dd>A pruned, sorted, full copy of the StateStore taken by the broadcast thread
+  each tick; also the frontend's term for the latest parsed state message.</dd>
+  <dt>Carry-forward</dt>
+  <dd>Two related behaviors: objects persist in the StateStore until expiry even
+  when later packets don't mention them; and in DIS mode (and CSV frames without a
+  <code>sat</code> row), the last-known satellite state is re-stamped into each
+  update.</dd>
+  <dt>Expiry window</dt>
+  <dd>Objects not refreshed within <code>expiry_seconds</code> (default 15&nbsp;s) are
+  pruned at snapshot time.</dd>
+  <dt>Sequence staleness</dt>
+  <dd>The wraparound-safe rule accepting only packets whose sequence is newer than
+  the last accepted one (<code>(int32_t)(seq - last) &gt; 0</code>).</dd>
+  <dt>Fold / FNV-1a fold</dt>
+  <dd>The deterministic hash compressing a 48-bit DIS EntityID into a 32-bit OLV id
+  (<a href="protocol-dis.html#id-fold">details</a>).</dd>
+  <dt>Sat view / SAT mode</dt>
+  <dd>The satellite point-of-view render mode: nadir boresight, velocity up,
+  170&deg; equidistant fisheye (feature v0.3).</dd>
+  <dt>Fisheye lockstep</dt>
+  <dd>The rule that the GLSL fisheye projection block in <code>renderer.js</code> and
+  the JS math in <code>sat_camera.js</code> must be changed together — picking
+  correctness depends on them agreeing exactly.</dd>
+  <dt>Sky feature</dt>
+  <dd>The optional celestial background (feature v0.4): ~230 catalog stars, Moon
+  with illuminated fraction, five naked-eye planets, all positioned from
+  <code>serverTime</code>.</dd>
+  <dt>Scene clock / scene epoch</dt>
+  <dd>The frontend's time base: anchored to each state message's
+  <code>serverTime</code>, advanced smoothly between messages; drives all celestial
+  positions.</dd>
+  <dt>Site defaults</dt>
+  <dd>Values from <code>frontend/config.toml</code> — the baseline a fresh browser
+  starts from, and what "Reset to defaults" returns to.</dd>
+  <dt>Highlight flag</dt>
+  <dd>Wire flag bit1 (value 2): the data source requests visual emphasis for an
+  object.</dd>
+</dl>
+
+<h2 id="acronyms">Acronyms</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Acronym</th><th>Expansion</th><th>In this project</th></tr></thead>
+  <tbody>
+    <tr><td>CRC</td><td>Cyclic Redundancy Check</td><td>CRC-32 (zlib-compatible) trailer on every OLV1 packet</td></tr>
+    <tr><td>CSV</td><td>Comma-Separated Values</td><td>the mission replay format</td></tr>
+    <tr><td>DIS</td><td>Distributed Interactive Simulation</td><td>IEEE 1278.1; the optional standard input protocol</td></tr>
+    <tr><td>ECEF</td><td>Earth-Centered, Earth-Fixed</td><td>the coordinate frame for every position/velocity, in meters</td></tr>
+    <tr><td>ECI</td><td>Earth-Centered Inertial</td><td>intermediate frame in the sky math (rotated to ECEF by GMST)</td></tr>
+    <tr><td>FNV-1a</td><td>Fowler–Noll–Vo hash, variant 1a</td><td>DIS EntityID &rarr; u32 id fold</td></tr>
+    <tr><td>GMST</td><td>Greenwich Mean Sidereal Time</td><td>rotates star/planet positions into ECEF</td></tr>
+    <tr><td>JSONL</td><td>JSON Lines</td><td>ws_probe capture format (one frame per line)</td></tr>
+    <tr><td>LCG</td><td>Linear Congruential Generator</td><td>the simulator's deterministic RNG</td></tr>
+    <tr><td>LEO</td><td>Low Earth Orbit</td><td>the synthetic satellite's 550 km orbit</td></tr>
+    <tr><td>LOS</td><td>Line of Sight</td><td>the "LOS" in the project name; what SAT view visualizes</td></tr>
+    <tr><td>MTU</td><td>Maximum Transmission Unit</td><td>why <code>--chunk 24</code> avoids IP fragmentation</td></tr>
+    <tr><td>PDU</td><td>Protocol Data Unit</td><td>a DIS message; only Entity State (type 1) is consumed</td></tr>
+    <tr><td>POT</td><td>Power of Two</td><td>texture sizes required for WebGL 1 mipmaps</td></tr>
+    <tr><td>SBOM</td><td>Software Bill of Materials</td><td>CycloneDX 1.5 files in <code>sbom/</code></td></tr>
+    <tr><td>TOML</td><td>Tom's Obvious, Minimal Language</td><td>config format (first-party subset parser)</td></tr>
+    <tr><td>WS</td><td>WebSocket</td><td>the backend &rarr; browser transport</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="ports-summary">Ports at a glance</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Port</th><th>What</th></tr></thead>
+  <tbody>
+    <tr><td><code>47000/udp</code></td><td>OLV1 intake (backend default)</td></tr>
+    <tr><td><code>47001/udp</code></td><td>DIS intake (backend, <code>--input-mode dis</code>)</td></tr>
+    <tr><td><code>8765/tcp</code></td><td>WebSocket broadcast</td></tr>
+    <tr><td><code>8000/tcp</code></td><td>frontend HTTP (dev server / container)</td></tr>
+    <tr><td><code>8090/tcp</code></td><td>this documentation site (<code>scripts/serve_docs.sh</code>)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2 id="numbers">Magic numbers worth memorizing</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Number</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>5000</td><td>max tracked objects per cycle (<code>kMaxTrackedObjects</code>)</td></tr>
+    <tr><td>128</td><td>max objects per packet (<code>kMaxObjectsPerPacket</code>)</td></tr>
+    <tr><td>6204</td><td>max OLV1 packet bytes (56 + 128&times;48 + 4)</td></tr>
+    <tr><td>15 s</td><td>default object expiry window</td></tr>
+    <tr><td>5 s</td><td>UDP rate-measurement window</td></tr>
+    <tr><td>5</td><td>WS per-session outbox cap (frames)</td></tr>
+    <tr><td>3 s</td><td>frontend stalled-connection threshold</td></tr>
+    <tr><td>1000</td><td>object list row cap ("showing N of M")</td></tr>
+    <tr><td>200</td><td>label cap (nearest objects)</td></tr>
+    <tr><td>170&deg;</td><td>SAT view fisheye field of view</td></tr>
+    <tr><td>1e-6</td><td>renderer scale: 1 scene unit = 1,000 km</td></tr>
+    <tr><td>1e13 m</td><td>coordinate validity bound per axis</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>
