@@ -109,7 +109,7 @@ untouched by a new interface.</figcaption>
 </ul>
 
 <h2 id="implementation">3. Implement the InputSource</h2>
-<p>Skeleton for <code>backend/src/foo_input_source.{hpp,cpp}</code>, mirroring
+<p>Skeleton for <code>src/foo_input_source.{hpp,cpp}</code>, mirroring
 <code>DisInputSource</code>:</p>
 <pre><code class="language-cpp">// foo_input_source.hpp
 struct FooInputConfig {
@@ -192,7 +192,7 @@ source obeys):</p>
   <thead><tr><th>Layer</th><th>What to write</th><th>Model to copy</th></tr></thead>
   <tbody>
     <tr><td>Pipeline unit tests</td>
-        <td>New <code>backend/tests/test_foo_input_source.cpp</code>: build raw
+        <td>New <code>test/test_foo_input_source.cpp</code>: build raw
         protocol byte arrays in the test and drive <code>processDatagram()</code>.
         Cover: every drop reason, the accept path, mapping of each field, satellite
         identification + carry-forward, staleness (first message, newer, older,

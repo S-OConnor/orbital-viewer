@@ -2,7 +2,7 @@
 //
 // Shared by olv_backend and olv_sim for configuration files; the frontend
 // mirrors the same subset in frontend/js/toml.js. Kept deliberately small
-// (like tests/support/olv_test.hpp) so the repo stays free of third-party
+// (like test/support/olv_test.hpp) so the repo stays free of third-party
 // code; see docs/PLAN.md §10.
 //
 // Supported subset:

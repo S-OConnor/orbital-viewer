@@ -28,9 +28,9 @@ for an engineer's first day on the project.</p>
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td><code>CMakeLists.txt</code></td><td>Aggregating build: includes
-        <code>cmake/common.cmake</code>, adds <code>backend/</code> and
-        <code>simulator/</code>, registers the <code>integration</code> CTest (UNIX only),
+    <tr><td><code>CMakeLists.txt</code></td><td>Top-level build: includes
+        <code>cmake/common.cmake</code>, defines the backend targets, adds
+        <code>tools/simulator/</code>, registers the <code>integration</code> CTest (UNIX only),
         defines <code>format</code>/<code>format-check</code>/<code>lint</code> targets.</td></tr>
     <tr><td><code>cmake/common.cmake</code></td><td>Shared toolchain setup: C++20, Release
         default, <code>OLV_BUILD_TESTS</code>/<code>OLV_WERROR</code> options, Homebrew
@@ -49,7 +49,7 @@ for an engineer's first day on the project.</p>
 </table>
 </div>
 
-<h2 id="backend">backend/</h2>
+<h2 id="backend">Backend: include/, src/, test/, tools/</h2>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
@@ -65,32 +65,34 @@ for an engineer's first day on the project.</p>
         config, DIS input source, and the simulator so the format can't diverge.</td></tr>
     <tr><td><code>src/main.cpp</code></td><td><code>olv_backend</code> entry point: config &rarr;
         logger &rarr; StateStore &rarr; InputSource &rarr; WsServer wiring, signal handling.</td></tr>
-    <tr><td><code>src/config.{hpp,cpp}</code></td><td>CLI + TOML parsing with shared range
+    <tr><td><code>include/olv/config.hpp</code> + <code>src/config.cpp</code></td><td>CLI + TOML parsing with shared range
         validation; two-pass argument handling (<code>--config</code> first, then flags).</td></tr>
-    <tr><td><code>src/logger.{hpp,cpp}</code></td><td>Thread-safe file logger, ISO-8601
+    <tr><td><code>include/olv/logger.hpp</code> + <code>src/logger.cpp</code></td><td>Thread-safe file logger, ISO-8601
         timestamps, level filtering, optional stderr mirroring.</td></tr>
-    <tr><td><code>src/state_store.{hpp,cpp}</code></td><td>The single mutex-protected shared
+    <tr><td><code>include/olv/state_store.hpp</code> + <code>src/state_store.cpp</code></td><td>The single mutex-protected shared
         state: object table, satellite, counters, snapshot-with-pruning.</td></tr>
-    <tr><td><code>src/input_source.{hpp,cpp}</code></td><td><code>InputSource</code> strategy
+    <tr><td><code>include/olv/input_source.hpp</code> + <code>src/input_source.cpp</code></td><td><code>InputSource</code> strategy
         interface + <code>makeInputSource()</code> boot-time factory.</td></tr>
-    <tr><td><code>src/olv1_input_source.{hpp,cpp}</code></td><td>Default input thread: async
+    <tr><td><code>include/olv/olv1_input_source.hpp</code> + <code>src/olv1_input_source.cpp</code></td><td>Default input thread: async
         UDP receive &rarr; <code>proto::decode</code> &rarr; <code>StateStore::apply</code>.</td></tr>
-    <tr><td><code>src/dis_input_source.{hpp,cpp}</code></td><td>DIS input thread: manual
+    <tr><td><code>include/olv/dis_input_source.hpp</code> + <code>src/dis_input_source.cpp</code></td><td>DIS input thread: manual
         header parse, open-dis-cpp unmarshal, EntityID fold, satellite carry-forward,
         per-entity timestamp staleness.</td></tr>
-    <tr><td><code>src/json_writer.{hpp,cpp}</code></td><td>Snapshot &rarr; WS JSON text
+    <tr><td><code>include/olv/json_writer.hpp</code> + <code>src/json_writer.cpp</code></td><td>Snapshot &rarr; WS JSON text
         (<code>hello</code> + <code>state</code>), row-array encoding, fixed rounding.</td></tr>
-    <tr><td><code>src/ws_server.{hpp,cpp}</code></td><td>Beast acceptor, sessions, 1&nbsp;Hz
+    <tr><td><code>include/olv/ws_server.hpp</code> + <code>src/ws_server.cpp</code></td><td>Beast acceptor, sessions, 1&nbsp;Hz
         broadcast timer, per-session 5-frame outbox.</td></tr>
     <tr><td><code>tools/ws_probe.cpp</code></td><td><code>olv_ws_probe</code>: standalone WS
         capture client for the integration test (links only Boost).</td></tr>
-    <tr><td><code>tests/</code></td><td>Seven unit-test files compiled into
+    <tr><td><code>test/</code></td><td>Seven unit-test files compiled into
         <code>olv_backend_tests</code> — see <a href="testing.html">Testing</a>.</td></tr>
+    <tr><td><code>test/support/olv_test.hpp</code></td><td>The shared (backend + simulator) ~120-line C++ test
+        framework (registration macros, check macros, runner).</td></tr>
   </tbody>
 </table>
 </div>
 
-<h2 id="simulator">simulator/</h2>
+<h2 id="simulator">tools/simulator/</h2>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
@@ -143,7 +145,7 @@ for an engineer's first day on the project.</p>
 </table>
 </div>
 
-<h2 id="other">docs/, config/, scripts/, containers/, tests/, sbom/</h2>
+<h2 id="other">docs/, config/, scripts/, containers/, sbom/</h2>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
@@ -167,8 +169,6 @@ for an engineer's first day on the project.</p>
         targets <code>backend</code>, <code>simulator</code>),
         <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code> (three
         services, bridge network, port env vars).</td></tr>
-    <tr><td><code>tests/support/olv_test.hpp</code></td><td>The shared ~120-line C++ test
-        framework (registration macros, check macros, runner).</td></tr>
     <tr><td><code>sbom/</code></td><td>Generated CycloneDX 1.5 SBOMs (committed snapshots;
         regenerate with <code>gen_sbom.py</code>).</td></tr>
   </tbody>
@@ -184,7 +184,7 @@ for an engineer's first day on the project.</p>
     </marker>
   </defs>
   <rect class="d-box" x="280" y="15" width="200" height="70"/>
-  <text class="d-text" x="380" y="42" text-anchor="middle" font-weight="600">backend/include/olv/</text>
+  <text class="d-text" x="380" y="42" text-anchor="middle" font-weight="600">include/olv/</text>
   <text class="d-small" x="380" y="62" text-anchor="middle">protocol.hpp · toml.hpp · dis_entity_id.hpp</text>
 
   <rect class="d-box" x="40" y="150" width="150" height="55"/>

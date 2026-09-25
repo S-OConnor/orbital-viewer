@@ -4,7 +4,7 @@ How `olv_backend --input-mode dis` ingests IEEE 1278.1 Distributed
 Interactive Simulation (DIS) traffic and translates it into the same
 `StateStore` contract the OLV1 path fills (docs/PROTOCOL_UDP.md). The
 reference implementation is
-[`backend/src/dis_input_source.cpp`](../backend/src/dis_input_source.cpp);
+[`src/dis_input_source.cpp`](../src/dis_input_source.cpp);
 if this document and the code disagree, the code wins and this document must
 be fixed. Design rationale and the frozen decision record live in
 [`docs/features/FEATURE_INPUT_SOURCES.md`](features/FEATURE_INPUT_SOURCES.md) §3.
@@ -63,7 +63,7 @@ dis_satellite_entity_id = "1:1:1"   # site:application:entity
 ```
 
 The format is three colon-separated decimal `uint16`s (parser:
-[`backend/include/olv/dis_entity_id.hpp`](../backend/include/olv/dis_entity_id.hpp));
+[`include/olv/dis_entity_id.hpp`](../include/olv/dis_entity_id.hpp));
 a format violation, or `mode = "dis"` without this key, is a hard config
 error at startup. Exactly the PDU stream whose `EntityID` matches all three
 parts becomes the satellite state; **every** other entity becomes a tracked
@@ -185,7 +185,7 @@ types/out-of-range are startup errors).
 
 The simulator can emit the same subset (`[send] protocol = "dis"`, see
 `config/simulator.toml` and
-[`simulator/src/dis_builder.hpp`](../simulator/src/dis_builder.hpp)): one
+[`tools/simulator/src/dis_builder.hpp`](../simulator/src/dis_builder.hpp)): one
 Entity State PDU per entity per cycle, satellite first under the configured
 `dis_satellite_entity_id`, each object's 32-bit OLV id spread losslessly as
 `application = id >> 16`, `entity = id & 0xFFFF` with a fixed configured

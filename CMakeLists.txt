@@ -3,8 +3,59 @@ project(orbital_los_viewer VERSION 0.1.0 LANGUAGES CXX)
 
 include(cmake/common.cmake)
 
-add_subdirectory(backend)
-add_subdirectory(simulator)
+include(cmake/open_dis_cpp.cmake)
+
+# ---------------------------------------------------------------------------
+# Backend (olv_backend). Public headers live in include/olv/ (exposed through
+# olv_proto, see cmake/common.cmake); sources in src/, unit tests in test/.
+# open-dis-cpp provides DIS Entity State PDU decode for the "dis" input mode;
+# the open_dis_cpp target is shared with the simulator (DIS emission,
+# docs/features/FEATURE_INPUT_SOURCES.md Phase 3).
+# ---------------------------------------------------------------------------
+
+# Core: everything the UDP thread and serializer need (no Beast).
+add_library(olv_core STATIC
+  src/logger.cpp
+  src/state_store.cpp
+  src/json_writer.cpp
+  src/input_source.cpp
+  src/olv1_input_source.cpp
+  src/dis_input_source.cpp)
+target_link_libraries(olv_core
+  PUBLIC olv_proto Boost::headers Threads::Threads
+  PRIVATE olv_warnings open_dis_cpp)
+
+# Net: WebSocket server (Beast) + CLI config.
+add_library(olv_net STATIC
+  src/ws_server.cpp
+  src/config.cpp)
+target_link_libraries(olv_net PUBLIC olv_core PRIVATE olv_warnings)
+
+add_executable(olv_backend src/main.cpp)
+target_link_libraries(olv_backend PRIVATE olv_net olv_warnings)
+
+# WebSocket probe client used by scripts/integration_test.sh.
+add_executable(olv_ws_probe tools/ws_probe.cpp)
+target_link_libraries(olv_ws_probe PRIVATE Boost::headers Threads::Threads olv_warnings)
+
+if(OLV_BUILD_TESTS)
+  add_executable(olv_backend_tests
+    test/test_protocol.cpp
+    test/test_validation.cpp
+    test/test_state_store.cpp
+    test/test_json_writer.cpp
+    test/test_toml.cpp
+    test/test_config.cpp
+    test/test_dis_input_source.cpp)
+  # olv_net provides config.cpp for test_config.cpp (transitively pulls olv_core).
+  target_link_libraries(olv_backend_tests PRIVATE olv_net olv_core olv_test_support olv_warnings)
+  add_test(NAME backend_unit COMMAND olv_backend_tests)
+endif()
+
+# ---------------------------------------------------------------------------
+# Simulator (olv_sim) — standalone-configurable dev tool under tools/.
+# ---------------------------------------------------------------------------
+add_subdirectory(tools/simulator)
 
 # ---------------------------------------------------------------------------
 # Integration test: simulator -> backend -> ws_probe -> frontend JSON check.
@@ -22,13 +73,13 @@ endif()
 # absent; brew's clang-format is keg-only, hence the extra HINTS path).
 # ---------------------------------------------------------------------------
 file(GLOB_RECURSE OLV_CXX_SOURCES
-     "${CMAKE_CURRENT_SOURCE_DIR}/backend/src/*.[ch]pp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/backend/tools/*.cpp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/backend/tests/*.cpp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/backend/include/olv/*.hpp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/simulator/src/*.[ch]pp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/simulator/tests/*.cpp"
-     "${CMAKE_CURRENT_SOURCE_DIR}/tests/support/*.hpp")
+     "${CMAKE_CURRENT_SOURCE_DIR}/include/olv/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/test/support/*.hpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tools/*.cpp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tools/simulator/src/*.[ch]pp"
+     "${CMAKE_CURRENT_SOURCE_DIR}/tools/simulator/tests/*.cpp")
 
 find_program(OLV_CLANG_FORMAT clang-format
              HINTS /home/linuxbrew/.linuxbrew/opt/clang-format/bin)
@@ -51,11 +102,10 @@ if(OLV_CPPCHECK)
     COMMAND ${OLV_CPPCHECK} --enable=warning,performance,portability
             --std=c++20 --inline-suppr --error-exitcode=1 --quiet
             --suppress=missingIncludeSystem
-            -I "${CMAKE_CURRENT_SOURCE_DIR}/backend/include"
-            -I "${CMAKE_CURRENT_SOURCE_DIR}/backend/src"
-            -I "${CMAKE_CURRENT_SOURCE_DIR}/simulator/src"
-            "${CMAKE_CURRENT_SOURCE_DIR}/backend/src"
-            "${CMAKE_CURRENT_SOURCE_DIR}/simulator/src"
+            -I "${CMAKE_CURRENT_SOURCE_DIR}/include"
+            -I "${CMAKE_CURRENT_SOURCE_DIR}/tools/simulator/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/src"
+            "${CMAKE_CURRENT_SOURCE_DIR}/tools/simulator/src"
     COMMENT "cppcheck"
     VERBATIM)
 else()

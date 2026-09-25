@@ -1,11 +1,11 @@
 // json_writer.cpp — see json_writer.hpp. Emits compact JSON (no spaces) so the
 // integration test's substring greps match exactly.
 
-#include "json_writer.hpp"
+#include "olv/json_writer.hpp"
 
 #include <cstdio>
 
-#include "logger.hpp"
+#include "olv/logger.hpp"
 #include "olv/protocol.hpp"
 
 namespace olv {

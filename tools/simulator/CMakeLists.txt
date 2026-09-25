@@ -1,14 +1,14 @@
-# simulator/ — standalone-configurable: `cmake -S simulator -B build-sim`
+# tools/simulator/ — standalone-configurable: `cmake -S tools/simulator -B build-sim`
 # works without the top-level project (docs/PLAN.md §3).
 if(NOT DEFINED PROJECT_NAME)
   cmake_minimum_required(VERSION 3.20)
   project(olv_sim_standalone LANGUAGES CXX)
-  include("${CMAKE_CURRENT_LIST_DIR}/../cmake/common.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/common.cmake")
 endif()
 
 # open-dis-cpp: DIS Entity State PDU encode for `--protocol dis`
-# (docs/FEATURE_INPUT_SOURCES.md Phase 3); target shared with the backend.
-include("${CMAKE_CURRENT_LIST_DIR}/../cmake/open_dis_cpp.cmake")
+# (docs/features/FEATURE_INPUT_SOURCES.md Phase 3); target shared with the backend.
+include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/open_dis_cpp.cmake")
 
 # CSV parsing, frame building, and synthetic generation are pure (no Boost);
 # only main.cpp touches the network. open_dis_cpp is PUBLIC so the DIS-builder

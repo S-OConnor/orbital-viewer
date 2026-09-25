@@ -2,7 +2,7 @@
 // application; both paths share the same range-validation helpers below so
 // the rules cannot diverge.
 
-#include "config.hpp"
+#include "olv/config.hpp"
 
 #include <charconv>
 #include <cstdio>

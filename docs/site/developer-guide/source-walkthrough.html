@@ -25,7 +25,7 @@ in execution order. Pair with the <a href="api.html">API Documentation</a> for
 signatures.</p>
 
 <h2 id="backend-lifecycle">Backend lifecycle (olv_backend)</h2>
-<p><code>backend/src/main.cpp</code>, top to bottom:</p>
+<p><code>src/main.cpp</code>, top to bottom:</p>
 <ol>
   <li><strong><code>parseArgs()</code></strong> (config.cpp) — two passes: resolve
   <code>--config</code> first, then apply flags in order. Errors print usage and exit 2;

@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <vector>
 
-#include "config.hpp"
+#include "olv/config.hpp"
 #include "olv_test.hpp"
 
 using namespace olv;

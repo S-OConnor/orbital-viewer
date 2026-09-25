@@ -32,7 +32,7 @@ condensed steps are below; the complete procedure — spec template, code skelet
 dependency plumbing, test matrix, and ship checklist — has its own page:
 <a href="new-interface.html"><strong>Adding a New Interface</strong></a>.</p>
 <ol>
-  <li>Create <code>backend/src/foo_input_source.{hpp,cpp}</code> implementing
+  <li>Create <code>src/foo_input_source.{hpp,cpp}</code> implementing
   <code>InputSource</code>: own a private <code>io_context</code>, socket, and thread;
   make <code>start()</code>/<code>stop()</code> idempotent.</li>
   <li>Feed the store <em>only</em> through <code>countReceived</code>,
@@ -114,7 +114,7 @@ dependency plumbing, test matrix, and ship checklist — has its own page:
 </ol>
 
 <h2 id="new-command">Add a CLI tool</h2>
-<p>Follow <code>backend/tools/ws_probe.cpp</code>: a single file under
+<p>Follow <code>tools/ws_probe.cpp</code>: a single file under
 <code>tools/</code>, linking only what it needs (the probe deliberately links Boost
 only, not <code>olv_core</code>, to stay an independent check). Add an
 <code>add_executable</code> in the subproject CMakeLists and, if test-support, wire it
@@ -124,7 +124,7 @@ top-level CTest registration.</p>
 <h2 id="unit-tests">Add unit tests</h2>
 <ul>
   <li><strong>C++:</strong> new <code>test_foo.cpp</code> in
-  <code>backend/tests/</code> or <code>simulator/tests/</code>; include
+  <code>test/</code> or <code>tools/simulator/tests/</code>; include
   <code>olv_test.hpp</code>, write <code>OLV_TEST(...)</code> cases, and add the file to
   the test binary's source list in CMakeLists. Do <em>not</em> add
   <code>OLV_TEST_MAIN()</code> — exactly one file per binary has it

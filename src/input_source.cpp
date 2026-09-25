@@ -1,13 +1,13 @@
 // input_source.cpp — see input_source.hpp. InputMode parsing/naming and the
 // boot-time factory that main.cpp constructs its InputSource through.
 
-#include "input_source.hpp"
+#include "olv/input_source.hpp"
 
 #include <stdexcept>
 
-#include "config.hpp"
-#include "dis_input_source.hpp"
-#include "olv1_input_source.hpp"
+#include "olv/config.hpp"
+#include "olv/dis_input_source.hpp"
+#include "olv/olv1_input_source.hpp"
 
 namespace olv {
 

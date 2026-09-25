@@ -12,11 +12,11 @@
 #include <memory>
 #include <string>
 
-#include "config.hpp"
-#include "input_source.hpp"
-#include "logger.hpp"
-#include "state_store.hpp"
-#include "ws_server.hpp"
+#include "olv/config.hpp"
+#include "olv/input_source.hpp"
+#include "olv/logger.hpp"
+#include "olv/state_store.hpp"
+#include "olv/ws_server.hpp"
 
 int main(int argc, char** argv) {
   std::string error;

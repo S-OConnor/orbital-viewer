@@ -6,10 +6,10 @@
 #include <cstdio>
 #include <string>
 
-#include "json_writer.hpp"
+#include "olv/json_writer.hpp"
 #include "olv/protocol.hpp"
 #include "olv_test.hpp"
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 using namespace olv;
 

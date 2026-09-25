@@ -1,4 +1,4 @@
-# Build outputs (top-level build/, standalone build-backend/, build-sim/, etc.)
+# Build outputs (top-level build/, standalone build-sim/, etc.)
 build*/
 
 # Logs

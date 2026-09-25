@@ -32,9 +32,9 @@
 #include <thread>
 #include <unordered_map>
 
-#include "input_source.hpp"
+#include "olv/input_source.hpp"
 #include "olv/dis_entity_id.hpp"  // parseDisEntityId — shared with the simulator
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 namespace olv {
 

@@ -3,7 +3,7 @@
 // translated from a DIS Entity State PDU into a StateStore StatePacket per the
 // frozen §3 decisions.
 
-#include "dis_input_source.hpp"
+#include "olv/dis_input_source.hpp"
 
 #include <dis6/EntityID.h>
 #include <dis6/EntityStatePdu.h>
@@ -19,7 +19,7 @@
 #include <stdexcept>
 #include <string>
 
-#include "logger.hpp"
+#include "olv/logger.hpp"
 #include "olv/protocol.hpp"
 
 namespace olv {

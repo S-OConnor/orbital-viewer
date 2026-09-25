@@ -54,7 +54,7 @@ silent default.</div>
 
 <h2 id="toml-subset">The TOML subset</h2>
 <p>Files are parsed by a small first-party TOML <em>subset</em> parser
-(<code>backend/include/olv/toml.hpp</code>, mirrored in
+(<code>include/olv/toml.hpp</code>, mirrored in
 <code>frontend/js/toml.js</code>). Supported: comments, blank lines, one level of
 <code>[tables]</code>, bare keys, double-quoted strings, integers, floats, booleans.
 Rejected with a line-numbered error: arrays, dotted keys, dates, hex/octal/binary,
@@ -101,7 +101,7 @@ port = 47000              # destination port (DIS default: 47001)
 
 [source]
 mode = "csv"              # "csv" or "generate"
-csv_path = "simulator/data/example_mission.csv"
+csv_path = "tools/simulator/data/example_mission.csv"
 loop = false              # replay repeatedly (csv mode)
 generate_count = 100      # synthetic objects, 1-5000 (generate mode)
 duration_seconds = 120    # stop after N seconds; 0 = forever (generate mode)

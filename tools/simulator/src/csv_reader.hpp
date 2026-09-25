@@ -1,6 +1,6 @@
 // csv_reader.hpp — CSV mission file parser for olv_sim.
 //
-// CSV FORMAT (contract; the committed example at simulator/data/example_
+// CSV FORMAT (contract; the committed example at tools/simulator/data/example_
 // mission.csv follows this exactly):
 //
 //   Header row required, exactly:

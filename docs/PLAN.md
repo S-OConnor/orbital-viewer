@@ -113,27 +113,28 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 ├── config/
 │   ├── backend.toml                # commented example (olv_backend --config …)
 │   └── simulator.toml              # commented example (olv_sim --config …)
-├── backend/
-│   ├── CMakeLists.txt              # standalone-configurable
-│   ├── include/olv/protocol.hpp    # single source of truth for wire format
-│   ├── include/olv/toml.hpp        # first-party TOML-subset parser (shared)
-│   ├── src/
-│   │   ├── logger.{hpp,cpp}        # thread-safe file logger + ISO-8601 utils
-│   │   ├── state_store.{hpp,cpp}   # object table, stats, snapshot
-│   │   ├── input_source.{hpp,cpp}  # intake strategy interface + boot-time factory
-│   │   ├── olv1_input_source.{hpp,cpp}  # thread 1, OLV1 mode (default)
-│   │   ├── dis_input_source.{hpp,cpp}   # thread 1, DIS mode (PROTOCOL_DIS.md)
-│   │   ├── json_writer.{hpp,cpp}   # snapshot → WS JSON text
-│   │   ├── ws_server.{hpp,cpp}     # Beast acceptor/sessions/broadcast timer
-│   │   ├── config.{hpp,cpp}        # TOML config file + CLI parsing
-│   │   └── main.cpp
-│   ├── tools/ws_probe.cpp          # WS client used by the integration test
-│   └── tests/                      # unit tests (custom mini-framework)
-├── simulator/
-│   ├── CMakeLists.txt              # standalone-configurable
-│   ├── src/{main.cpp, csv_reader.*, frame_builder.*, dis_builder.*, generator.*, sim_config.*}
-│   ├── data/example_mission.csv    # 60 s satellite pass + ~25 mixed objects
-│   └── tests/
+├── CMakeLists.txt                  # top level: backend targets + tools/simulator
+├── include/olv/                    # backend headers (olv_backend)
+│   ├── protocol.hpp                # single source of truth for wire format
+│   ├── toml.hpp                    # first-party TOML-subset parser (shared)
+│   ├── logger.hpp                  # thread-safe file logger + ISO-8601 utils
+│   ├── state_store.hpp             # object table, stats, snapshot
+│   ├── input_source.hpp            # intake strategy interface + boot-time factory
+│   ├── olv1_input_source.hpp       # thread 1, OLV1 mode (default)
+│   ├── dis_input_source.hpp        # thread 1, DIS mode (PROTOCOL_DIS.md)
+│   ├── json_writer.hpp             # snapshot → WS JSON text
+│   ├── ws_server.hpp               # Beast acceptor/sessions/broadcast timer
+│   └── config.hpp                  # TOML config file + CLI parsing
+├── src/                            # backend sources (*.cpp for the above + main.cpp)
+├── test/                           # backend unit tests (custom mini-framework)
+│   └── support/olv_test.hpp        # minimal shared C++ test framework
+├── tools/
+│   ├── ws_probe.cpp                # WS client used by the integration test
+│   └── simulator/
+│       ├── CMakeLists.txt          # standalone-configurable
+│       ├── src/{main.cpp, csv_reader.*, frame_builder.*, dis_builder.*, generator.*, sim_config.*}
+│       ├── data/example_mission.csv  # 60 s satellite pass + ~25 mixed objects
+│       └── tests/
 ├── frontend/
 │   ├── index.html
 │   ├── config.toml                 # site defaults, fetched at startup
@@ -141,7 +142,6 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 │   ├── js/{main,net,model,ui,settings,toml,site_config,
 │   │       renderer,camera,math3,sun}.js
 │   └── tests/                      # node:test suites + validate_message.mjs
-├── tests/support/olv_test.hpp      # minimal shared C++ test framework
 ├── scripts/
 │   ├── integration_test.sh         # sim → backend → ws_probe → JSON check
 │   ├── serve_frontend.sh           # python3 -m http.server wrapper
@@ -154,9 +154,10 @@ keeps the backend simple (see PROTOCOL_UDP.md).
     └── compose.yaml                # podman-compose / docker compose
 ```
 
-**Independent buildability:** `backend/` and `simulator/` CMakeLists carry a
-`if(NOT DEFINED PROJECT_NAME)` standalone header so each can be configured in
-isolation (`cmake -S backend -B build-x`); the top level aggregates both.
+**Independent buildability:** the backend is the top-level project (`cmake -S .`);
+`tools/simulator/CMakeLists.txt` carries an `if(NOT DEFINED PROJECT_NAME)`
+standalone header so the simulator can also be configured in isolation
+(`cmake -S tools/simulator -B build-sim`); the top level adds it as a subdirectory.
 
 ## 4. UDP protocol (summary — normative spec in PROTOCOL_UDP.md)
 
@@ -268,8 +269,8 @@ Interfaces (headers, protocol docs, CMake) are written by the architect
 
 | # | Agent | Model | Scope (owned files) | Acceptance |
 |---|-------|-------|---------------------|------------|
-| A | backend-impl | Opus | `backend/src/*.cpp`, `tools/ws_probe.cpp`, `backend/tests/*` | `olv_backend_tests` pass; backend builds standalone |
-| B | simulator | Sonnet | `simulator/src|tests|data`, `scripts/make_example_csv.py` | `olv_sim_tests` pass; CSV + generate modes work |
+| A | backend-impl | Opus | `src/*.cpp`, `tools/ws_probe.cpp`, `test/*` | `olv_backend_tests` pass; backend builds standalone |
+| B | simulator | Sonnet | `tools/simulator/src|tests|data`, `scripts/make_example_csv.py` | `olv_sim_tests` pass; CSV + generate modes work |
 | C | frontend-render | Opus | `js/{renderer,camera,math3,sun}.js` | renders per §6 against frozen API |
 | D | frontend-ui | Sonnet | `index.html`, `css/`, `js/{main,net,model,ui,settings}.js`, `frontend/tests/` | node:test suites pass |
 | E | infra | Sonnet | `containers/`, `scripts/{gen_sbom.py,serve_frontend.sh,run_all.sh}`, lint configs, `THIRD_PARTY.md`, `LICENSE`, `docs/SBOM.md`, README draft | SBOM generates; container files lint-clean |
@@ -289,9 +290,9 @@ ctest --test-dir build --output-on-failure
 node --test "frontend/tests/*.test.mjs"
 
 # Run
-./build/backend/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
-./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
-./build/simulator/olv_sim --generate 5000 --rate 1        # load test
+./build/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+./build/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
+./build/tools/simulator/olv_sim --generate 5000 --rate 1        # load test
 scripts/serve_frontend.sh 8000                # then open http://localhost:8000/frontend/
 
 # Lint / format / SBOM

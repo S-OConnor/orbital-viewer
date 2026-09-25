@@ -33,7 +33,7 @@ pattern itself; an unquoted glob can behave differently across shells. The quote
 form is the project's canonical invocation.</div>
 
 <h2 id="cpp-unit">C++ unit tests</h2>
-<p>Framework: <code>tests/support/olv_test.hpp</code> (~120 lines, zero third-party) —
+<p>Framework: <code>test/support/olv_test.hpp</code> (~120 lines, zero third-party) —
 <code>OLV_TEST</code> self-registration, non-fatal <code>OLV_CHECK*</code> macros,
 <code>--list</code> support. See the <a href="api.html#test-api">API page</a> for
 macro semantics.</p>
@@ -74,8 +74,8 @@ and satellite carry-forward, chunking edge cases (1, 128, &gt;128), sequence
 monotonicity, generator determinism, DIS builder marshaling.</p>
 
 <h3 id="run-one">Running a single case</h3>
-<pre><code class="language-sh">./build/backend/olv_backend_tests --list        # enumerate case names
-./build/backend/olv_backend_tests               # run all (no per-case filter exists)
+<pre><code class="language-sh">./build/olv_backend_tests --list        # enumerate case names
+./build/olv_backend_tests               # run all (no per-case filter exists)
 ctest --test-dir build -R backend_unit          # via ctest
 </code></pre>
 
@@ -137,12 +137,12 @@ ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout:</p>
 
 <h2 id="performance-testing">Performance testing</h2>
 <pre><code class="language-sh"># Protocol-ceiling soak (backend + renderer under max load)
-./build/simulator/olv_sim --generate 5000 --rate 1 --duration 600
+./build/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 600
 # Watch: Stats panel rate ~40 pkt/s, no drops in the log, smooth frame rate.
 
 # Faster-than-spec stress
-./build/simulator/olv_sim --generate 5000 --rate 4 --duration 60
-./build/backend/olv_backend --broadcast-hz 4
+./build/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 60
+./build/olv_backend --broadcast-hz 4
 </code></pre>
 <p>There is no automated perf harness or budget; the acceptance bar from the plan is
 "5,000 objects at 1&nbsp;Hz renders smoothly on localhost". Use browser DevTools

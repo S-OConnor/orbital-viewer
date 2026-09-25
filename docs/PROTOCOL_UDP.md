@@ -1,7 +1,7 @@
 # OLV1 UDP Wire Protocol — Version 1 (normative)
 
 Binary datagram format sent by data sources (here: `olv_sim`) to `olv_backend`.
-The reference implementation is [`backend/include/olv/protocol.hpp`](../backend/include/olv/protocol.hpp);
+The reference implementation is [`include/olv/protocol.hpp`](../include/olv/protocol.hpp);
 if this document and the header disagree, the header wins and this document
 must be fixed.
 

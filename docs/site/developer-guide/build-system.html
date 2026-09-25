@@ -20,9 +20,9 @@
 <nav class="breadcrumbs" id="breadcrumbs"></nav>
 
 <h1>Build System</h1>
-<p class="lead">CMake &ge; 3.20 with an aggregating top level, shared settings in
-<code>cmake/common.cmake</code>, and independently configurable
-<code>backend/</code> and <code>simulator/</code> subprojects. The frontend has no
+<p class="lead">CMake &ge; 3.20 with the backend at the top level, shared settings in
+<code>cmake/common.cmake</code>, and an independently configurable
+<code>tools/simulator/</code> subproject. The frontend has no
 build step at all.</p>
 
 <h2 id="targets">Target map</h2>
@@ -97,8 +97,8 @@ executables; INTERFACE targets carry headers and flags.</figcaption>
   why Bazzite/Silverblue builds usually work with no extra flags.</li>
   <li><code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG mode (required by
   CMake 4-era Boost packages), header-only usage.</li>
-  <li>INTERFACE targets: <code>olv_proto</code> (adds <code>backend/include</code>),
-  <code>olv_test_support</code> (adds <code>tests/support</code>),
+  <li>INTERFACE targets: <code>olv_proto</code> (adds <code>include</code>),
+  <code>olv_test_support</code> (adds <code>test/support</code>),
   <code>olv_warnings</code> (<code>-Wall -Wextra -Wpedantic</code> [+
   <code>-Werror</code>]).</li>
 </ul>
@@ -113,16 +113,16 @@ a FATAL_ERROR that includes the install instructions.</p>
 
 <h2 id="subprojects">Subproject layout</h2>
 <ul>
-  <li><strong>backend/CMakeLists.txt</strong> — static libs <code>olv_core</code> and
+  <li><strong>CMakeLists.txt</strong> — static libs <code>olv_core</code> and
   <code>olv_net</code>, the <code>olv_backend</code> executable, the
   <code>olv_ws_probe</code> tool, and <code>olv_backend_tests</code>
   (registered as CTest <code>backend_unit</code>).</li>
-  <li><strong>simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
+  <li><strong>tools/simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
   (everything except <code>main.cpp</code>, so tests link the real code),
   <code>olv_sim</code>, and <code>olv_sim_tests</code> (CTest <code>sim_unit</code>).</li>
-  <li>Both begin with an <code>if(NOT DEFINED PROJECT_NAME)</code> standalone header —
-  you can configure either directory in isolation:
-  <code>cmake -S backend -B build-backend</code>.</li>
+  <li><code>tools/simulator/CMakeLists.txt</code> begins with an
+  <code>if(NOT DEFINED PROJECT_NAME)</code> standalone header — you can configure the
+  simulator in isolation: <code>cmake -S tools/simulator -B build-sim</code>.</li>
   <li><strong>Top level</strong> additionally registers the <code>integration</code>
   test (UNIX only): runs <code>scripts/integration_test.sh</code> with the three
   target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
@@ -144,7 +144,7 @@ a FATAL_ERROR that includes the install instructions.</p>
 </div>
 
 <h2 id="quality-targets">Quality targets</h2>
-<pre><code class="language-sh">cmake --build build --target format         # clang-format -i over backend+simulator+tests
+<pre><code class="language-sh">cmake --build build --target format         # clang-format -i over include/src/test/tools
 cmake --build build --target format-check   # --dry-run --Werror (CI-suitable)
 cmake --build build --target lint           # cppcheck warning/performance/portability, exit 1 on findings
 </code></pre>
@@ -153,7 +153,7 @@ targets carry a Homebrew keg-only HINT path so brew-installed clang-format is fo
 clang-tidy is configured (<code>.clang-tidy</code>) but not wired into a target —
 it needs a compilation database:</p>
 <pre><code class="language-sh">cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-clang-tidy -p build backend/src/*.cpp simulator/src/*.cpp
+clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 </code></pre>
 
 <h2 id="dependency-mgmt">Dependency management</h2>

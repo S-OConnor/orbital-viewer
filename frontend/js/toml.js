@@ -1,4 +1,4 @@
-// toml.js — minimal TOML-subset parser, mirrors backend/include/olv/toml.hpp.
+// toml.js — minimal TOML-subset parser, mirrors include/olv/toml.hpp.
 //
 // Kept deliberately small and dependency-free (see docs/PLAN.md §10); no DOM
 // access so it is importable from Node tests as well as the browser.

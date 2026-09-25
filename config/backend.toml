@@ -2,8 +2,8 @@
 #   olv_backend --config config/backend.toml
 #
 # Schema is strict: unknown keys, wrong value types, and out-of-range values
-# are all rejected (see backend/src/config.hpp for the normative schema and
-# backend/include/olv/toml.hpp for the supported TOML subset).
+# are all rejected (see include/olv/config.hpp for the normative schema and
+# include/olv/toml.hpp for the supported TOML subset).
 #
 # Precedence (lowest to highest): built-in defaults < this file (applied via
 # --config) < explicit command-line flags — regardless of where --config

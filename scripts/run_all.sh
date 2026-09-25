@@ -9,7 +9,7 @@
 # Defaults match docs/PLAN.md: WS 8765, UDP 47000, frontend http 8000. Only
 # the *published host* ports change with those flags; the containers' internal
 # ports stay fixed, so the internal simulator->backend wiring is unaffected.
-# The simulator replays simulator/data/example_mission.csv on loop at 1 Hz
+# The simulator replays tools/simulator/data/example_mission.csv on loop at 1 Hz
 # (baked into the image; see containers/compose.yaml).
 #
 # Requires a container engine with compose support. Detection order:

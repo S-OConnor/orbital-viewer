@@ -18,9 +18,9 @@
 #include <cstdint>
 #include <thread>
 
-#include "input_source.hpp"
+#include "olv/input_source.hpp"
 #include "olv/protocol.hpp"
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 namespace olv {
 

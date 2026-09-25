@@ -83,7 +83,7 @@ bind).</p>
 <pre><code class="language-sh">ss -tlnp | grep 8765            # who owns it
 scripts/cleanup.sh              # stops containerized stacks + stray processes
 # or run on a different port:
-./build/backend/olv_backend --ws-port 8766   # update frontend Settings to match
+./build/olv_backend --ws-port 8766   # update frontend Settings to match
 </code></pre>
 
 <h3 id="udp-blocked">Simulator packets never arrive (Stats stays at 0)</h3>

@@ -25,26 +25,27 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 
 <h2 id="organization">Repository organization</h2>
 <pre><code class="language-sh">.
-├── CMakeLists.txt                  # top-level build; format/lint targets; integration test
+├── CMakeLists.txt                  # top-level build: backend targets, format/lint, integration test
 ├── cmake/
 │   ├── common.cmake                # toolchain, warnings, Boost, shared INTERFACE targets
 │   └── open_dis_cpp.cmake          # locates the installed open-dis-cpp prefix
-├── backend/                        # olv_backend (C++20, Boost.Asio/Beast)
-│   ├── include/olv/                # shared headers: protocol, TOML parser, DIS entity id
-│   ├── src/                        # config, logger, state store, input sources, WS server
-│   ├── tools/ws_probe.cpp          # WebSocket capture client (integration test)
-│   └── tests/                      # backend unit tests
-├── simulator/                      # olv_sim (C++20)
-│   ├── src/                        # CSV reader, frame builder, generator, DIS builder
-│   ├── data/example_mission.csv    # bundled 61-frame example mission
-│   └── tests/                      # simulator unit tests
+├── include/olv/                    # backend headers: protocol, TOML parser, DIS entity id,
+│                                   #   config, logger, state store, input sources, WS server
+├── src/                            # backend sources (olv_backend, C++20, Boost.Asio/Beast)
+├── test/                           # backend unit tests
+│   └── support/olv_test.hpp        # first-party ~120-line C++ test framework
+├── tools/
+│   ├── ws_probe.cpp                # WebSocket capture client (integration test)
+│   └── simulator/                  # olv_sim (C++20)
+│       ├── src/                    # CSV reader, frame builder, generator, DIS builder
+│       ├── data/example_mission.csv  # bundled 61-frame example mission
+│       └── tests/                  # simulator unit tests
 ├── frontend/                       # plain HTML/CSS/JS, no frameworks, no build step
 │   ├── index.html · config.toml
 │   ├── js/                         # 16 ES modules (renderer, net, model, ui, sky, ...)
 │   ├── css/ · assets/              # stylesheet; vendored NASA Earth imagery
 │   ├── dev/smoke.html              # standalone renderer smoke-test page
 │   └── tests/                      # node:test suites + validate_message.mjs
-├── tests/support/olv_test.hpp      # first-party ~120-line C++ test framework
 ├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
 ├── scripts/                        # run_all, install_open_dis, integration test, SBOM, ...
@@ -70,8 +71,8 @@ Guide: Repository Structure</a>.</p>
     <tr><td>Frontend</td><td>HTML5 / CSS / JavaScript ES modules, WebGL&nbsp;1</td>
         <td>Zero third-party code; no bundler, transpiler, or package manager.</td></tr>
     <tr><td>Build</td><td>CMake &ge; 3.20 + CTest</td>
-        <td>Aggregated top level; <code>backend/</code> and <code>simulator/</code> are also
-        independently configurable.</td></tr>
+        <td>Top level builds the backend and adds <code>tools/simulator/</code>, which is
+        also independently configurable.</td></tr>
     <tr><td>Containers</td><td>Podman or Docker (+ compose)</td>
         <td>Multi-stage Containerfiles, non-root runtime, bridge network.</td></tr>
     <tr><td>Scripting</td><td>Bash, Python 3 (stdlib only)</td>

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // validate_message.mjs — re-parses captured backend WS frames (one JSON
-// object per line, as produced by backend/tools/ws_probe.cpp) with the real
+// object per line, as produced by tools/ws_probe.cpp) with the real
 // frontend parser (net.js#parseStateMessage). Proves the backend's JSON is
 // frontend-compatible. Invoked by scripts/integration_test.sh:
 //

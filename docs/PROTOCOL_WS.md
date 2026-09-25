@@ -5,7 +5,7 @@ frames, UTF-8 JSON, one JSON object per frame). Clients never send messages;
 anything received from a client is ignored. Default endpoint:
 `ws://<host>:8765/`.
 
-The backend serializer is `backend/src/json_writer.{hpp,cpp}`; the frontend
+The backend serializer is `include/olv/json_writer.hpp` + `src/json_writer.cpp`; the frontend
 parser is `frontend/js/net.js` (`parseStateMessage`). The integration test
 re-parses captured backend frames with the real frontend parser.
 

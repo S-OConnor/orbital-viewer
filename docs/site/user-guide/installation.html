@@ -87,9 +87,9 @@ node --test "frontend/tests/*.test.mjs"             # frontend logic tests (opti
 </code></pre>
 <p>Binaries land at their per-subdirectory defaults:</p>
 <ul>
-  <li><code>build/backend/olv_backend</code> — the server</li>
-  <li><code>build/backend/olv_ws_probe</code> — test-support WebSocket capture client</li>
-  <li><code>build/simulator/olv_sim</code> — the simulator</li>
+  <li><code>build/olv_backend</code> — the server</li>
+  <li><code>build/olv_ws_probe</code> — test-support WebSocket capture client</li>
+  <li><code>build/tools/simulator/olv_sim</code> — the simulator</li>
 </ul>
 <p>Useful configure options (details in
 <a href="../developer-guide/build-system.html">Build System</a>):</p>
@@ -169,8 +169,8 @@ container-internal ports are fixed. <code>run_all.sh</code> sets them from its
 </ol>
 
 <h2 id="verify">Verifying the installation</h2>
-<pre><code class="language-sh">./build/backend/olv_backend --help        # prints usage, exit 0
-./build/simulator/olv_sim --help
+<pre><code class="language-sh">./build/olv_backend --help        # prints usage, exit 0
+./build/tools/simulator/olv_sim --help
 ctest --test-dir build --output-on-failure
 </code></pre>
 <p>Expected: <code>backend_unit</code>, <code>sim_unit</code>, and <code>integration</code>

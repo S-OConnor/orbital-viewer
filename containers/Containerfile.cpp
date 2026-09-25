@@ -61,7 +61,7 @@ FROM docker.io/library/debian:bookworm-slim AS backend
 RUN groupadd --gid 10001 olv && \
     useradd --uid 10001 --gid olv --no-create-home --shell /usr/sbin/nologin olv
 
-COPY --from=build /src/build/backend/olv_backend /app/olv_backend
+COPY --from=build /src/build/olv_backend /app/olv_backend
 
 USER 10001
 WORKDIR /app
@@ -74,15 +74,15 @@ CMD ["--udp-port", "47000", "--ws-port", "8765", "--log-file", "/tmp/olv_backend
 
 # ---------------------------------------------------------------------------
 # Target: simulator — minimal runtime image running as a non-root user.
-# Includes simulator/data so --csv replay works without a bind mount.
+# Includes tools/simulator/data so --csv replay works without a bind mount.
 # ---------------------------------------------------------------------------
 FROM docker.io/library/debian:bookworm-slim AS simulator
 
 RUN groupadd --gid 10001 olv && \
     useradd --uid 10001 --gid olv --no-create-home --shell /usr/sbin/nologin olv
 
-COPY --from=build /src/build/simulator/olv_sim /app/olv_sim
-COPY simulator/data /app/data
+COPY --from=build /src/build/tools/simulator/olv_sim /app/olv_sim
+COPY tools/simulator/data /app/data
 
 USER 10001
 WORKDIR /app

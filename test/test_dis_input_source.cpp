@@ -10,11 +10,11 @@
 #include <string>
 #include <vector>
 
-#include "dis_input_source.hpp"
-#include "logger.hpp"
+#include "olv/dis_input_source.hpp"
+#include "olv/logger.hpp"
 #include "olv/protocol.hpp"
 #include "olv_test.hpp"
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 using namespace olv;
 using namespace std::chrono;

@@ -38,7 +38,7 @@ hashes) in the frontend SBOM — see `docs/SBOM.md`.
 
 ## First-party code that looks like a dependency
 
-- **`tests/support/olv_test.hpp`** — the in-repo C++ unit test framework
+- **`test/support/olv_test.hpp`** — the in-repo C++ unit test framework
   (~120 lines, no fixtures/mocking). This is first-party code owned by this
   repository, licensed MIT under the same `LICENSE` file as everything else.
   It exists specifically so the repo does not need to vendor or depend on

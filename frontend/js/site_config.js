@@ -9,7 +9,7 @@
 // (network error, non-OK response, TOML syntax error, or an individual key
 // that doesn't validate) is handled leniently: the frontend must never brick
 // on a bad or missing config, unlike the strict backend/simulator TOML
-// consumers (backend/include/olv/toml.hpp), which are allowed to fail hard
+// consumers (include/olv/toml.hpp), which are allowed to fail hard
 // on a malformed config file at process startup. Here we only ever log a
 // console.warn and drop the offending piece, continuing with whatever
 // remains valid.

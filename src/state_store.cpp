@@ -1,6 +1,6 @@
 // state_store.cpp — see state_store.hpp.
 
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 #include <algorithm>
 

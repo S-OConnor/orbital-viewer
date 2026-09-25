@@ -1,8 +1,8 @@
 # open_dis_cpp.cmake — locate the installed open-dis-cpp DIS library and wrap
 # it in an imported `open_dis_cpp` target, shared by backend (DIS input
-# decode) and simulator (DIS emission). Included from both
-# backend/CMakeLists.txt and simulator/CMakeLists.txt, each of which is
-# standalone-configurable, hence the TARGET guard.
+# decode) and simulator (DIS emission). Included from both the top-level
+# CMakeLists.txt and tools/simulator/CMakeLists.txt (standalone-configurable),
+# hence the TARGET guard.
 #
 # open-dis-cpp (BSD-2-Clause, pinned v1.2.0) is NOT vendored in this repo: it
 # is built from the pinned upstream release and installed into a prefix by

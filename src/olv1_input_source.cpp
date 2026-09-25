@@ -2,11 +2,11 @@
 // io_context on an internal std::thread running the async receive loop.
 // Formerly udp_receiver.cpp; bodies and log message formats are unchanged.
 
-#include "olv1_input_source.hpp"
+#include "olv/olv1_input_source.hpp"
 
 #include <string>
 
-#include "logger.hpp"
+#include "olv/logger.hpp"
 
 namespace olv {
 

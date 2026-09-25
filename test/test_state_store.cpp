@@ -8,7 +8,7 @@
 
 #include "olv/protocol.hpp"
 #include "olv_test.hpp"
-#include "state_store.hpp"
+#include "olv/state_store.hpp"
 
 using namespace olv;
 using namespace std::chrono;

@@ -114,24 +114,24 @@ ctest --test-dir build --output-on-failure
 node --test "frontend/tests/*.test.mjs"
 
 # Run (three processes)
-./build/backend/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
-./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
-./build/simulator/olv_sim --generate 5000 --rate 1        # load test
+./build/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+./build/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
+./build/tools/simulator/olv_sim --generate 5000 --rate 1        # load test
 scripts/serve_frontend.sh 8000                            # then open http://localhost:8000/frontend/
 
 # Or ingest IEEE 1278.1 DIS Entity State PDUs instead of OLV1 (see
 # docs/PROTOCOL_DIS.md; first uncomment dis_satellite_entity_id in the config —
 # DIS mode requires it and it has no CLI flag)
-./build/backend/olv_backend --config config/backend.toml --input-mode dis
-./build/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
+./build/olv_backend --config config/backend.toml --input-mode dis
+./build/tools/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
 
 # Lint / format / SBOM
 cmake --build build --target format lint
 python3 scripts/gen_sbom.py --out sbom/
 ```
 
-Binaries land at `build/backend/olv_backend`, `build/backend/olv_ws_probe`,
-and `build/simulator/olv_sim` (each target's default per-subdirectory output
+Binaries land at `build/olv_backend`, `build/olv_ws_probe`,
+and `build/tools/simulator/olv_sim` (each target's default per-subdirectory output
 directory; no `CMAKE_RUNTIME_OUTPUT_DIRECTORY` override is configured).
 
 ### One-liner (containers)
@@ -141,7 +141,7 @@ scripts/run_all.sh
 ```
 
 Brings up the whole stack as containers via `containers/compose.yaml` — the
-backend, the simulator (replaying `simulator/data/example_mission.csv` on loop
+backend, the simulator (replaying `tools/simulator/data/example_mission.csv` on loop
 at 1 Hz), and the frontend served by nginx. It auto-detects a compose engine
 (`podman compose`, `docker compose`, `podman-compose`, or `docker-compose`;
 override with `OLV_COMPOSE`), builds images on first run, waits for the
@@ -186,7 +186,7 @@ ports, broadcast rate, object-expiry window, logging, and input mode
 host/port and display toggles (trails, labels, trail duration).
 
 The files are parsed by a small first-party TOML *subset* parser
-(`backend/include/olv/toml.hpp`, mirrored in `frontend/js/toml.js`): comments,
+(`include/olv/toml.hpp`, mirrored in `frontend/js/toml.js`): comments,
 one level of `[tables]`, strings/integers/floats/booleans. Arrays, dotted
 keys, dates and multi-line strings are rejected with a line-numbered error —
 see the header comment in `toml.hpp` for the exact grammar.
@@ -194,7 +194,7 @@ see the header comment in `toml.hpp` for the exact grammar.
 ## Simulator usage
 
 ```sh
-./build/simulator/olv_sim [options]
+./build/tools/simulator/olv_sim [options]
 ```
 
 | Flag | Purpose |
@@ -213,7 +213,7 @@ see the header comment in `toml.hpp` for the exact grammar.
 
 ### CSV column format
 
-`simulator/data/example_mission.csv` and any `--csv` input use these
+`tools/simulator/data/example_mission.csv` and any `--csv` input use these
 columns:
 
 ```
@@ -269,7 +269,7 @@ needs a compilation database — run it via your IDE, or manually:
 
 ```sh
 cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-clang-tidy -p build backend/src/*.cpp simulator/src/*.cpp
+clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 ```
 
 ## Containers
@@ -369,11 +369,13 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 
 ```
 .
-├── CMakeLists.txt, cmake/common.cmake   # build config, format/lint targets
-├── backend/                             # olv_backend (C++20, Boost.Asio/Beast)
-├── simulator/                           # olv_sim (C++20)
+├── CMakeLists.txt, cmake/               # build config (backend targets), format/lint targets
+├── include/olv/                         # backend headers (C++20, Boost.Asio/Beast)
+├── src/                                 # backend sources (olv_backend)
+├── test/                                # backend unit tests + support/olv_test.hpp
+├── tools/                               # ws_probe.cpp (integration-test WS client)
+│   └── simulator/                       # olv_sim (C++20), standalone-configurable
 ├── frontend/                            # plain HTML/CSS/JS, no frameworks
-├── tests/support/olv_test.hpp           # shared minimal C++ test framework
 ├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/
 ├── scripts/                             # integration test, sbom gen, run/serve helpers
 └── containers/                          # Containerfiles + compose.yaml

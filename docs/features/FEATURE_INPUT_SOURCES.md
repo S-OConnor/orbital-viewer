@@ -28,8 +28,8 @@ docs/PROTOCOL_UDP.md (the existing OLV1 wire format, unchanged by this work).
 
 Today `olv_backend` has exactly one hardcoded input path: `UdpReceiver` binds
 a UDP socket and calls `olv::proto::decode` (the first-party OLV1 binary
-format, `backend/include/olv/protocol.hpp:297`) directly
-(`backend/src/udp_receiver.cpp:58`). There is no abstraction boundary between
+format, `include/olv/protocol.hpp:297`) directly
+(`src/udp_receiver.cpp:58`). There is no abstraction boundary between
 "receive bytes off the wire" and "decode this specific protocol."
 
 This feature:
@@ -52,14 +52,14 @@ This feature:
 Everything downstream of `StateStore` — `WsServer`, the WS JSON wire format
 (docs/PROTOCOL_WS.md), and the entire frontend — is **untouched**. This is
 intentionally an intake-side-only feature so the blast radius is contained to
-`backend/src/` plus new docs/config, mirroring how docs/FEATURE_SKY.md kept
+`src/` plus new docs/config, mirroring how docs/FEATURE_SKY.md kept
 its blast radius to `frontend/js/`.
 
 ## 2. Design principles (why it is low-risk)
 
 * **Strategy pattern at one seam.** `InputSource` is the *only* new
   abstraction. `StateStore`, `WsServer`, the WS/HTTP wire formats, and the
-  simulator's send-side (`simulator/src/frame_builder.cpp`) are not touched in
+  simulator's send-side (`tools/simulator/src/frame_builder.cpp`) are not touched in
   Phases 1-2 (Phase 3 optionally extends the simulator later, additively).
 * **Default path is a refactor, not a rewrite.** `Olv1InputSource` must
   produce byte-for-byte identical logging, drop-counting, and `StateStore`
@@ -86,8 +86,8 @@ its blast radius to `frontend/js/`.
 **Complete.** Each item below now carries its frozen **Decision** block;
 §4-§6 incorporate them. Research basis: upstream `open-dis/open-dis-cpp`
 repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
-`backend/src/state_store.{hpp,cpp}`, `backend/src/udp_receiver.cpp`,
-`backend/include/olv/protocol.hpp`, `THIRD_PARTY.md`, `scripts/gen_sbom.py`.
+`src/state_store.{hpp,cpp}`, `src/udp_receiver.cpp`,
+`include/olv/protocol.hpp`, `THIRD_PARTY.md`, `scripts/gen_sbom.py`.
 
 1. **Dependency vetting.** Confirm which `open-dis-cpp` distribution to use
    (canonical repo: `open-dis/open-dis-cpp`), its exact license (verify text
@@ -113,7 +113,7 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
      library); the `dis7/` tree, `examples/` (which need SDL2), `test/`, and
      upstream build files are **excluded** — we compile the vendored sources
      with our own `add_library(open_dis_cpp STATIC ...)` in
-     `backend/CMakeLists.txt`, linked only by `olv_backend`.
+     `CMakeLists.txt`, linked only by `olv_backend`.
    - `third_party/open-dis-cpp/README.md` recording: upstream URL, tag
      `v1.2.0`, retrieval date, the pruning rule above, and the local-change
      policy (**none permitted** — any fix goes upstream or waits for a new
@@ -152,7 +152,7 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
    store untouched outweighs closing the accounting identity.
 3. **Satellite vs. tracked-object mapping.** OLV1's wire format has a
    privileged "satellite" record plus N generic "object" records
-   (`backend/include/olv/protocol.hpp`). DIS has no such distinction — every
+   (`include/olv/protocol.hpp`). DIS has no such distinction — every
    Entity State PDU describes one entity, uniformly. Decide the rule that
    promotes exactly one DIS entity stream to `SatelliteState`:
    - Recommended: a config field `[input.dis] satellite_entity_id =
@@ -184,10 +184,10 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
 4. **EntityType → OLV object `type`/`confidence`/`intensity` mapping.** DIS's
    `EntityType` (kind/domain/country/category/subcategory/specific/extra) has
    no OLV analogue for `confidence` or `intensity`
-   (`backend/src/state_store.hpp:46-56`). Decide fixed defaults (recommended:
+   (`include/olv/state_store.hpp:46-56`). Decide fixed defaults (recommended:
    `confidence = 100`, `intensity = 0.0f`) and a small lookup table from
    DIS `(kind, domain)` pairs to the existing OLV object `type` enum
-   (`olv::proto::isKnownObjectType`, `backend/include/olv/protocol.hpp`) with
+   (`olv::proto::isKnownObjectType`, `include/olv/protocol.hpp`) with
    an explicit fallback bucket for unmapped combinations (must not decode as
    an error — unmapped DIS entities should still render as *something*).
 
@@ -227,7 +227,7 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
    can be added compatibly later if ever needed.
 6. **Staleness/sequencing.** OLV1 has an explicit wrapping `sequence` field
    used for stale-packet rejection (`StateStore::apply`,
-   `backend/src/state_store.hpp:83`). DIS Entity State PDUs don't carry an
+   `include/olv/state_store.hpp:83`). DIS Entity State PDUs don't carry an
    equivalent sequence counter. Decide the DIS-side staleness rule
    (recommended: per-entity monotonic PDU timestamp, falling back to
    receipt-order-only if a PDU's timestamp is absent/non-monotonic — never
@@ -249,7 +249,7 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
    A PDU is never rejected merely for lacking sequencing information.
 
    **Discovered constraint (frozen consequence for §5).** Two facts about
-   `StateStore::apply` (`backend/src/state_store.cpp`) shape how the DIS
+   `StateStore::apply` (`src/state_store.cpp`) shape how the DIS
    path calls it, since `StateStore` itself is untouched:
    1. `apply` **replaces the satellite wholesale on every accepted packet**.
       A DIS Entity State PDU describes one entity, so `DisInputSource` must
@@ -267,7 +267,7 @@ repo, its `LICENSE` file at head, and the v1.2.0 release (2026-06-26);
       records, or a one-object packet (`object_total` = current live entity
       count known to `DisInputSource`).
 
-## 4. Frozen module interface — `backend/src/input_source.hpp` (NEW, Phase 1)
+## 4. Frozen module interface — `include/olv/input_source.hpp` (NEW, Phase 1)
 
 ```cpp
 // input_source.hpp — common interface for backend intake strategies.
@@ -294,7 +294,7 @@ this interface with **no other change** — same constructor shape
 name `UdpReceiver` directly are updated to the new name only if strictly
 necessary; behavior, not spelling, is the acceptance bar.
 
-`main.cpp` (`backend/src/main.cpp:52`) changes from constructing
+`main.cpp` (`src/main.cpp:52`) changes from constructing
 `olv::UdpReceiver udp(...)` directly to:
 
 ```cpp
@@ -308,7 +308,7 @@ where `makeInputSource` (new, `input_source.cpp`) switches on
 `cfg.input_mode` (`InputMode::kOlv1` default, `InputMode::kDis`) and
 constructs the corresponding concrete type.
 
-## 5. Frozen module interface — `backend/src/dis_input_source.hpp` (NEW, Phase 2)
+## 5. Frozen module interface — `include/olv/dis_input_source.hpp` (NEW, Phase 2)
 
 The concrete rules this class implements are the frozen §3 decisions:
 Entity State PDUs only via `dis6::EntityStatePdu` (§3.2), FNV-1a-32 id fold
@@ -347,7 +347,7 @@ class DisInputSource : public InputSource {
 }  // namespace olv
 ```
 
-## 6. Config contract — `backend/src/config.hpp`/`.cpp`, `config/backend.toml`
+## 6. Config contract — `include/olv/config.hpp`/`.cpp`, `config/backend.toml`
 
 New keys under the existing `[input]` table, following the exact strict-schema
 precedent of the `[network]`/`[broadcast]`/`[state]`/`[logging]` sections. The
@@ -396,7 +396,7 @@ Gate: architect sign-off before Phase 1 starts.
 schema but `makeInputSource` throws "input mode 'dis' is not implemented
 yet" until Phase 2 ships; the startup log line gains an `input_mode=` field
 only when the mode is non-default, keeping default-run logs byte-identical.
-- Add `backend/src/input_source.hpp` (§4).
+- Add `include/olv/input_source.hpp` (§4).
 - Adapt `UdpReceiver` → `Olv1InputSource` implementing `InputSource`
   (rename in place; no logic changes).
 - Add `Config::input_mode` (default `kOlv1`) + `--input-mode` flag; update
@@ -431,10 +431,10 @@ first-party TOML parser, both consistent with the decisions' intent:
 
 Delivered:
 - Vendored `open-dis-cpp` under `third_party/open-dis-cpp/` (`LICENSE` +
-  `src/dis6/`, incl. `utils/`); `backend/CMakeLists.txt` compiles it as a
+  `src/dis6/`, incl. `utils/`); `CMakeLists.txt` compiles it as a
   static `open_dis_cpp` library (SYSTEM includes, `-w`), linked only via
   `olv_core`'s DIS path — `olv_sim` is untouched.
-- `DisInputSource` (`backend/src/dis_input_source.{hpp,cpp}`) implementing the
+- `DisInputSource` (`include/olv/dis_input_source.hpp` + `src/dis_input_source.cpp`) implementing the
   frozen §3 mapping/fold/staleness/filtering rules, wired into
   `makeInputSource`. Its `processDatagram()` is a public seam so tests drive the
   full translation without a live socket (mirroring how the OLV1 path is tested
@@ -443,7 +443,7 @@ Delivered:
   validation (bad `satellite_entity_id` format, out-of-range port/exercise are
   errors), plus a cross-field check that `mode = "dis"` requires
   `dis_satellite_entity_id`.
-- `backend/tests/test_dis_input_source.cpp` (hand-built Entity State PDU byte
+- `test/test_dis_input_source.cpp` (hand-built Entity State PDU byte
   arrays) covering satellite recognition, object mapping, the EntityType table
   + `kDebris` fallback, unsupported-kind drop, exercise filtering, malformed
   rejection (short header / truncated body / bad version), and per-entity
@@ -463,13 +463,13 @@ Delivered:
   `sim_config.{hpp,cpp}`, with DIS-only settings `[send] dis_exercise_id`
   (default 1), `dis_site` (default 1), and `dis_satellite_entity_id`
   (default `"1:1:1"`, validated by the shared `olv::parseDisEntityId`, which
-  moved from `dis_input_source.hpp` to `backend/include/olv/dis_entity_id.hpp`
+  moved from `dis_input_source.hpp` to `include/olv/dis_entity_id.hpp`
   so the simulator reuses the identical parser — still one source of truth).
   No `--dis-*` flags, matching the backend's `--input-mode`-only precedent.
   When `protocol = "dis"` and no port was set by file or `--port`, the
   destination port defaults to 47001 (the backend's DIS default) so both
   ends' defaults line up.
-- `simulator/src/dis_builder.{hpp,cpp}`: one Entity State PDU per entity
+- `tools/simulator/src/dis_builder.{hpp,cpp}`: one Entity State PDU per entity
   (satellite first, under the configured satellite EntityID; objects spread
   their 32-bit OLV id as `application = id >> 16`, `entity = id & 0xFFFF`
   with `site = dis_site`), encoded via the same open-dis-cpp library the
@@ -478,7 +478,7 @@ Delivered:
   they stay monotone across CSV `--loop` wraps and the backend's §3.6
   staleness rule accepts every PDU, hourly wrap included. The `chunk`
   setting is OLV1-only (DIS has no multi-record packet shape).
-- Tests: `simulator/tests/test_dis_builder.cpp` (7 cases, decoding emitted
+- Tests: `tools/simulator/tests/test_dis_builder.cpp` (7 cases, decoding emitted
   buffers with open-dis-cpp itself) + 8 new `[send]`-schema/CLI cases in
   `test_sim_config.cpp`; `config/simulator.toml` documents the new keys.
 - **Acceptance met** with the documented DIS-inherent losses (already frozen

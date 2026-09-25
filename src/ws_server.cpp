@@ -2,7 +2,7 @@
 // the caller's io_context, plus the broadcast timer. All sessions and the
 // sessions_ set are touched only on the io_context thread, so no locking here.
 
-#include "ws_server.hpp"
+#include "olv/ws_server.hpp"
 
 #include <utility>  // std::exchange, needed before Boost.Beast on Boost 1.74
 
@@ -14,8 +14,8 @@
 #include <memory>
 #include <string>
 
-#include "json_writer.hpp"
-#include "logger.hpp"
+#include "olv/json_writer.hpp"
+#include "olv/logger.hpp"
 
 namespace olv {
 

@@ -68,10 +68,10 @@ itself.</p>
 <h2 id="first-run-native">First run — native binaries</h2>
 <p>Three processes in three terminals (all from the repo root, after building):</p>
 <pre><code class="language-sh"># Terminal 1 — backend
-./build/backend/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+./build/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
 
 # Terminal 2 — simulator, replaying the example mission on loop
-./build/simulator/olv_sim --csv simulator/data/example_mission.csv --rate 1 --loop
+./build/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
 
 # Terminal 3 — static file server for the frontend
 scripts/serve_frontend.sh 8000
@@ -94,7 +94,7 @@ About modal's links into <code>docs/</code> resolve).</p>
   <li>Copy and edit the example config:
 <pre><code class="language-sh">cp config/backend.toml my-backend.toml
 # edit: [network] ws_port = 9000
-./build/backend/olv_backend --config my-backend.toml
+./build/olv_backend --config my-backend.toml
 </code></pre></li>
   <li>Reload the frontend. The status panel shows a stalled/disconnected state —
   it is still trying port 8765.</li>
@@ -118,7 +118,7 @@ About modal's links into <code>docs/</code> resolve).</p>
   <li><strong>Selection</strong>: click any object on the globe or in the list — it
   highlights in both places.</li>
   <li><strong>Load test</strong>: stop the simulator and run
-  <code>./build/simulator/olv_sim --generate 5000 --rate 1</code> — 5,000 objects,
+  <code>./build/tools/simulator/olv_sim --generate 5000 --rate 1</code> — 5,000 objects,
   the protocol maximum. The object list caps at 1,000 rows and says
   "showing 1000 of 5000".</li>
 </ol>
@@ -131,7 +131,7 @@ ctest --test-dir build --output-on-failure
 tail -f olv_backend.log        # expect: accepted seq=... (at debug level)
 
 # 3. Is JSON flowing? Capture two frames with the probe:
-./build/backend/olv_ws_probe --host 127.0.0.1 --port 8765 --count 2 \
+./build/olv_ws_probe --host 127.0.0.1 --port 8765 --count 2 \
     --timeout 10 --out /tmp/frames.jsonl
 head -c 300 /tmp/frames.jsonl  # expect {"type":"hello",... then {"type":"state",...
 </code></pre>

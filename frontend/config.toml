@@ -14,7 +14,7 @@
 #
 # Only the keys below are recognized; unknown keys and invalid/out-of-range
 # values are ignored with a console.warn (see site_config.js), never a hard
-# failure. The syntax is a small TOML subset — see backend/include/olv/toml.hpp
+# failure. The syntax is a small TOML subset — see include/olv/toml.hpp
 # for the authoritative grammar shared with the backend/simulator config
 # files (this file uses the same parser, mirrored in frontend/js/toml.js).
 #

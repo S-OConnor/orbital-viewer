@@ -24,7 +24,7 @@
 the generated artifact formats.</p>
 
 <h2 id="csv">Mission CSV (<code>olv_sim --csv</code>)</h2>
-<p>Parsed by <code>simulator/src/csv_reader.cpp</code> — strict, with line-numbered
+<p>Parsed by <code>tools/simulator/src/csv_reader.cpp</code> — strict, with line-numbered
 errors. Blank lines and <code>#</code> comments are allowed; trailing <code>\r</code>
 is stripped (CRLF-safe). The first non-comment line must be <em>exactly</em>:</p>
 <pre><code class="language-csv">time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,flags
@@ -52,12 +52,12 @@ is stripped (CRLF-safe). The first non-comment line must be <em>exactly</em>:</p
 </table>
 </div>
 <p>Number parsing rejects trailing garbage and non-finite values. Example file:
-<code>simulator/data/example_mission.csv</code> (61 frames, regenerable with
+<code>tools/simulator/data/example_mission.csv</code> (61 frames, regenerable with
 <code>scripts/make_example_csv.py</code>).</p>
 
 <h2 id="toml">The TOML subset</h2>
 <p>Implemented twice, deliberately identically:
-<code>backend/include/olv/toml.hpp</code> (C++, strict consumers) and
+<code>include/olv/toml.hpp</code> (C++, strict consumers) and
 <code>frontend/js/toml.js</code> (JS, lenient consumer). Grammar:</p>
 <div class="table-wrap">
 <table>

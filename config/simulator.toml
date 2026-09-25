@@ -6,7 +6,7 @@
 # regardless of where --config appears among the other flags. Schema is
 # strict: unknown keys, wrong types, and out-of-range values are rejected
 # with a descriptive error naming the offending key (see
-# simulator/src/sim_config.hpp for the full contract).
+# tools/simulator/src/sim_config.hpp for the full contract).
 #
 # This file's defaults are runnable as-is (csv mode, looping the committed
 # example mission) from the repository root:
@@ -23,7 +23,7 @@ port = 47000          # destination UDP port, [1,65535]
 mode = "csv"
 
 # ---- csv mode -------------------------------------------------------------
-csv_path = "simulator/data/example_mission.csv"  # path is resolved relative
+csv_path = "tools/simulator/data/example_mission.csv"  # path is resolved relative
                                                   # to the current working
                                                   # directory when olv_sim runs
 loop = true  # wrap to the first frame and keep going once the file ends

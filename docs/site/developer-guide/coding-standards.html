@@ -74,7 +74,7 @@ cmake --build build --target lint           # cppcheck
 <h2 id="organization">Code organization rules</h2>
 <ul>
   <li><strong>Shared wire/parsing code is header-only</strong> under
-  <code>backend/include/olv/</code> and consumed via the <code>olv_proto</code> target —
+  <code>include/olv/</code> and consumed via the <code>olv_proto</code> target —
   never duplicated.</li>
   <li><strong>Testability drives structure:</strong> simulator logic lives in
   <code>olv_sim_lib</code> (main.cpp is thin); frontend pure logic is import-safe

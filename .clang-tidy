@@ -14,5 +14,5 @@ Checks: >
   -readability-implicit-bool-conversion,
   -bugprone-easily-swappable-parameters,
   -readability-function-cognitive-complexity
-HeaderFilterRegex: '(backend|simulator)/(src|include|tools)/'
+HeaderFilterRegex: '/(include/olv|src|tools)/'
 WarningsAsErrors: ''

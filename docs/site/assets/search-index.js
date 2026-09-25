@@ -52,9 +52,9 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/api",
 "title": "API Documentation",
-"section": "Test framework (tests/support/olv_test.hpp)",
+"section": "Test framework (test/support/olv_test.hpp)",
 "anchor": "test-api",
-"text": "API Documentation Test framework (tests/support/olv_test.hpp)"
+"text": "API Documentation Test framework (test/support/olv_test.hpp)"
 },
 {
 "page": "developer-guide/api",
@@ -507,16 +507,16 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/repo-structure",
 "title": "Repository Structure",
-"section": "backend/",
+"section": "Backend: include/, src/, test/, tools/",
 "anchor": "backend",
-"text": "Repository Structure backend/"
+"text": "Repository Structure Backend: include/, src/, test/, tools/"
 },
 {
 "page": "developer-guide/repo-structure",
 "title": "Repository Structure",
-"section": "simulator/",
+"section": "tools/simulator/",
 "anchor": "simulator",
-"text": "Repository Structure simulator/"
+"text": "Repository Structure tools/simulator/"
 },
 {
 "page": "developer-guide/repo-structure",
@@ -528,9 +528,9 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/repo-structure",
 "title": "Repository Structure",
-"section": "docs/, config/, scripts/, containers/, tests/, sbom/",
+"section": "docs/, config/, scripts/, containers/, sbom/",
 "anchor": "other",
-"text": "Repository Structure docs/, config/, scripts/, containers/, tests/, sbom/"
+"text": "Repository Structure docs/, config/, scripts/, containers/, sbom/"
 },
 {
 "page": "developer-guide/repo-structure",

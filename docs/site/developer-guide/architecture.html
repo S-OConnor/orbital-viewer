@@ -69,14 +69,14 @@ level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file le
 
 <ul>
   <li><strong>Thread 1 (input)</strong> is spawned by <code>InputSource::start()</code>
-  (<code>backend/src/olv1_input_source.cpp:26</code> /
+  (<code>src/olv1_input_source.cpp:26</code> /
   <code>dis_input_source.cpp:103</code>). Exactly one input source exists per process,
   chosen by <code>Config::input_mode</code> at boot.</li>
   <li><strong>Thread 2 (main)</strong> runs <code>ioc.run()</code> from
   <code>main.cpp:75</code>. The Beast acceptor, every session, and the broadcast
   timer all live on this one thread, so the <code>sessions_</code> set needs no
   locking — single-threaded by construction.</li>
-  <li><strong>StateStore</strong> (<code>backend/src/state_store.cpp</code>) is the sole
+  <li><strong>StateStore</strong> (<code>src/state_store.cpp</code>) is the sole
   synchronization point: one <code>std::mutex</code> guards
   <code>countReceived</code>, <code>countDropped</code>, <code>apply</code>, and
   <code>snapshot</code>. The <code>Logger</code> has its own internal mutex and is safe
@@ -178,7 +178,7 @@ same thing in both modes. The DIS implementation additionally:</p>
 
 <h2 id="logging">Logging</h2>
 <p>One line per event, written by the thread-safe <code>Logger</code>
-(<code>backend/src/logger.cpp</code>), flushed every line:</p>
+(<code>src/logger.cpp</code>), flushed every line:</p>
 <pre><code class="language-sh">2026-07-01T12:34:56.789Z INFO  [main] startup udp=0.0.0.0:47000 ws=0.0.0.0:8765 ...
 2026-07-01T12:35:02.120Z INFO  [ws]   client connected 127.0.0.1:52344 clients=1
 2026-07-01T12:35:03.001Z WARN  [udp]  dropped bad_crc len=6204 from=10.0.0.7:58211
@@ -197,7 +197,7 @@ same thing in both modes. The DIS implementation additionally:</p>
 
 <h2 id="config-system">Configuration system</h2>
 <p>Both C++ binaries share the same two-pass pattern
-(<code>backend/src/config.cpp</code>, <code>simulator/src/sim_config.cpp</code>):
+(<code>src/config.cpp</code>, <code>tools/simulator/src/sim_config.cpp</code>):
 pass 1 finds <code>--config</code> (order-independent, at most once) and applies the
 file over defaults; pass 2 applies remaining flags in argv order. The TOML schema
 is a closed set — every known key has a type check and range check, and anything

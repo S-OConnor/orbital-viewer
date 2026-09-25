@@ -1,5 +1,5 @@
-# common.cmake — shared toolchain setup for the top-level build and for
-# standalone configuration of backend/ or simulator/ (see docs/PLAN.md §3,
+# common.cmake — shared toolchain setup for the top-level build (backend) and
+# for standalone configuration of tools/simulator/ (see docs/PLAN.md §3,
 # "Independent buildability").
 
 if(DEFINED OLV_COMMON_INCLUDED)
@@ -36,16 +36,16 @@ find_package(Boost 1.74 REQUIRED CONFIG)
 
 get_filename_component(OLV_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
-# Wire-protocol header (backend/include/olv/protocol.hpp), shared everywhere.
+# Public headers (include/olv/, incl. the wire protocol), shared everywhere.
 if(NOT TARGET olv_proto)
   add_library(olv_proto INTERFACE)
-  target_include_directories(olv_proto INTERFACE "${OLV_REPO_ROOT}/backend/include")
+  target_include_directories(olv_proto INTERFACE "${OLV_REPO_ROOT}/include")
 endif()
 
-# Minimal in-repo test framework (tests/support/olv_test.hpp).
+# Minimal in-repo test framework (test/support/olv_test.hpp).
 if(NOT TARGET olv_test_support)
   add_library(olv_test_support INTERFACE)
-  target_include_directories(olv_test_support INTERFACE "${OLV_REPO_ROOT}/tests/support")
+  target_include_directories(olv_test_support INTERFACE "${OLV_REPO_ROOT}/test/support")
 endif()
 
 # Common warning set.
