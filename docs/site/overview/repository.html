@@ -25,16 +25,18 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 
 <h2 id="organization">Repository organization</h2>
 <pre><code class="language-sh">.
-├── CMakeLists.txt                  # top-level build: backend targets, format/lint, integration test
+├── CMakeLists.txt                  # top-level build: project setup, dependencies, add_subdirectory
 ├── cmake/
-│   ├── common.cmake                # toolchain, warnings, Boost, shared INTERFACE targets
-│   └── open_dis_cpp.cmake          # locates the installed open-dis-cpp prefix
+│   ├── common.cmake                # toolchain, options, warnings, shared INTERFACE targets
+│   ├── open_dis_cpp.cmake          # locates the installed open-dis-cpp prefix
+│   └── tooling.cmake               # format / format-check / lint targets
 ├── include/olv/                    # backend headers: protocol, TOML parser, DIS entity id,
 │                                   #   config, logger, state store, input sources, WS server
-├── src/                            # backend sources (olv_backend, C++20, Boost.Asio/Beast)
-├── test/                           # backend unit tests
+├── src/                            # backend sources + CMakeLists.txt (olv_backend, C++20, Boost.Asio/Beast)
+├── test/                           # backend unit tests + CMakeLists.txt (unit + integration CTests)
 │   └── support/olv_test.hpp        # first-party ~120-line C++ test framework
 ├── tools/
+│   ├── CMakeLists.txt              # olv_ws_probe; adds simulator/
 │   ├── ws_probe.cpp                # WebSocket capture client (integration test)
 │   └── simulator/                  # olv_sim (C++20)
 │       ├── src/                    # CSV reader, frame builder, generator, DIS builder

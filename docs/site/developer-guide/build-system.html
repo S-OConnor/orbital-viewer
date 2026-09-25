@@ -20,9 +20,11 @@
 <nav class="breadcrumbs" id="breadcrumbs"></nav>
 
 <h1>Build System</h1>
-<p class="lead">CMake &ge; 3.20 with the backend at the top level, shared settings in
-<code>cmake/common.cmake</code>, and an independently configurable
-<code>tools/simulator/</code> subproject. The frontend has no
+<p class="lead">CMake &ge; 3.20: the top-level <code>CMakeLists.txt</code> sets up the
+project and finds dependencies, then adds <code>src/</code>, <code>tools/</code> and
+<code>test/</code>, each of which lists its own sources and target options. Shared
+settings live in <code>cmake/common.cmake</code>; <code>tools/simulator/</code> is
+independently configurable. The frontend has no
 build step at all.</p>
 
 <h2 id="targets">Target map</h2>
@@ -95,8 +97,6 @@ executables; INTERFACE targets carry headers and flags.</figcaption>
   <li>Homebrew handling: appends <code>$HOMEBREW_PREFIX</code> (or
   <code>/home/linuxbrew/.linuxbrew</code>) to <code>CMAKE_PREFIX_PATH</code> — this is
   why Bazzite/Silverblue builds usually work with no extra flags.</li>
-  <li><code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG mode (required by
-  CMake 4-era Boost packages), header-only usage.</li>
   <li>INTERFACE targets: <code>olv_proto</code> (adds <code>include</code>),
   <code>olv_test_support</code> (adds <code>test/support</code>),
   <code>olv_warnings</code> (<code>-Wall -Wextra -Wpedantic</code> [+
@@ -113,19 +113,31 @@ a FATAL_ERROR that includes the install instructions.</p>
 
 <h2 id="subprojects">Subproject layout</h2>
 <ul>
-  <li><strong>CMakeLists.txt</strong> — static libs <code>olv_core</code> and
-  <code>olv_net</code>, the <code>olv_backend</code> executable, the
-  <code>olv_ws_probe</code> tool, and <code>olv_backend_tests</code>
-  (registered as CTest <code>backend_unit</code>).</li>
+  <li><strong>CMakeLists.txt</strong> (top level) — <code>project()</code>, includes
+  <code>cmake/common.cmake</code>, finds dependencies (<code>Threads</code>,
+  <code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG mode, required by
+  CMake 4-era Boost packages, header-only usage — and
+  <code>cmake/open_dis_cpp.cmake</code>), adds the subdirectories below, and includes
+  <code>cmake/tooling.cmake</code> (<code>format</code>/<code>format-check</code>/<code>lint</code>).</li>
+  <li><strong>src/CMakeLists.txt</strong> — static libs <code>olv_core</code> and
+  <code>olv_net</code>, and the <code>olv_backend</code> executable.</li>
+  <li><strong>tools/CMakeLists.txt</strong> — the <code>olv_ws_probe</code> tool, then
+  <code>add_subdirectory(simulator)</code>.</li>
+  <li><strong>test/CMakeLists.txt</strong> (only when <code>OLV_BUILD_TESTS</code>) —
+  <code>olv_backend_tests</code> (CTest <code>backend_unit</code>) and the
+  <code>integration</code> test (UNIX only): runs <code>scripts/integration_test.sh</code>
+  with the three target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
+  <li><code>olv_backend</code>, <code>olv_ws_probe</code> and <code>olv_backend_tests</code>
+  set <code>RUNTIME_OUTPUT_DIRECTORY</code> to the build root, so they still land at
+  <code>build/olv_backend</code> etc.; <code>olv_sim</code> lands in
+  <code>build/tools/simulator/</code>.</li>
   <li><strong>tools/simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
   (everything except <code>main.cpp</code>, so tests link the real code),
   <code>olv_sim</code>, and <code>olv_sim_tests</code> (CTest <code>sim_unit</code>).</li>
   <li><code>tools/simulator/CMakeLists.txt</code> begins with an
   <code>if(NOT DEFINED PROJECT_NAME)</code> standalone header — you can configure the
-  simulator in isolation: <code>cmake -S tools/simulator -B build-sim</code>.</li>
-  <li><strong>Top level</strong> additionally registers the <code>integration</code>
-  test (UNIX only): runs <code>scripts/integration_test.sh</code> with the three
-  target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
+  simulator in isolation: <code>cmake -S tools/simulator -B build-sim</code>; in that
+  mode it finds Threads, Boost and open-dis-cpp itself.</li>
 </ul>
 
 <h2 id="flags">Compiler options</h2>

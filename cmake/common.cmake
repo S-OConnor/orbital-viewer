@@ -1,6 +1,7 @@
-# common.cmake — shared toolchain setup for the top-level build (backend) and
-# for standalone configuration of tools/simulator/ (see docs/PLAN.md §3,
-# "Independent buildability").
+# common.cmake — shared toolchain setup (C++ standard, build type, options,
+# shared INTERFACE targets) for the top-level build and for standalone
+# configuration of tools/simulator/ (see docs/PLAN.md §3, "Independent
+# buildability"). Dependencies are found by the including CMakeLists.txt.
 
 if(DEFINED OLV_COMMON_INCLUDED)
   return()
@@ -28,11 +29,6 @@ if(DEFINED ENV{HOMEBREW_PREFIX} AND EXISTS "$ENV{HOMEBREW_PREFIX}")
 elseif(EXISTS "/home/linuxbrew/.linuxbrew")
   list(APPEND CMAKE_PREFIX_PATH "/home/linuxbrew/.linuxbrew")
 endif()
-
-find_package(Threads REQUIRED)
-# CONFIG mode: FindBoost was removed in CMake 4; BoostConfig.cmake ships with
-# Boost >= 1.70 on all supported platforms. Header-only usage (Asio/Beast).
-find_package(Boost 1.74 REQUIRED CONFIG)
 
 get_filename_component(OLV_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 

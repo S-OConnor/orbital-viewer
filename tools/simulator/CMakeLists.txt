@@ -4,11 +4,14 @@ if(NOT DEFINED PROJECT_NAME)
   cmake_minimum_required(VERSION 3.20)
   project(olv_sim_standalone LANGUAGES CXX)
   include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/common.cmake")
-endif()
 
-# open-dis-cpp: DIS Entity State PDU encode for `--protocol dis`
-# (docs/features/FEATURE_INPUT_SOURCES.md Phase 3); target shared with the backend.
-include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/open_dis_cpp.cmake")
+  # Dependencies (the top-level CMakeLists.txt finds these in a full build).
+  find_package(Threads REQUIRED)
+  find_package(Boost 1.74 REQUIRED CONFIG)
+  # open-dis-cpp: DIS Entity State PDU encode for `--protocol dis`
+  # (docs/features/FEATURE_INPUT_SOURCES.md Phase 3).
+  include("${CMAKE_CURRENT_LIST_DIR}/../../cmake/open_dis_cpp.cmake")
+endif()
 
 # CSV parsing, frame building, and synthetic generation are pure (no Boost);
 # only main.cpp touches the network. open_dis_cpp is PUBLIC so the DIS-builder

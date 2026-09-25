@@ -97,8 +97,11 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 
 ```
 .
-├── CMakeLists.txt                  # top-level; format/lint targets; integration test
-├── cmake/common.cmake              # shared toolchain/warnings/Boost/olv_proto setup
+├── CMakeLists.txt                  # top level: project, find_package, add_subdirectory(src/tools/test)
+├── cmake/
+│   ├── common.cmake                # shared toolchain/options/warnings/olv_proto setup
+│   ├── open_dis_cpp.cmake          # locates installed open-dis-cpp (imported target)
+│   └── tooling.cmake               # format / format-check / lint targets
 ├── README.md
 ├── LICENSE                         # MIT
 ├── THIRD_PARTY.md                  # dependency & license report
@@ -113,7 +116,6 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 ├── config/
 │   ├── backend.toml                # commented example (olv_backend --config …)
 │   └── simulator.toml              # commented example (olv_sim --config …)
-├── CMakeLists.txt                  # top level: backend targets + tools/simulator
 ├── include/olv/                    # backend headers (olv_backend)
 │   ├── protocol.hpp                # single source of truth for wire format
 │   ├── toml.hpp                    # first-party TOML-subset parser (shared)
@@ -126,9 +128,12 @@ keeps the backend simple (see PROTOCOL_UDP.md).
 │   ├── ws_server.hpp               # Beast acceptor/sessions/broadcast timer
 │   └── config.hpp                  # TOML config file + CLI parsing
 ├── src/                            # backend sources (*.cpp for the above + main.cpp)
+│   └── CMakeLists.txt              # olv_core, olv_net, olv_backend
 ├── test/                           # backend unit tests (custom mini-framework)
+│   ├── CMakeLists.txt              # olv_backend_tests + integration CTest
 │   └── support/olv_test.hpp        # minimal shared C++ test framework
 ├── tools/
+│   ├── CMakeLists.txt              # olv_ws_probe; add_subdirectory(simulator)
 │   ├── ws_probe.cpp                # WS client used by the integration test
 │   └── simulator/
 │       ├── CMakeLists.txt          # standalone-configurable
@@ -153,6 +158,11 @@ keeps the backend simple (see PROTOCOL_UDP.md).
     ├── Containerfile.frontend      # static file server
     └── compose.yaml                # podman-compose / docker compose
 ```
+
+**CMake layout:** the top-level `CMakeLists.txt` only sets up the project
+(`cmake/common.cmake`), finds dependencies (Threads, Boost, open-dis-cpp) and adds
+the `src/`, `tools/` and (when `OLV_BUILD_TESTS`) `test/` subdirectories; each
+subdirectory lists its own sources and per-target options.
 
 **Independent buildability:** the backend is the top-level project (`cmake -S .`);
 `tools/simulator/CMakeLists.txt` carries an `if(NOT DEFINED PROJECT_NAME)`

@@ -28,14 +28,17 @@ for an engineer's first day on the project.</p>
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td><code>CMakeLists.txt</code></td><td>Top-level build: includes
-        <code>cmake/common.cmake</code>, defines the backend targets, adds
-        <code>tools/simulator/</code>, registers the <code>integration</code> CTest (UNIX only),
-        defines <code>format</code>/<code>format-check</code>/<code>lint</code> targets.</td></tr>
+    <tr><td><code>CMakeLists.txt</code></td><td>Top-level build: declares the project,
+        includes <code>cmake/common.cmake</code>, finds the dependencies (Threads,
+        Boost &ge; 1.74 in CONFIG mode, open-dis-cpp), adds the <code>src/</code>,
+        <code>tools/</code> and (when <code>OLV_BUILD_TESTS</code>) <code>test/</code>
+        subdirectories, and includes <code>cmake/tooling.cmake</code>.</td></tr>
     <tr><td><code>cmake/common.cmake</code></td><td>Shared toolchain setup: C++20, Release
         default, <code>OLV_BUILD_TESTS</code>/<code>OLV_WERROR</code> options, Homebrew
-        prefix auto-detection, Boost &ge; 1.74 (CONFIG mode), and the INTERFACE targets
+        prefix auto-detection, and the INTERFACE targets
         <code>olv_proto</code>, <code>olv_test_support</code>, <code>olv_warnings</code>.</td></tr>
+    <tr><td><code>cmake/tooling.cmake</code></td><td><code>format</code>/<code>format-check</code>/<code>lint</code>
+        convenience targets (clang-format, cppcheck).</td></tr>
     <tr><td><code>cmake/open_dis_cpp.cmake</code></td><td>Locates the installed
         open-dis-cpp prefix and exposes the imported static target
         <code>open_dis_cpp</code> (headers marked SYSTEM).</td></tr>

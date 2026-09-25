@@ -369,7 +369,7 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 
 ```
 .
-├── CMakeLists.txt, cmake/               # build config (backend targets), format/lint targets
+├── CMakeLists.txt, cmake/               # project setup, dependencies, subdirs; format/lint targets
 ├── include/olv/                         # backend headers (C++20, Boost.Asio/Beast)
 ├── src/                                 # backend sources (olv_backend)
 ├── test/                                # backend unit tests + support/olv_test.hpp
