@@ -46,9 +46,9 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 │   └── tests/                      # node:test suites + validate_message.mjs
 ├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
-├── scripts/                        # run_all, integration test, SBOM, ...           
+├── scripts/                        # run_all, integration test, serve helpers, ...  
 ├── containers/                     # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
-└── sbom/                           # generated CycloneDX SBOMs (backend + frontend)
+└── sbom/                           # hand-maintained CycloneDX SBOMs (backend + frontend)
 </code></pre>
 <p>Per-directory detail: <a href="../developer-guide/repo-structure.html">Developer
 Guide: Repository Structure</a>.</p>
@@ -123,10 +123,10 @@ SHA-256 hashes are recorded in <code>frontend/assets/README.md</code> and tracke
 <code>file</code>-type components in the frontend SBOM. The ~200-entry bright-star
 catalog is first-party data hardcoded in <code>frontend/js/star_catalog.js</code>, not
 an asset file.</p>
-<p><strong>SBOMs:</strong> <code>python3 scripts/gen_sbom.py --out sbom/</code> produces
-CycloneDX 1.5 JSON for the backend (records the detected Boost version and the
-open-dis-cpp pin) and the frontend (zero code components + the two image assets with
-runtime-computed SHA-256). Strategy: <code>docs/SBOM.md</code>; full license table:
+<p><strong>SBOMs:</strong> <code>sbom/</code> holds hand-maintained, committed
+CycloneDX 1.5 JSON for the backend (the <code>olv-builder</code> image's Boost version
+and the open-dis-cpp pin) and the frontend (zero code components + the two image
+assets with their SHA-256). Strategy: <code>docs/SBOM.md</code>; full license table:
 <code>THIRD_PARTY.md</code>.</p>
 
 <h2 id="air-gap">Air-gap posture</h2>

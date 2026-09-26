@@ -38,7 +38,11 @@ component) landed with the Phase 2 code.
 > `containers/Dockerfile.builder` (same pin, sha256 check, and upstream CMake
 > flags; `OLV_OPEN_DIS_URL` survives as a build arg, `OLV_OPEN_DIS_TARBALL`
 > and `--prefix`/`--src` are gone), so every mention of the script is
-> historical too.
+> historical too. Likewise `scripts/gen_sbom.py` was removed: `sbom/*.cdx.json`
+> are now hand-maintained, committed files (see `docs/SBOM.md`), so every
+> mention of the generator, `build_backend_bom()`, or "regenerating" the SBOM
+> below is historical — the open-dis-cpp component lives directly in
+> `sbom/backend.cdx.json`.
 Companion to docs/PLAN.md (backend threading model, §2/§10) and
 docs/PROTOCOL_UDP.md (the existing OLV1 wire format, unchanged by this work).
 

@@ -28,8 +28,8 @@ repo's tooling supports today, and the assumptions involved.</p>
 <ul>
   <li><strong>Project version:</strong> <code>0.1.0</code>, declared in the top-level
   <code>CMakeLists.txt</code> (<code>project(orbital_los_viewer VERSION 0.1.0)</code>)
-  and mirrored as <code>OLV_VERSION</code> in <code>scripts/gen_sbom.py</code> and the
-  frontend's About text. These three must be bumped together.</li>
+  and mirrored as <code>metadata.component.version</code> in both
+  <code>sbom/*.cdx.json</code> files and the frontend's About text. These three must be bumped together.</li>
   <li><strong>Protocol versions</strong> are independent of the project version:
   OLV1 wire version 1 (<code>kVersion</code> in <code>protocol.hpp</code>) and WS
   <code>protocolVersion: 1</code>. They bump only on breaking layout changes;
@@ -39,7 +39,7 @@ repo's tooling supports today, and the assumptions involved.</p>
   <li><strong>Dependency pins:</strong> open-dis-cpp v1.2.0 is pinned by URL + SHA-256
   (<code>OPEN_DIS_VERSION</code>/<code>OPEN_DIS_SHA256</code> build args) in
   <code>containers/Dockerfile.builder</code> and echoed in
-  <code>gen_sbom.py</code>/<code>THIRD_PARTY.md</code> — a bump touches all three.</li>
+  <code>sbom/backend.cdx.json</code>/<code>THIRD_PARTY.md</code> — a bump touches all three.</li>
 </ul>
 <div class="note"><strong>Assumption:</strong> no git tags or changelog file exist in
 the repository; the scheme below (semver tags + generated changelog) is the
@@ -55,11 +55,12 @@ ctest --test-dir build-docker --output-on-failure
 node --test "frontend/tests/*.test.mjs"   # host
 </code></pre></li>
   <li><strong>Bump the version</strong> in <code>CMakeLists.txt</code>,
-  <code>scripts/gen_sbom.py</code> (<code>OLV_VERSION</code>), and the About text;
-  reconfigure and rebuild.</li>
+  <code>sbom/*.cdx.json</code> (<code>metadata.component.version</code>, plus
+  <code>metadata.timestamp</code>), and the About text; reconfigure and rebuild.
+  Check the SBOM component versions still match the <code>olv-builder</code> image
+  (see <code>docs/SBOM.md</code>).</li>
   <li><strong>Regenerate artifacts:</strong>
-<pre><code class="language-sh">python3 scripts/gen_sbom.py --out sbom/     # SBOMs record the new version
-python3 scripts/make_example_csv.py         # only if the CSV contract changed
+<pre><code class="language-sh">python3 scripts/make_example_csv.py         # only if the CSV contract changed
 </code></pre></li>
   <li><strong>Changelog:</strong> generate from history since the last tag
   (<code>git log --oneline vPREV..HEAD</code>) and curate by area
@@ -97,7 +98,7 @@ podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
   <code>make install</code>, .deb/.rpm, or registry push script — distribution is
   manual or site-specific.</li>
   <li><strong>Ship the SBOMs</strong> (<code>sbom/*.cdx.json</code>) alongside
-  artifacts; they are deterministic except for their timestamp.</li>
+  artifacts; they are committed, so the tagged commit's copies are the release's.</li>
   <li><strong>Air-gapped consumers</strong> additionally need the pushed
   <code>olv-builder</code> image and the mirrored runtime base images — include (or
   point at) them in the release bundle for such sites (see
@@ -120,7 +121,7 @@ podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
 
 <h2 id="future-ci">Toward automated releases</h2>
 <p>Everything above is scriptable today: configure + build, the three test commands,
-SBOM generation, image builds, and the container smoke test
+image builds, and the container smoke test
 (<code>run_all.sh</code> already waits for readiness and exits non-zero on failure).
 A CI pipeline that runs the verification block on every commit and the full
 artifact build on tags would close the repo's main infrastructure gap — see

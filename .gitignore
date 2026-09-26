@@ -4,9 +4,6 @@ build*/
 # Logs
 *.log
 
-# Generated SBOMs (regenerate with scripts/gen_sbom.py)
-sbom/
-
 # Node.js (dev-only test runner deps, if any get installed)
 node_modules/
 

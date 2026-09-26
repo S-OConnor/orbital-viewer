@@ -1,0 +1,81 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:c6f62613-cf87-52e5-a44f-675da01bca88",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-09-26T10:02:14Z",
+    "component": {
+      "type": "application",
+      "name": "olv-frontend",
+      "version": "0.1.0",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ]
+    },
+    "properties": [
+      {
+        "name": "olv:notes",
+        "value": "no third-party runtime code dependencies; Node.js is a development-only test runner (node --test frontend/tests/). Two public-domain NASA image assets are vendored as static files (frontend/assets/) -- see the 'file'-type components below, not third-party code."
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "file",
+      "name": "frontend/assets/earth_day.jpg",
+      "version": "2004.12",
+      "description": "NASA Blue Marble: Next Generation. Source: https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg",
+      "licenses": [
+        {
+          "license": {
+            "name": "Public domain (NASA Media Usage Guidelines)",
+            "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a9f0088972dee0254610af851c4d6838ca3f2cf79176987e0a5713e2c15ec042"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://eoimages.gsfc.nasa.gov/images/imagerecords/73000/73909/world.topo.bathy.200412.3x5400x2700.jpg"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "name": "frontend/assets/earth_night.jpg",
+      "version": "2012",
+      "description": "NASA Black Marble / Suomi NPP VIIRS -- \"Earth at Night 2012\". Source: https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/dnb_land_ocean_ice.2012.3600x1800.jpg",
+      "licenses": [
+        {
+          "license": {
+            "name": "Public domain (NASA Media Usage Guidelines)",
+            "url": "https://www.nasa.gov/nasa-brand-center/images-and-media/"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "373e5a08c9f378a2ce6320214a613148e4b1e3946b3f39a516c9093b76cb7124"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://eoimages.gsfc.nasa.gov/images/imagerecords/79000/79765/dnb_land_ocean_ice.2012.3600x1800.jpg"
+        }
+      ]
+    }
+  ]
+}

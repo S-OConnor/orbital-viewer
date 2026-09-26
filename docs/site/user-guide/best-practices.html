@@ -78,8 +78,8 @@ Treat that as a hard boundary, not a default to harden later.</div>
   collection.</li>
   <li><strong>Exercise networks: set <code>dis_exercise_id</code>.</strong> On shared DIS
   segments this filters foreign exercises at the door.</li>
-  <li><strong>Supply chain:</strong> regenerate SBOMs (<code>scripts/gen_sbom.py</code>)
-  when dependencies change and feed them to your scanner (CycloneDX 1.5 —
+  <li><strong>Supply chain:</strong> keep the committed SBOMs (<code>sbom/*.cdx.json</code>)
+  current when dependencies change and feed them to your scanner (CycloneDX 1.5 —
   Grype/Trivy/Dependency-Track all accept it). The open-dis tarball is
   sha256-pinned; keep it that way in mirrors.</li>
 </ul>

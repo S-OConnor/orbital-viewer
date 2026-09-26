@@ -238,8 +238,8 @@ for "one more compiled dependency without breaking the air gap":</p>
   instructions when missing.</li>
   <li>Run the installer in the Containerfile's build stage (before
   <code>COPY . .</code>, for layer caching) and document the air-gap build args.</li>
-  <li>Update <code>THIRD_PARTY.md</code>, <code>scripts/gen_sbom.py</code> (new
-  component + pinned version), and regenerate <code>sbom/</code>.</li>
+  <li>Update <code>THIRD_PARTY.md</code> and add the new component (pinned version,
+  license, purl) to <code>sbom/backend.cdx.json</code>.</li>
 </ol>
 
 <h2 id="output-interfaces">7. Output interfaces (new consumers)</h2>

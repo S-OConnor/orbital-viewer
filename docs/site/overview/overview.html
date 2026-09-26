@@ -87,7 +87,7 @@ end-to-end.</em></p>
             reference for a lean C++/WebGL pipeline.</td>
         <td><a href="../developer-guide/repo-structure.html">Developer Guide</a></td></tr>
     <tr><td>Technical evaluators</td>
-        <td>Assess licensing, dependencies, and security posture (SBOMs are generated
+        <td>Assess licensing, dependencies, and security posture (SBOMs are maintained
             in CycloneDX 1.5).</td>
         <td><a href="repository.html#third-party">Third-party &amp; SBOM</a></td></tr>
   </tbody>
@@ -117,7 +117,7 @@ end-to-end.</em></p>
   deterministic seeded synthetic generation for load testing, over either wire
   protocol.</li>
   <li><strong>Operations tooling</strong>: one-command containerized bring-up
-  (<code>scripts/run_all.sh</code>), plain-text audit log, CycloneDX SBOM generation,
+  (<code>scripts/run_all.sh</code>), plain-text audit log, CycloneDX SBOMs,
   end-to-end integration test.</li>
 </ul>
 
@@ -182,8 +182,8 @@ and the <a href="../developer-guide/architecture.html">detailed architecture</a>
   line. The frontend is deliberately lenient — a bad <code>config.toml</code> warns
   and falls back to defaults so a deployment mistake never bricks the page.</li>
   <li><strong>Determinism.</strong> Synthetic data generation is seeded (never
-  time-based), the example CSV is regenerable from a fixed seed, and SBOM serial
-  numbers are content-derived — runs and artifacts are reproducible.</li>
+  time-based), and the example CSV is regenerable from a fixed seed — runs and artifacts
+  are reproducible.</li>
 </ul>
 
 <h2 id="workflows">Typical workflows</h2>

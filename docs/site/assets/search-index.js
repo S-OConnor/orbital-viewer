@@ -1144,13 +1144,6 @@ window.SEARCH_INDEX = [
 {
 "page": "reference/cli",
 "title": "Command-Line Reference",
-"section": "scripts/gen_sbom.py",
-"anchor": "gen-sbom",
-"text": "Command-Line Reference scripts/gen_sbom.py"
-},
-{
-"page": "reference/cli",
-"title": "Command-Line Reference",
 "section": "scripts/make_example_csv.py",
 "anchor": "make-csv",
 "text": "Command-Line Reference scripts/make_example_csv.py"

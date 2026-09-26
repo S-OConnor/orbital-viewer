@@ -121,12 +121,12 @@ one state frame with a non-null satellite.</p>
 <h2 id="sbom">SBOM files (<code>sbom/*.cdx.json</code>)</h2>
 <ul>
   <li>CycloneDX 1.5 JSON, one per shippable artifact:
-  <code>backend.cdx.json</code> (olv_backend + olv_sim; components: Boost with
-  auto-detected version, open-dis-cpp pinned v1.2.0) and
+  <code>backend.cdx.json</code> (olv_backend + olv_sim; components: Boost at the
+  <code>olv-builder</code> image's version, open-dis-cpp pinned v1.2.0) and
   <code>frontend.cdx.json</code> (zero code components; two <code>file</code>-type
-  components for the NASA textures with runtime-computed SHA-256).</li>
-  <li>Deterministic <code>serialNumber</code> (uuid5 over fixed namespace); only the
-  <code>timestamp</code> field varies between runs.</li>
+  components for the NASA textures with their SHA-256).</li>
+  <li>Hand-maintained and committed; fixed <code>serialNumber</code>,
+  <code>metadata.timestamp</code> bumped on each edit (see <code>docs/SBOM.md</code>).</li>
   <li>Consumable by Grype, Trivy, Dependency-Track, etc.</li>
 </ul>
 

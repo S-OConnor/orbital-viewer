@@ -179,9 +179,6 @@ grep -c "dropped" soak.log        # expect 0
 # Validate captured frames with the real frontend parser (Node >= 18)
 node frontend/tests/validate_message.mjs frames.jsonl --min-objects 100
 
-# Regenerate SBOMs after a dependency change
-python3 scripts/gen_sbom.py --out sbom/
-
 # Stop everything containerized + stray processes
 scripts/cleanup.sh
 </code></pre>

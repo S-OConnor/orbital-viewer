@@ -75,8 +75,8 @@ Optional, for the full development workflow:
 - **Node.js ≥ 18** — runs the frontend logic tests (`node --test "frontend/tests/*.test.mjs"`)
   and the integration test's frontend-parser check. Runs on the host; never
   required to serve or run the frontend itself.
-- **Python 3** — runs `scripts/gen_sbom.py`, `scripts/serve_frontend.sh`,
-  and `scripts/make_example_csv.py` (stdlib only, no pip packages). Runs on
+- **Python 3** — runs `scripts/serve_frontend.sh` and
+  `scripts/make_example_csv.py` (stdlib only, no pip packages). Runs on
   the host.
 - **cppcheck**, **clang-format** — optional lint/format tooling (see §8);
   not included in the `olv-builder` image today, so the `lint`/`format`
@@ -122,10 +122,9 @@ scripts/serve_frontend.sh 8000                            # then open http://loc
 ./build-docker/tools/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
 
 # Lint / format (inside the container; add cppcheck/clang-format to a derived
-# image, or run natively, to make these do more than no-op) / SBOM (host):
+# image, or run natively, to make these do more than no-op):
 docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
   sh -c 'cmake --build build-docker --target format lint'
-python3 scripts/gen_sbom.py --out sbom/
 ```
 
 Binaries land at `build-docker/olv_backend`, `build-docker/olv_ws_probe` (both
@@ -314,16 +313,13 @@ the build context excludes host artifacts via `.dockerignore`.
 
 ## SBOM & licenses
 
-```sh
-python3 scripts/gen_sbom.py --out sbom/
-```
-
-Generates CycloneDX 1.5 SBOMs for the backend (`sbom/backend.cdx.json`,
-records the detected Boost version) and the frontend
-(`sbom/frontend.cdx.json`, zero third-party *code* components, plus two
-`file`-type components for the vendored public-domain NASA image assets),
-plus a one-line license summary per component. Full strategy and sample
-output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
+Hand-maintained CycloneDX 1.5 SBOMs are committed in `sbom/`: the backend
+(`sbom/backend.cdx.json` — Boost and open-dis-cpp at the versions in the
+`olv-builder` image) and the frontend (`sbom/frontend.cdx.json`, zero
+third-party *code* components, plus two `file`-type components for the
+vendored public-domain NASA image assets). Edit them directly when a
+dependency, version, or asset changes. Contents and update checklist:
+[`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 [`THIRD_PARTY.md`](THIRD_PARTY.md).
 
 ## Security scope
@@ -393,7 +389,7 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 ├── frontend/                            # plain HTML/CSS/JS, no frameworks
 ├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                              # commented example backend.toml / simulator.toml
-├── scripts/                             # integration test, sbom gen, run/serve helpers
+├── scripts/                             # integration test, run/serve helpers         
 └── containers/                          # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
 ```
 

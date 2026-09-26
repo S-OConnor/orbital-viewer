@@ -11,12 +11,12 @@ two public-domain NASA image assets — see
 
 | Dependency | Role | License | Notes |
 |---|---|---|---|
-| [Boost](https://www.boost.org/) ≥ 1.74 | Runtime (header-only) | [BSL-1.0](https://www.boost.org/LICENSE_1_0.txt) | Used by `olv_backend` and `olv_sim` for Asio (UDP/TCP), Beast (WebSocket/HTTP framing), and core headers. Header-only usage only — no compiled Boost libraries are linked. Not vendored; expected to be provided by the system or a toolchain package manager (see README §4 Prerequisites). Exact installed version is recorded in `sbom/backend.cdx.json` by `scripts/gen_sbom.py`. |
+| [Boost](https://www.boost.org/) ≥ 1.74 | Runtime (header-only) | [BSL-1.0](https://www.boost.org/LICENSE_1_0.txt) | Used by `olv_backend` and `olv_sim` for Asio (UDP/TCP), Beast (WebSocket/HTTP framing), and core headers. Header-only usage only — no compiled Boost libraries are linked. Not vendored; expected to be provided by the system or a toolchain package manager (see README §4 Prerequisites). The version the shipped binaries are built against (the `olv-builder` image's `boost-devel`) is recorded in `sbom/backend.cdx.json`. |
 | [open-dis-cpp](https://github.com/open-dis/open-dis-cpp) v1.2.0 | Runtime (installed prefix, static) | [BSD-2-Clause](https://github.com/open-dis/open-dis-cpp/blob/v1.2.0/LICENSE) | IEEE 1278.1 DIS Entity State PDUs: decode for `olv_backend --input-mode dis`, encode for `olv_sim --protocol dis` (docs/PROTOCOL_DIS.md, docs/features/FEATURE_INPUT_SOURCES.md). **Not vendored**: [`containers/Dockerfile.builder`](containers/Dockerfile.builder) fetches the pinned v1.2.0 tarball (sha256-verified) and builds it with upstream's own CMake project (static, no local modifications), installing `include/dis6`+`include/dis7`, `lib64/libOpenDIS6.a`+`libOpenDIS7.a` (DIS7 is built only because upstream's package config requires it; only DIS6 is used), a `lib64/cmake/OpenDIS/` package config, and LICENSE/provenance into `/usr/local` of the `olv-builder` build-environment image (native builds replicate that step into a prefix of their choice). The project consumes it via `find_package(OpenDIS CONFIG)` / `OpenDIS::OpenDIS6`, which CMake finds automatically in `/usr/local`, and in `~/.local` when `~/.local/bin` is on `PATH`; other prefixes need `-DCMAKE_PREFIX_PATH=DIR`. The BSD-2-Clause text + provenance are installed at `/usr/local/share/doc/open-dis-cpp/`. Recorded as a `library` component in `sbom/backend.cdx.json`. |
 | CMake ≥ 3.20 | Build-only | [BSD-3-Clause](https://cmake.org/licensing/) | Build system generator; not shipped with the built binaries. |
 | GCC ≥ 12 or Clang ≥ 14 | Build-only | [GPLv3](https://gcc.gnu.org/) / [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | C++20 compiler; not shipped with the built binaries. |
 | Node.js ≥ 18 | Dev/test-only | [MIT](https://github.com/nodejs/node/blob/main/LICENSE) | Runs `node --test frontend/tests/` and the integration test's frontend-parser check. Never required at runtime — the frontend is plain, static HTML/CSS/JS served by any HTTP server (see `scripts/serve_frontend.sh`, `containers/Containerfile.frontend`). |
-| Python 3 | Scripts-only | [PSF License](https://docs.python.org/3/license.html) | Used only by repo scripts (`scripts/gen_sbom.py`, `scripts/serve_frontend.sh`'s `http.server`, `scripts/make_example_csv.py`) — stdlib only, no pip packages. Never a runtime dependency of `olv_backend` or `olv_sim`. |
+| Python 3 | Scripts-only | [PSF License](https://docs.python.org/3/license.html) | Used only by repo scripts (`scripts/serve_frontend.sh`'s `http.server`, `scripts/make_example_csv.py`) — stdlib only, no pip packages. Never a runtime dependency of `olv_backend` or `olv_sim`. |
 | clang-format (optional) | Dev-only | [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | `cmake --build build --target format` / `format-check`; no-op with a notice if not installed. |
 | clang-tidy (optional) | Dev-only | [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | Not wired into a CMake target (needs `compile_commands.json`); run manually, see `.clang-tidy` / README §8. |
 | cppcheck (optional) | Dev-only | [GPLv3](https://cppcheck.sourceforge.io/) | `cmake --build build --target lint`; no-op with a notice if not installed. |
@@ -49,16 +49,12 @@ hashes) in the frontend SBOM — see `docs/SBOM.md`.
   (`node --test frontend/tests/`); it is never required to serve or run the
   frontend.
 
-## Regenerating the dependency/license report (SBOM)
+## Dependency/license report (SBOM)
 
-```sh
-python3 scripts/gen_sbom.py --out sbom/
-```
-
-Generates `sbom/backend.cdx.json` and `sbom/frontend.cdx.json` (CycloneDX
-1.5) plus a one-line license summary per component on stdout. See
-`docs/SBOM.md` for the full strategy, sample output, and how to feed these
-BOMs to a vulnerability scanner.
+`sbom/backend.cdx.json` and `sbom/frontend.cdx.json` (CycloneDX 1.5) are
+hand-maintained and committed; update them together with this table. See
+`docs/SBOM.md` for their contents, the update checklist, and how to feed
+them to a vulnerability scanner.
 
 ## Air-gap notes
 

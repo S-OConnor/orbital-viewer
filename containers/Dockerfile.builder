@@ -75,7 +75,7 @@ RUN dnf -y install --setopt=install_weak_deps=False --nodocs epel-release && \
 #   lib64/cmake/OpenDIS/             CMake package config
 #   share/doc/open-dis-cpp/          LICENSE (BSD-2-Clause) + PROVENANCE
 # A version bump changes OPEN_DIS_VERSION and OPEN_DIS_SHA256 together (and
-# OPEN_DIS_VERSION in scripts/gen_sbom.py + THIRD_PARTY.md).
+# the open-dis-cpp component in sbom/backend.cdx.json + THIRD_PARTY.md).
 ARG OPEN_DIS_VERSION=1.2.0
 ARG OPEN_DIS_SHA256=aa1b9b5e5f00e5b8819c111f0a5a0e56266c7ccc0ec9b9f5b9d33f7721438216
 ARG OLV_OPEN_DIS_URL=

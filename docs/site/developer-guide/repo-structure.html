@@ -159,13 +159,13 @@ for an engineer's first day on the project.</p>
         conflict; the responsible source file is named in each doc).</td></tr>
     <tr><td><code>docs/features/</code></td><td>Per-feature frozen design specs:
         FEATURE_INPUT_SOURCES.md, FEATURE_SATVIEW.md (v0.3), FEATURE_SKY.md (v0.4).</td></tr>
-    <tr><td><code>docs/SBOM.md</code></td><td>SBOM strategy and sample output.</td></tr>
+    <tr><td><code>docs/SBOM.md</code></td><td>SBOM contents, update checklist, and sample output.</td></tr>
     <tr><td><code>docs/site/</code></td><td>This documentation website.</td></tr>
     <tr><td><code>config/</code></td><td>Commented example TOML configs matching built-in
         defaults.</td></tr>
     <tr><td><code>scripts/</code></td><td><code>run_all.sh</code> (compose wrapper),
         <code>integration_test.sh</code>,
-        <code>gen_sbom.py</code>, <code>serve_frontend.sh</code>,
+        <code>serve_frontend.sh</code>,
         <code>make_example_csv.py</code>, <code>cleanup.sh</code>, <code>serve_docs.sh</code>.</td></tr>
     <tr><td><code>containers/</code></td><td><code>Dockerfile.builder</code> (the
         Rocky Linux 10.2 build-environment image: toolchain + Boost + open-dis-cpp,
@@ -175,8 +175,8 @@ for an engineer's first day on the project.</p>
         runtime), <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code>
         (four services incl. an opt-in <code>builder</code> profile, bridge network,
         port env vars).</td></tr>
-    <tr><td><code>sbom/</code></td><td>Generated CycloneDX 1.5 SBOMs (committed snapshots;
-        regenerate with <code>gen_sbom.py</code>).</td></tr>
+    <tr><td><code>sbom/</code></td><td>Hand-maintained CycloneDX 1.5 SBOMs (committed; edit
+        directly per <code>docs/SBOM.md</code>).</td></tr>
   </tbody>
 </table>
 </div>

@@ -45,7 +45,7 @@ inside the same build-environment image. Both are covered end to end below.</p>
   <tbody>
     <tr><td>Docker or Podman</td><td>—</td><td>everything — building, testing, and running (see above)</td></tr>
     <tr><td>Node.js (optional)</td><td>18</td><td>frontend logic tests + integration test's parser check only — runs on the host</td></tr>
-    <tr><td>Python 3 (optional)</td><td>3.x, stdlib only</td><td><code>gen_sbom.py</code>, <code>serve_frontend.sh</code>, <code>make_example_csv.py</code> — run on the host</td></tr>
+    <tr><td>Python 3 (optional)</td><td>3.x, stdlib only</td><td><code>serve_frontend.sh</code>, <code>make_example_csv.py</code> — run on the host</td></tr>
     <tr><td>cppcheck / clang-format (optional)</td><td>—</td><td><code>lint</code> / <code>format</code> targets; not in the <code>olv-builder</code> image today, so these no-op unless added or run natively</td></tr>
   </tbody>
 </table>
