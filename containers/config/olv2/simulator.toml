@@ -1,0 +1,25 @@
+# Container simulator config for input mode "olv2" — mounted at
+# /app/simulator.toml by containers/compose.yaml when scripts/run_all.sh
+# --input olv2 --sim is used (full contract: tools/simulator/src/sim_config.hpp;
+# annotated defaults: config/simulator.toml). Replays the example mission
+# baked into the image at /app/data to the backend service on the internal
+# compose network.
+
+[target]
+host = "backend"
+port = 47002
+
+[source]
+mode = "csv"
+csv_path = "/app/data/example_mission.csv"
+loop = true
+
+[send]
+rate_hz = 1.0
+protocol = "olv2"
+# 5 points per datagram at 1 Hz = one batch every 5 s, well under the
+# backend's 15 s expiry (tracks would blink out between batches otherwise).
+olv2_points = 5
+
+[output]
+quiet = false

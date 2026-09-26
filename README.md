@@ -169,8 +169,16 @@ for real input. It auto-detects a compose engine (`podman compose`,
 `OLV_COMPOSE`), waits for the backend to accept connections, prints the URLs,
 then streams logs. A single Ctrl-C stops and removes the whole stack.
 
+`--input olv1|dis|olv2` (case-insensitive, default `olv1`; a bare `dis` etc.
+also works) picks the input source: the backend and simulator get the matching
+config pair from `containers/config/<mode>/`, and the backend's UDP port is
+that mode's default — 47000 (OLV1), 47001 (DIS), 47002 (OLV2) — published on
+the same host port unless `--udp-port` remaps it.
+
 ```sh
 scripts/run_all.sh --sim                   # also start the simulator
+scripts/run_all.sh --input dis --sim       # DIS mode: backend on 47001/udp, simulator sends DIS PDUs
+scripts/run_all.sh OLV2 --sim              # OLV2 mode: backend on 47002/udp, simulator sends OLV2 batches
 scripts/run_all.sh --build                 # run scripts/build_all.sh first, then start
 scripts/run_all.sh --http-port 9000        # remap a published host port (also --ws-port/--udp-port)
 ```
@@ -335,7 +343,7 @@ the toolchain image everything else compiles inside:
 ```sh
 scripts/build_all.sh   # steps 1-5 in order, stopping at the first failure
 # or, with readiness wait + one-Ctrl-C teardown, run the resulting images:
-scripts/run_all.sh [--sim]
+scripts/run_all.sh [--input olv1|dis|olv2] [--sim]
 ```
 
 `containers/compose.yaml` does not build the backend or simulator — it
@@ -347,6 +355,10 @@ with the repo root as context:
 ```sh
 podman compose -f containers/compose.yaml up                 # backend + frontend
 podman compose -f containers/compose.yaml --profile sim up   # + simulator
+# other input modes: OLV_INPUT picks containers/config/<mode>/, and the
+# backend's container-side UDP port must match that mode
+OLV_INPUT=dis OLV_UDP_CONTAINER_PORT=47001 OLV_UDP_PORT=47001 \
+  podman compose -f containers/compose.yaml --profile sim up
 ```
 
 Then open <http://localhost:8000/> — in the container image nginx serves the

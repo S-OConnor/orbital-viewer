@@ -1,0 +1,30 @@
+# Container backend config for input mode "dis" — mounted at /app/backend.toml
+# by containers/compose.yaml when scripts/run_all.sh --input dis is used
+# (normative schema: include/olv/config.hpp; annotated defaults:
+# config/backend.toml). Only the published host ports change with
+# run_all.sh's --*-port flags; these container-side ports stay fixed.
+
+[network]
+udp_bind = "0.0.0.0"
+udp_port = 47000
+ws_bind = "0.0.0.0"
+ws_port = 8765
+
+[broadcast]
+hz = 1.0
+
+[state]
+expiry_seconds = 15
+
+[input]
+mode = "dis"
+# DIS Entity State PDUs (docs/PROTOCOL_DIS.md) on their own port.
+dis_bind = "0.0.0.0"
+dis_port = 47001
+# Must match the simulator's [send] dis_satellite_entity_id.
+dis_satellite_entity_id = "1:1:1"
+
+[logging]
+file = "/tmp/olv_backend.log"
+level = "info"
+stderr = true

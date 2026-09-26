@@ -138,6 +138,8 @@ compiles anything itself. It waits until the backend accepts WebSocket connectio
 stops and removes the whole stack.</p>
 <pre><code class="language-sh">scripts/run_all.sh --sim                # also start the simulator (replays the
                                          # example mission on loop at 1 Hz)
+scripts/run_all.sh --input dis --sim    # DIS input: backend on 47001/udp, simulator sends DIS
+scripts/run_all.sh --input olv2 --sim   # OLV2 input: backend on 47002/udp, simulator sends OLV2
 scripts/run_all.sh --build              # run scripts/build_all.sh first, then start
 scripts/run_all.sh --http-port 9000     # remap published host ports
 scripts/run_all.sh --ws-port 9765 --udp-port 48000
@@ -145,6 +147,11 @@ scripts/run_all.sh --ws-port 9765 --udp-port 48000
 <div class="note">Without <code>--sim</code>, only the backend and frontend come up
 and the page waits for real input — the simulator sits behind the compose
 <code>sim</code> profile.</div>
+<p><code>--input olv1|dis|olv2</code> (default <code>olv1</code>) selects the input
+source. Each mode has a backend + simulator config pair in
+<code>containers/config/&lt;mode&gt;/</code>, mounted read-only into the
+containers; edit those files to change a mode's container settings (e.g. the DIS
+satellite entity ID, which must match on both sides).</p>
 
 <h3 id="manual-images">Building images manually</h3>
 <p>The five-step pipeline behind <code>scripts/run_all.sh --build</code>, spelled out

@@ -3,10 +3,19 @@
 # backend + frontend, plus the simulator with --sim. A single Ctrl-C tears
 # the whole stack down.
 #
-# Usage: scripts/run_all.sh [--sim] [--build] [--ws-port N] [--udp-port N]
-#                           [--http-port N] [-- <extra compose up args>]
+# Usage: scripts/run_all.sh [--input olv1|dis|olv2] [--sim] [--build]
+#                           [--ws-port N] [--udp-port N] [--http-port N]
+#                           [-- <extra compose up args>]
+#   --input   backend input source (case-insensitive; default olv1). Selects
+#             the config pair under containers/config/<mode>/ for the backend
+#             and simulator, and the UDP port the backend listens on:
+#               olv1  OLV1 UDP binary protocol      47000  docs/PROTOCOL_UDP.md
+#               dis   IEEE 1278.1 DIS Entity State  47001  docs/PROTOCOL_DIS.md
+#               olv2  OLV2 per-track batched        47002  docs/PROTOCOL_OLV2.md
+#             The mode may also be given as a bare argument (run_all.sh dis).
 #   --sim     also start the simulator (compose profile "sim"), replaying
-#             tools/simulator/data/example_mission.csv on loop at 1 Hz
+#             tools/simulator/data/example_mission.csv on loop at 1 Hz in the
+#             selected input mode's protocol
 #   --build   run scripts/build_all.sh first (build, test, package) and
 #             rebuild the frontend image
 #
@@ -14,9 +23,10 @@
 # (scripts/build_all.sh); this script never compiles anything unless --build
 # is given. Set OLV_BACKEND_IMAGE / OLV_SIM_IMAGE to run registry images.
 #
-# Defaults match docs/PLAN.md: WS 8765, UDP 47000, frontend http 8000. Only
-# the *published host* ports change with those flags; the containers' internal
-# ports stay fixed, so the internal simulator->backend wiring is unaffected.
+# Defaults match docs/PLAN.md: WS 8765, frontend http 8000, UDP = the input
+# mode's port above. Only the *published host* ports change with those flags;
+# the containers' internal ports stay fixed, so the internal simulator->backend
+# wiring is unaffected.
 #
 # Engine/compose detection lives in scripts/_common.sh (OLV_ENGINE and
 # OLV_COMPOSE override it).
@@ -27,14 +37,20 @@ source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Exported so compose.yaml's ${OLV_*_PORT} host-port mappings pick them up.
 export OLV_WS_PORT=8765
-export OLV_UDP_PORT=47000
+export OLV_UDP_PORT=""
 export OLV_HTTP_PORT=8000
+export OLV_INPUT=olv1
 WITH_SIM=0
 FORCE_BUILD=0
 EXTRA=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --input)     [ $# -ge 2 ] || olv_die "--input requires a value (olv1|dis|olv2)"
+                 OLV_INPUT="$2";     shift 2 ;;
+    --input=*)   OLV_INPUT="${1#*=}"; shift ;;
+    [oO][lL][vV][12]|[dD][iI][sS])
+                 OLV_INPUT="$1";     shift ;;
     --sim)       WITH_SIM=1;         shift ;;
     --ws-port)   OLV_WS_PORT="$2";   shift 2 ;;
     --udp-port)  OLV_UDP_PORT="$2";  shift 2 ;;
@@ -43,6 +59,22 @@ while [ $# -gt 0 ]; do
     --)          shift; EXTRA+=("$@"); break ;;
     *) olv_die "unknown argument: $1" ;;
   esac
+done
+
+# --- input mode -> config pair + backend UDP listen port -------------------
+OLV_INPUT="$(printf '%s' "${OLV_INPUT}" | tr '[:upper:]' '[:lower:]')"
+case "${OLV_INPUT}" in
+  olv1) OLV_UDP_CONTAINER_PORT=47000 ;;
+  dis)  OLV_UDP_CONTAINER_PORT=47001 ;;
+  olv2) OLV_UDP_CONTAINER_PORT=47002 ;;
+  *) olv_die "unknown input source '${OLV_INPUT}' (expected olv1, dis or olv2)" ;;
+esac
+export OLV_UDP_CONTAINER_PORT
+# The host port follows the mode unless --udp-port was given.
+[ -n "${OLV_UDP_PORT}" ] || OLV_UDP_PORT="${OLV_UDP_CONTAINER_PORT}"
+INPUT_CONFIG_DIR="${OLV_ROOT}/containers/config/${OLV_INPUT}"
+for f in backend.toml simulator.toml; do
+  [ -f "${INPUT_CONFIG_DIR}/${f}" ] || olv_die "missing ${INPUT_CONFIG_DIR}/${f}"
 done
 
 olv_find_compose ||
@@ -93,7 +125,7 @@ fi
 
 SERVICES="backend + frontend"
 [ "${WITH_SIM}" -eq 1 ] && SERVICES="${SERVICES} + simulator"
-echo "== starting ${SERVICES} (ws=${OLV_WS_PORT} udp=${OLV_UDP_PORT} http=${OLV_HTTP_PORT}) =="
+echo "== starting ${SERVICES} (input=${OLV_INPUT} ws=${OLV_WS_PORT} udp=${OLV_UDP_PORT} http=${OLV_HTTP_PORT}) =="
 if ! "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" "${UP_ARGS[@]}" "${EXTRA[@]}"; then
   echo "run_all.sh: 'compose up' failed" >&2
   exit 1
@@ -123,8 +155,9 @@ cat <<EOF
 Orbital LOS Viewer is running (containerized):
   Frontend:    http://localhost:${OLV_HTTP_PORT}/
   WebSocket:   ws://localhost:${OLV_WS_PORT}
+  Input:       ${OLV_INPUT} (containers/config/${OLV_INPUT}/)
   UDP (host):  127.0.0.1:${OLV_UDP_PORT}   (published; simulator->backend is internal)
-  Simulator:   $([ "${WITH_SIM}" -eq 1 ] && echo "replaying example_mission.csv" || echo "off (pass --sim to start it)")
+  Simulator:   $([ "${WITH_SIM}" -eq 1 ] && echo "replaying example_mission.csv as ${OLV_INPUT}" || echo "off (pass --sim to start it)")
 
 Open http://localhost:${OLV_HTTP_PORT}/ in a browser. The frontend defaults to
 WebSocket port 8765; if you passed --ws-port, set the new port under Settings.

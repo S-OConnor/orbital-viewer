@@ -1,0 +1,26 @@
+# Container simulator config for input mode "dis" — mounted at
+# /app/simulator.toml by containers/compose.yaml when scripts/run_all.sh
+# --input dis --sim is used (full contract: tools/simulator/src/sim_config.hpp;
+# annotated defaults: config/simulator.toml). Replays the example mission
+# baked into the image at /app/data to the backend service on the internal
+# compose network.
+
+[target]
+host = "backend"
+port = 47001
+
+[source]
+mode = "csv"
+csv_path = "/app/data/example_mission.csv"
+loop = true
+
+[send]
+rate_hz = 1.0
+protocol = "dis"
+# Must match the backend's [input] dis_satellite_entity_id.
+dis_exercise_id = 1
+dis_site = 1
+dis_satellite_entity_id = "1:1:1"
+
+[output]
+quiet = false

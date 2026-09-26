@@ -142,7 +142,7 @@ prebuilt/registry builder image). <code>--clean</code>/<code>--unit</code> pass
 through to <code>build.sh</code>/<code>test.sh</code>.</p>
 
 <h3 id="run-all">scripts/run_all.sh</h3>
-<pre><code class="language-sh">scripts/run_all.sh [--sim] [--ws-port N] [--udp-port N] [--http-port N] [--build] [-- &lt;extra compose args&gt;]
+<pre><code class="language-sh">scripts/run_all.sh [--input olv1|dis|olv2] [--sim] [--ws-port N] [--udp-port N] [--http-port N] [--build] [-- &lt;extra compose args&gt;]
 </code></pre>
 <p>Step 6: containerized bring-up — auto-detects the compose engine
 (<code>OLV_COMPOSE</code> &rarr; <code>podman compose</code> &rarr;
@@ -157,7 +157,14 @@ given, in which case it runs <code>scripts/build_all.sh</code> first (and adds
 compose-built frontend image). <code>--sim</code> adds the compose <code>sim</code>
 profile so the simulator container also comes up, replaying
 <code>example_mission.csv</code> on loop; without it only the backend and frontend
-start. Waits up to 30&nbsp;s for the WS port, prints URLs, streams logs.
+start. <code>--input</code> (case-insensitive, default <code>olv1</code>; a bare
+<code>olv1</code>/<code>dis</code>/<code>olv2</code> argument also works) selects the
+input source: it exports <code>OLV_INPUT</code>, so compose mounts
+<code>containers/config/&lt;mode&gt;/backend.toml</code> and
+<code>simulator.toml</code> into the two containers, and
+<code>OLV_UDP_CONTAINER_PORT</code> = the mode's backend UDP port (47000 OLV1, 47001
+DIS, 47002 OLV2), which is also the published host port unless
+<code>--udp-port</code> is given. Waits up to 30&nbsp;s for the WS port, prints URLs, streams logs.
 <kbd>Ctrl-C</kbd> (or any exit) tears the stack down (<code>--profile sim down</code>,
 so it's safe whether or not <code>--sim</code> was used). Exit 130/143 on INT/TERM; 1
 if the backend never comes up (dumps its logs first) or if a needed local image is

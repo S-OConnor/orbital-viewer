@@ -123,7 +123,9 @@ defaults.</p>
   <tbody>
     <tr><td><code>OLV_HTTP_PORT</code></td><td><code>compose.yaml</code> / <code>run_all.sh</code></td><td><code>8000</code></td><td>published host port &rarr; frontend container :80</td></tr>
     <tr><td><code>OLV_WS_PORT</code></td><td>same</td><td><code>8765</code></td><td>published host port &rarr; backend :8765</td></tr>
-    <tr><td><code>OLV_UDP_PORT</code></td><td>same</td><td><code>47000</code></td><td>published host port &rarr; backend :47000/udp</td></tr>
+    <tr><td><code>OLV_UDP_PORT</code></td><td>same</td><td>input mode's port (<code>47000</code>)</td><td>published host port &rarr; backend's UDP input port</td></tr>
+    <tr><td><code>OLV_INPUT</code></td><td>same</td><td><code>olv1</code></td><td>input mode (<code>olv1</code>/<code>dis</code>/<code>olv2</code>); selects the <code>containers/config/&lt;mode&gt;/</code> config pair mounted into the backend and simulator. <code>run_all.sh --input</code> sets it</td></tr>
+    <tr><td><code>OLV_UDP_CONTAINER_PORT</code></td><td>same</td><td><code>47000</code></td><td>backend's container-side UDP port; must match the mode (47000 / 47001 / 47002). <code>run_all.sh</code> sets it from <code>--input</code></td></tr>
     <tr><td><code>OLV_ENGINE</code></td><td><code>scripts/_common.sh</code> (all scripts)</td><td>auto-detect (<code>podman</code> preferred)</td><td>container engine override, e.g. <code>docker</code></td></tr>
     <tr><td><code>OLV_COMPOSE</code></td><td><code>run_all.sh</code>, <code>cleanup.sh</code></td><td>auto-detect</td><td>compose command override (e.g. <code>"docker compose"</code>)</td></tr>
     <tr><td><code>OLV_OPEN_DIS_URL</code></td><td><code>Dockerfile.builder</code> build arg</td><td>GitHub release URL</td><td>mirror URL for the pinned tarball</td></tr>

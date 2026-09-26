@@ -28,6 +28,13 @@
 # only and waits for real input. Add `--profile sim` (scripts/run_all.sh --sim)
 # to also replay the example mission into the backend.
 #
+# Input mode: OLV_INPUT (olv1 | dis | olv2, default olv1) picks the config
+# pair under containers/config/<mode>/ that is mounted into the backend and
+# simulator, and OLV_UDP_CONTAINER_PORT must be that mode's backend listen
+# port (olv1 47000, dis 47001, olv2 47002 — docs/PROTOCOL_UDP.md,
+# PROTOCOL_DIS.md, PROTOCOL_OLV2.md). scripts/run_all.sh --input <mode> sets
+# both; OLV_UDP_PORT then defaults to the same port on the host.
+#
 # Networking: compose creates an internal network for these services by
 # default; the simulator reaches the backend by its service name ("backend")
 # on that internal network — no host networking or port mapping is needed
@@ -44,21 +51,17 @@ services:
     image: ${OLV_BACKEND_IMAGE:-localhost/olv-backend:latest}
     ports:
       - "${OLV_WS_PORT:-8765}:8765"
-      - "${OLV_UDP_PORT:-47000}:47000/udp"
+      - "${OLV_UDP_PORT:-47000}:${OLV_UDP_CONTAINER_PORT:-47000}/udp"
+    # Per-mode config (see "Input mode" above). label=disable lets the
+    # container read the bind mount on SELinux hosts without relabeling the
+    # checkout, as scripts/_common.sh does for the builder.
+    volumes:
+      - ./config/${OLV_INPUT:-olv1}/backend.toml:/app/backend.toml:ro
+    security_opt:
+      - label=disable
+    command: ["--config", "/app/backend.toml"]
     networks:
       - olv-net
-    # To configure via TOML instead of the CMD flags, mount a config file and
-    # point the entrypoint at it (same pattern works for the simulator):
-    #   volumes:
-    #     - ../config/backend.toml:/app/backend.toml:ro,Z
-    #   command: ["--config", "/app/backend.toml"]
-    # Other input modes listen on their own UDP ports (DIS 47001, OLV2 47002 —
-    # docs/PROTOCOL_DIS.md, docs/PROTOCOL_OLV2.md), selected by the config
-    # file's [input] mode. For an OLV2 sender outside compose, set
-    # `mode = "olv2"` in the mounted file and add a port mapping:
-    #     - "47002:47002/udp"
-    # (the simulator below would then use
-    #  ["--generate", "50", "--protocol", "olv2", "--rate", "10", "--dest", "backend", "--duration", "0"]).
 
   frontend:
     build:
@@ -75,11 +78,16 @@ services:
     depends_on:
       - backend
     # Replay the bundled example mission on loop (the CSV is baked into the
-    # image at /app/data). The simulator tolerates the backend not being ready
-    # yet (it warns and retries), so no healthcheck gate is needed. For a
-    # 5,000-object load test instead, swap this for:
-    #   ["--generate", "5000", "--dest", "backend", "--port", "47000", "--rate", "1", "--duration", "0"]
-    command: ["--csv", "/app/data/example_mission.csv", "--loop", "--rate", "1", "--dest", "backend", "--port", "47000"]
+    # image at /app/data) in the selected input mode's wire protocol. The
+    # simulator tolerates the backend not being ready yet (it warns and
+    # retries), so no healthcheck gate is needed. For a 5,000-object load test
+    # instead, add flags after the config (flags win over the file):
+    #   ["--config", "/app/simulator.toml", "--generate", "5000", "--duration", "0"]
+    volumes:
+      - ./config/${OLV_INPUT:-olv1}/simulator.toml:/app/simulator.toml:ro
+    security_opt:
+      - label=disable
+    command: ["--config", "/app/simulator.toml"]
     networks:
       - olv-net
 

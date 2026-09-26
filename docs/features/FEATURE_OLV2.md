@@ -358,7 +358,9 @@ only captures frames; `validate_message.mjs` now reports `maxTrailPoints`);
 `containers/compose.yaml` gained a commented OLV2 example rather than a
 default `47002/udp` mapping (matching DIS, whose 47001 is not mapped by
 default); `scripts/run_all.sh` has no input-mode knob (modes are chosen via
-the compose `command`/config), so it is unchanged.
+the compose `command`/config), so it is unchanged. (Later, 2026-09-26:
+`run_all.sh --input olv1|dis|olv2` was added, backed by per-mode config
+pairs in `containers/config/<mode>/`.)
 
 **Phase 4 — Docs (Sonnet).** ✅ Done (2026-09-26): README, new
 `reference/protocol-olv2.html` + nav, `trailPoints` in the WS reference, and

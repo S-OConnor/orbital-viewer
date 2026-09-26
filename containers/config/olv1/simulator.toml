@@ -1,0 +1,23 @@
+# Container simulator config for input mode "olv1" — mounted at
+# /app/simulator.toml by containers/compose.yaml when scripts/run_all.sh
+# --input olv1 --sim is used (full contract: tools/simulator/src/sim_config.hpp;
+# annotated defaults: config/simulator.toml). Replays the example mission
+# baked into the image at /app/data to the backend service on the internal
+# compose network.
+
+[target]
+host = "backend"
+port = 47000
+
+[source]
+mode = "csv"
+csv_path = "/app/data/example_mission.csv"
+loop = true
+
+[send]
+rate_hz = 1.0
+protocol = "olv1"
+chunk = 128
+
+[output]
+quiet = false
