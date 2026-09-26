@@ -62,7 +62,7 @@ Boost packages without CMake config files won't work — use &ge; 1.74.</p>
 
 <h3 id="open-dis-not-found"><code>open-dis-cpp not found</code> at configure time (native build only)</h3>
 <p>The <code>olv-builder</code> container image always has it (it runs
-<code>scripts/install_open_dis.sh</code> internally). Building natively anyway and
+it from the pinned release in <code>containers/Dockerfile.builder</code>). Building natively anyway and
 missing it, install it yourself and reconfigure — point CMake at a nonstandard
 prefix with <code>-DCMAKE_PREFIX_PATH=DIR</code> (or
 <code>-DOpenDIS_DIR=DIR/lib64/cmake/OpenDIS</code>) if it isn't in

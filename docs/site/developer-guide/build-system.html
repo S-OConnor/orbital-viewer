@@ -113,7 +113,7 @@ executables; INTERFACE targets carry headers and flags.</figcaption>
 
 <h2 id="open-dis">find_package(OpenDIS)</h2>
 <p>The top-level <code>CMakeLists.txt</code> locates the package installed by
-<code>scripts/install_open_dis.sh</code> with upstream's own CMake package config:
+<code>containers/Dockerfile.builder</code> with upstream's own CMake package config:
 <code>find_package(OpenDIS 1.2 REQUIRED CONFIG)</code>, then links
 <code>OpenDIS::OpenDIS6</code>. CMake's normal <code>CONFIG</code>-mode search finds it
 automatically in <code>/usr/local</code>, and in <code>~/.local</code> when
@@ -197,7 +197,7 @@ clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
   <li><strong>Boost</strong>: system-provided, never vendored (size). Header-only usage
   means no Boost link libraries and no Boost ABI concerns.</li>
   <li><strong>open-dis-cpp</strong>: pinned v1.2.0, sha256-verified tarball, built once
-  into a prefix by <code>scripts/install_open_dis.sh</code> using upstream's own CMake
+  into <code>/usr/local</code> by <code>containers/Dockerfile.builder</code> using upstream's own CMake
   project (static, Release, warnings silenced; DIS6 <em>and</em> DIS7 are built because
   upstream's package config requires both, though only DIS6 is used); installs a CMake
   package config plus LICENSE + provenance. Consumed via
@@ -227,7 +227,7 @@ it, and run the three checks. See <a href="release-process.html">Release Process
 <p>Two files now split what used to be one: <code>containers/Dockerfile.builder</code>
 builds the <code>olv-builder</code> build-environment image — Rocky Linux 10.2 +
 <code>gcc-c++ cmake make boost-devel</code>, then
-<code>install_open_dis.sh --prefix /usr/local</code> — meant to be built once on a
+open-dis-cpp built from the pinned tarball into <code>/usr/local</code> — meant to be built once on a
 connected machine and pushed to an internal registry. <code>containers/Dockerfile</code>'s
 <code>build</code> stage is <code>FROM ${OLV_BUILDER_IMAGE}</code> (default
 <code>localhost/olv-builder:latest</code>) and installs/fetches nothing itself; it

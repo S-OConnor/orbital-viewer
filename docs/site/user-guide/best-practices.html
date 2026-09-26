@@ -98,8 +98,8 @@ Treat that as a hard boundary, not a default to harden later.</div>
   assumes a single monotonic sequence stream; two simulators aimed at one backend
   will mutually stale each other. Run one backend per source (distinct ports).</li>
   <li><strong>Air-gapped sites:</strong> build/push the <code>olv-builder</code> image
-  once (mirror the open-dis tarball via <code>OLV_OPEN_DIS_TARBALL</code>/
-  <code>OLV_OPEN_DIS_URL</code> and a <code>dnf</code> mirror), and mirror the runtime
+  once (mirror the open-dis tarball via the <code>OLV_OPEN_DIS_URL</code> build arg
+  and a <code>dnf</code> mirror), and mirror the runtime
   base images; after that the stack builds and runs fully offline. Checklist:
   <a href="installation.html#air-gapped">Installation</a>.</li>
   <li><strong>Know what's ephemeral.</strong> The backend holds no persistent state —

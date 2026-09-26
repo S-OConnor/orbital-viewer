@@ -54,7 +54,7 @@ find_package(Threads REQUIRED)
 find_package(Boost 1.74 REQUIRED CONFIG)
 # open-dis-cpp (OpenDIS::OpenDIS6): DIS decode in the backend, DIS emission in
 # the simulator. Upstream's own package config, installed by
-# scripts/install_open_dis.sh (baked into containers/Dockerfile.builder).
+# containers/Dockerfile.builder (built from the pinned release into /usr/local).
 find_package(OpenDIS 1.2 REQUIRED CONFIG)
 # GoogleTest for the backend unit tests (test/). Only needed when tests are
 # built: gtest-devel from EPEL in containers/Dockerfile.builder, `brew install

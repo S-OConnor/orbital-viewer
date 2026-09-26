@@ -29,8 +29,8 @@ from datetime import datetime, timezone
 OLV_VERSION = "0.1.0"
 
 # Pinned open-dis-cpp release (BSD-2-Clause), built and installed by
-# scripts/install_open_dis.sh (not vendored). Keep in sync with the VERSION
-# pinned in that script.
+# containers/Dockerfile.builder (not vendored). Keep in sync with the
+# OPEN_DIS_VERSION build arg pinned there.
 OPEN_DIS_VERSION = "1.2.0"
 
 # Vendored frontend image assets (frontend/assets/), added to the frontend
@@ -225,7 +225,7 @@ def build_backend_bom() -> tuple[dict, str]:
                     "--input-mode dis, encode for olv_sim's --protocol dis. Built "
                     "from the pinned upstream release (sha256-verified tarball, "
                     "src/dis6 only, no local modifications) and installed into a "
-                    "prefix by scripts/install_open_dis.sh; statically linked "
+                    "prefix by containers/Dockerfile.builder; statically linked "
                     "(see THIRD_PARTY.md)."
                 ),
             },

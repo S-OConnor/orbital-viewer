@@ -104,22 +104,6 @@ for the WS port, prints URLs, streams logs. <kbd>Ctrl-C</kbd> (or any exit) tear
 stack down. Exit 130/143 on INT/TERM; 1 if the backend never comes up (dumps its
 logs first).</p>
 
-<h3 id="install-open-dis">scripts/install_open_dis.sh</h3>
-<pre><code class="language-sh">scripts/install_open_dis.sh [--prefix DIR] [--src DIR]
-# env: OLV_OPEN_DIS_TARBALL (pre-fetched file), OLV_OPEN_DIS_URL (mirror)
-</code></pre>
-<p>Default prefix <code>/usr/local</code>. Source resolution: <code>--src</code> &rarr;
-<code>$OLV_OPEN_DIS_TARBALL</code> &rarr; <code>$OLV_OPEN_DIS_URL</code> &rarr; GitHub;
-tarball always sha256-verified before compiling. Builds with upstream's own CMake
-project (static, Release, <code>cmake --install</code>) and installs
-<code>include/dis6</code> + <code>include/dis7</code>,
-<code>lib64/libOpenDIS6.a</code> + <code>libOpenDIS7.a</code> (DIS7 is built only
-because upstream's package config requires it; the project links only DIS6), a
-<code>lib64/cmake/OpenDIS/</code> package config consumed via
-<code>find_package(OpenDIS CONFIG)</code>, and license/provenance docs.
-<code>containers/Dockerfile.builder</code> runs this script to bake the library into
-the build-environment image.</p>
-
 <h3 id="integration-test">scripts/integration_test.sh</h3>
 <pre><code class="language-sh">scripts/integration_test.sh BACKEND_BIN SIM_BIN PROBE_BIN [REPO_ROOT]
 </code></pre>

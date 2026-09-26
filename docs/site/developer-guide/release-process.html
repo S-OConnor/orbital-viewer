@@ -37,7 +37,8 @@ repo's tooling supports today, and the assumptions involved.</p>
   <li><strong>Feature versions</strong> (v0.3 sat-view, v0.4 sky) label additive
   frontend feature specs in <code>docs/features/</code>, not releases.</li>
   <li><strong>Dependency pins:</strong> open-dis-cpp v1.2.0 is pinned by URL + SHA-256
-  in <code>scripts/install_open_dis.sh</code> and echoed in
+  (<code>OPEN_DIS_VERSION</code>/<code>OPEN_DIS_SHA256</code> build args) in
+  <code>containers/Dockerfile.builder</code> and echoed in
   <code>gen_sbom.py</code>/<code>THIRD_PARTY.md</code> — a bump touches all three.</li>
 </ul>
 <div class="note"><strong>Assumption:</strong> no git tags or changelog file exist in

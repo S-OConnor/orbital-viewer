@@ -1123,13 +1123,6 @@ window.SEARCH_INDEX = [
 {
 "page": "reference/cli",
 "title": "Command-Line Reference",
-"section": "scripts/install_open_dis.sh",
-"anchor": "install-open-dis",
-"text": "Command-Line Reference scripts/install_open_dis.sh"
-},
-{
-"page": "reference/cli",
-"title": "Command-Line Reference",
 "section": "scripts/integration_test.sh",
 "anchor": "integration-test",
 "text": "Command-Line Reference scripts/integration_test.sh"

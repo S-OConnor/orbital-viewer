@@ -87,7 +87,7 @@ Optional, for the full development workflow:
 > (`OpenDIS::OpenDIS6`) on `CMAKE_PREFIX_PATH` also work — see
 > [`containers/Dockerfile.builder`](containers/Dockerfile.builder) for the
 > exact package list this repo is tested against, and
-> `scripts/install_open_dis.sh` for what it runs to get open-dis-cpp. This
+> how it builds and installs open-dis-cpp (the `OPEN_DIS_*` step). This
 > path has no documented step-by-step; the container is the supported
 > workflow.
 
@@ -356,7 +356,7 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
   `/home/linuxbrew/.linuxbrew` to `CMAKE_PREFIX_PATH` when present.)
 - **`open-dis-cpp not found` at configure time:** only relevant to a
   native/advanced build — the `olv-builder` container image already has it
-  installed (it runs `scripts/install_open_dis.sh` internally). Building
+  installed (built from the pinned release in the image). Building
   natively anyway, point CMake at the install with `-DCMAKE_PREFIX_PATH=DIR`
   (or `-DOpenDIS_DIR=DIR/lib64/cmake/OpenDIS`) if it isn't in `/usr/local` or
   `~/.local`.

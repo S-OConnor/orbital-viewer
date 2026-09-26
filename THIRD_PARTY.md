@@ -3,7 +3,7 @@
 Orbital LOS Viewer is designed to be air-gap friendly. The backend and
 simulator have two runtime third-party dependencies — Boost (header-only,
 system-provided) and `open-dis-cpp` (built from a pinned upstream release and
-installed into a prefix by `scripts/install_open_dis.sh`, statically linked;
+installed into `/usr/local` by `containers/Dockerfile.builder`, statically linked;
 used by `olv_backend --input-mode dis` and `olv_sim --protocol dis`) — plus a
 small, build-time-only toolchain and a handful of optional developer tools. The frontend ships **zero** third-party code (it does vendor
 two public-domain NASA image assets — see
@@ -12,7 +12,7 @@ two public-domain NASA image assets — see
 | Dependency | Role | License | Notes |
 |---|---|---|---|
 | [Boost](https://www.boost.org/) ≥ 1.74 | Runtime (header-only) | [BSL-1.0](https://www.boost.org/LICENSE_1_0.txt) | Used by `olv_backend` and `olv_sim` for Asio (UDP/TCP), Beast (WebSocket/HTTP framing), and core headers. Header-only usage only — no compiled Boost libraries are linked. Not vendored; expected to be provided by the system or a toolchain package manager (see README §4 Prerequisites). Exact installed version is recorded in `sbom/backend.cdx.json` by `scripts/gen_sbom.py`. |
-| [open-dis-cpp](https://github.com/open-dis/open-dis-cpp) v1.2.0 | Runtime (installed prefix, static) | [BSD-2-Clause](https://github.com/open-dis/open-dis-cpp/blob/v1.2.0/LICENSE) | IEEE 1278.1 DIS Entity State PDUs: decode for `olv_backend --input-mode dis`, encode for `olv_sim --protocol dis` (docs/PROTOCOL_DIS.md, docs/features/FEATURE_INPUT_SOURCES.md). **Not vendored**: [`scripts/install_open_dis.sh`](scripts/install_open_dis.sh) fetches the pinned v1.2.0 tarball (sha256-verified) and builds it with upstream's own CMake project (static, no local modifications), installing `include/dis6`+`include/dis7`, `lib64/libOpenDIS6.a`+`libOpenDIS7.a` (DIS7 is built only because upstream's package config requires it; only DIS6 is used), a `lib64/cmake/OpenDIS/` package config, and LICENSE/provenance into a prefix — `/usr/local` inside the `containers/Dockerfile.builder` build-environment image, or `--prefix` of your choice for host builds. The project consumes it via `find_package(OpenDIS CONFIG)` / `OpenDIS::OpenDIS6`, which CMake finds automatically in `/usr/local`, and in `~/.local` when `~/.local/bin` is on `PATH`; other prefixes need `-DCMAKE_PREFIX_PATH=DIR`. The BSD-2-Clause text + provenance are installed at `$PREFIX/share/doc/open-dis-cpp/`. Recorded as a `library` component in `sbom/backend.cdx.json`. |
+| [open-dis-cpp](https://github.com/open-dis/open-dis-cpp) v1.2.0 | Runtime (installed prefix, static) | [BSD-2-Clause](https://github.com/open-dis/open-dis-cpp/blob/v1.2.0/LICENSE) | IEEE 1278.1 DIS Entity State PDUs: decode for `olv_backend --input-mode dis`, encode for `olv_sim --protocol dis` (docs/PROTOCOL_DIS.md, docs/features/FEATURE_INPUT_SOURCES.md). **Not vendored**: [`containers/Dockerfile.builder`](containers/Dockerfile.builder) fetches the pinned v1.2.0 tarball (sha256-verified) and builds it with upstream's own CMake project (static, no local modifications), installing `include/dis6`+`include/dis7`, `lib64/libOpenDIS6.a`+`libOpenDIS7.a` (DIS7 is built only because upstream's package config requires it; only DIS6 is used), a `lib64/cmake/OpenDIS/` package config, and LICENSE/provenance into `/usr/local` of the `olv-builder` build-environment image (native builds replicate that step into a prefix of their choice). The project consumes it via `find_package(OpenDIS CONFIG)` / `OpenDIS::OpenDIS6`, which CMake finds automatically in `/usr/local`, and in `~/.local` when `~/.local/bin` is on `PATH`; other prefixes need `-DCMAKE_PREFIX_PATH=DIR`. The BSD-2-Clause text + provenance are installed at `/usr/local/share/doc/open-dis-cpp/`. Recorded as a `library` component in `sbom/backend.cdx.json`. |
 | CMake ≥ 3.20 | Build-only | [BSD-3-Clause](https://cmake.org/licensing/) | Build system generator; not shipped with the built binaries. |
 | GCC ≥ 12 or Clang ≥ 14 | Build-only | [GPLv3](https://gcc.gnu.org/) / [Apache-2.0 with LLVM exception](https://llvm.org/LICENSE.txt) | C++20 compiler; not shipped with the built binaries. |
 | Node.js ≥ 18 | Dev/test-only | [MIT](https://github.com/nodejs/node/blob/main/LICENSE) | Runs `node --test frontend/tests/` and the integration test's frontend-parser check. Never required at runtime — the frontend is plain, static HTML/CSS/JS served by any HTTP server (see `scripts/serve_frontend.sh`, `containers/Containerfile.frontend`). |
@@ -67,11 +67,10 @@ BOMs to a vulnerability scanner.
   installable from a local/offline package mirror — see README §4
   (Prerequisites) and §12 (Troubleshooting) for per-distro install commands
   and `-DCMAKE_PREFIX_PATH` fallbacks (e.g. Homebrew/Linuxbrew on immutable
-  distros). CMake fetches nothing from the network. `open-dis-cpp` is built
-  and installed once by `scripts/install_open_dis.sh`; air-gapped hosts point
-  it at a mirrored copy of the pinned v1.2.0 tarball via
-  `OLV_OPEN_DIS_TARBALL=<path>` or `OLV_OPEN_DIS_URL=<mirror-url>` (the
-  pinned sha256 is enforced either way).
+  distros). CMake fetches nothing from the network. `open-dis-cpp` must be
+  built and installed once from a mirrored copy of the pinned v1.2.0 tarball,
+  following the `OPEN_DIS_*` step in `containers/Dockerfile.builder` (verify
+  the pinned sha256 before building).
 - **Container build:** build (or pull from an internal registry) the
   `olv-builder` image once, on a connected machine — `containers/Dockerfile.builder`
   needs a mirrored `dnf` repository (for `gcc-c++ cmake make boost-devel`) and

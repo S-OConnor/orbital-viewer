@@ -46,7 +46,7 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 │   └── tests/                      # node:test suites + validate_message.mjs
 ├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
-├── scripts/                        # run_all, install_open_dis, integration test, SBOM, ...
+├── scripts/                        # run_all, integration test, SBOM, ...           
 ├── containers/                     # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
 └── sbom/                           # generated CycloneDX SBOMs (backend + frontend)
 </code></pre>
@@ -65,7 +65,7 @@ Guide: Repository Structure</a>.</p>
         <td>Header-only usage — no compiled Boost libraries are linked.</td></tr>
     <tr><td>DIS decode/encode</td><td>open-dis-cpp v1.2.0</td>
         <td>The single compiled third-party dependency; pinned, sha256-verified,
-        installed to a prefix by <code>scripts/install_open_dis.sh</code>.</td></tr>
+        built into the <code>olv-builder</code> image by <code>containers/Dockerfile.builder</code>.</td></tr>
     <tr><td>Frontend</td><td>HTML5 / CSS / JavaScript ES modules, WebGL&nbsp;1</td>
         <td>Zero third-party code; no bundler, transpiler, or package manager.</td></tr>
     <tr><td>Build</td><td>CMake &ge; 3.20 + CTest</td>
@@ -134,9 +134,8 @@ runtime-computed SHA-256). Strategy: <code>docs/SBOM.md</code>; full license tab
   <li><strong>Runtime:</strong> no component makes any outbound network call. The
   frontend serves everything from its own origin.</li>
   <li><strong>Native build:</strong> needs only a system Boost and a C++20 toolchain,
-  plus a one-time <code>open-dis-cpp</code> install — the tarball can be pre-fetched
-  and supplied via <code>OLV_OPEN_DIS_TARBALL</code>, or mirrored via
-  <code>OLV_OPEN_DIS_URL</code>; it is sha256-verified either way.</li>
+  plus a one-time <code>open-dis-cpp</code> install from a mirrored copy of the pinned
+  tarball, following the step in <code>containers/Dockerfile.builder</code>.</li>
   <li><strong>Container build:</strong> build (or pull from an internal registry) the
   <code>olv-builder</code> image once on a connected machine — needs a <code>dnf</code>
   mirror and the open-dis-cpp tarball (or a mirror URL as a build arg). Offline

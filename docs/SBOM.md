@@ -20,7 +20,7 @@ network access, no pip packages, air-gap friendly).
     `"unknown"` and prints a warning to stderr (never fails the run). The
     purl is `pkg:generic/boost@<version>`.
   - **open-dis-cpp** (type `library`, license `BSD-2-Clause`), the pinned
-    `OPEN_DIS_VERSION` (`"1.2.0"`, kept in sync with `install_open_dis.sh`)
+    `OPEN_DIS_VERSION` (`"1.2.0"`, kept in sync with `containers/Dockerfile.builder`)
     used by `olv_backend --input-mode dis` and `olv_sim --protocol dis`.
     Unlike Boost this version is hardcoded (not detected — the pin is
     authoritative), with purl `pkg:github/open-dis/open-dis-cpp@v1.2.0`.
@@ -180,8 +180,8 @@ Regenerate (`python3 scripts/gen_sbom.py`) whenever:
   in the top-level `CMakeLists.txt`), or the Boost actually installed in your
   environment changes.
 - The pinned `open-dis-cpp` version changes (`OPEN_DIS_VERSION` in
-  `scripts/gen_sbom.py`, kept in sync with `VERSION` in
-  `scripts/install_open_dis.sh`).
+  `scripts/gen_sbom.py`, kept in sync with the `OPEN_DIS_VERSION` build arg
+  in `containers/Dockerfile.builder`).
 - The project version changes (`project(... VERSION X.Y.Z)` in
   `CMakeLists.txt` and `OLV_VERSION` in `scripts/gen_sbom.py`).
 - Any new runtime dependency is introduced anywhere in the repo (backend,

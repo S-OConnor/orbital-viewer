@@ -34,7 +34,11 @@ component) landed with the Phase 2 code.
 > (Rocky Linux 10.2-minimal runtime stages that build FROM it). Every mention
 > of `cmake/open_dis_cpp.cmake`, `open_dis_cpp`, `libopendis6.a`,
 > `-DOLV_OPEN_DIS_PREFIX`, or `containers/Containerfile.cpp` below is
-> historical.
+> historical. `scripts/install_open_dis.sh` itself was later folded into
+> `containers/Dockerfile.builder` (same pin, sha256 check, and upstream CMake
+> flags; `OLV_OPEN_DIS_URL` survives as a build arg, `OLV_OPEN_DIS_TARBALL`
+> and `--prefix`/`--src` are gone), so every mention of the script is
+> historical too.
 Companion to docs/PLAN.md (backend threading model, §2/§10) and
 docs/PROTOCOL_UDP.md (the existing OLV1 wire format, unchanged by this work).
 
