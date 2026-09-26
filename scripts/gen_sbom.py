@@ -76,7 +76,7 @@ _ASSET_LICENSE = {
 _OLV_UUID_NAMESPACE = uuid.UUID("b9f1c8b0-5b30-4c1a-8f2e-6a2b8e2f0c11")
 
 # Search order for a system Boost install's boost/version.hpp, matching
-# common.cmake's CMAKE_PREFIX_PATH hints (docs/PLAN.md / THIRD_PARTY.md).
+# the top-level CMakeLists.txt's CMAKE_PREFIX_PATH hints (docs/PLAN.md / THIRD_PARTY.md).
 _BOOST_SEARCH_DIRS = [
     ("$BOOST_ROOT", os.environ.get("BOOST_ROOT")),
     ("$BOOST_ROOT/include", (os.path.join(os.environ["BOOST_ROOT"], "include")

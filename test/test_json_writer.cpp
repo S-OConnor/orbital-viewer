@@ -6,9 +6,10 @@
 #include <cstdio>
 #include <string>
 
+#include <gtest/gtest.h>
+
 #include "olv/json_writer.hpp"
 #include "olv/protocol.hpp"
-#include "olv_test.hpp"
 #include "olv/state_store.hpp"
 
 using namespace olv;
@@ -27,17 +28,17 @@ std::string fmt(double v, const char* spec) {
 
 }  // namespace
 
-OLV_TEST(json_empty_snapshot) {
+TEST(JsonWriter, json_empty_snapshot) {
   Snapshot snap;  // no satellite, no objects, no last_data_time
   const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 0);
-  OLV_CHECK(contains(msg, "\"type\":\"state\""));
-  OLV_CHECK(contains(msg, "\"satellite\":null"));
-  OLV_CHECK(contains(msg, "\"lastDataTime\":null"));
-  OLV_CHECK(contains(msg, "\"objectCount\":0"));
-  OLV_CHECK(contains(msg, "\"objects\":[]"));
+  EXPECT_TRUE(contains(msg, "\"type\":\"state\""));
+  EXPECT_TRUE(contains(msg, "\"satellite\":null"));
+  EXPECT_TRUE(contains(msg, "\"lastDataTime\":null"));
+  EXPECT_TRUE(contains(msg, "\"objectCount\":0"));
+  EXPECT_TRUE(contains(msg, "\"objects\":[]"));
 }
 
-OLV_TEST(json_populated_snapshot) {
+TEST(JsonWriter, json_populated_snapshot) {
   Snapshot snap;
   SatelliteState sat;
   sat.id = 1;
@@ -79,27 +80,27 @@ OLV_TEST(json_populated_snapshot) {
   const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 3);
 
   // Satellite formatting: positions %.1f, velocities %.2f.
-  OLV_CHECK(contains(msg, "\"satellite\":{\"id\":1,\"seq\":42"));
-  OLV_CHECK(contains(msg, fmt(1234567.85, "%.1f")));  // ECEF pass-through (0.1 m)
-  OLV_CHECK(contains(msg, "\"pos\":[" + fmt(1234567.85, "%.1f") + "," + fmt(-4681712.5, "%.1f") +
-                              "," + fmt(1003432.1, "%.1f") + "]"));
-  OLV_CHECK(contains(msg, "\"vel\":[" + fmt(1234.56, "%.2f") + "," + fmt(-6.70, "%.2f") + "," +
-                              fmt(0.0, "%.2f") + "]"));
+  EXPECT_TRUE(contains(msg, "\"satellite\":{\"id\":1,\"seq\":42"));
+  EXPECT_TRUE(contains(msg, fmt(1234567.85, "%.1f")));  // ECEF pass-through (0.1 m)
+  EXPECT_TRUE(contains(msg, "\"pos\":[" + fmt(1234567.85, "%.1f") + "," + fmt(-4681712.5, "%.1f") +
+                                "," + fmt(1003432.1, "%.1f") + "]"));
+  EXPECT_TRUE(contains(msg, "\"vel\":[" + fmt(1234.56, "%.2f") + "," + fmt(-6.70, "%.2f") + "," +
+                                fmt(0.0, "%.2f") + "]"));
 
   // Row with velocity vs row with null velocity; flags/conf/intensity columns.
-  OLV_CHECK(contains(msg, "[1001,1,"));
-  OLV_CHECK(contains(msg, "," + fmt(7611.0, "%.2f") + ","));    // velocity present
-  OLV_CHECK(contains(msg, ",87," + fmt(0.0, "%.1f") + ",1]"));  // conf,intensity,flags
-  OLV_CHECK(contains(msg, "[2001,5,"));
-  OLV_CHECK(contains(msg, "null,null,null"));                      // missing velocity
-  OLV_CHECK(contains(msg, ",95," + fmt(1450.0, "%.1f") + ",2]"));  // conf,intensity,flags
+  EXPECT_TRUE(contains(msg, "[1001,1,"));
+  EXPECT_TRUE(contains(msg, "," + fmt(7611.0, "%.2f") + ","));    // velocity present
+  EXPECT_TRUE(contains(msg, ",87," + fmt(0.0, "%.1f") + ",1]"));  // conf,intensity,flags
+  EXPECT_TRUE(contains(msg, "[2001,5,"));
+  EXPECT_TRUE(contains(msg, "null,null,null"));                      // missing velocity
+  EXPECT_TRUE(contains(msg, ",95," + fmt(1450.0, "%.1f") + ",2]"));  // conf,intensity,flags
 
-  OLV_CHECK(contains(msg, "\"objectCount\":2"));
-  OLV_CHECK(contains(msg, "\"wsClients\":3"));
-  OLV_CHECK(contains(msg, "\"lastDataTime\":\""));
+  EXPECT_TRUE(contains(msg, "\"objectCount\":2"));
+  EXPECT_TRUE(contains(msg, "\"wsClients\":3"));
+  EXPECT_TRUE(contains(msg, "\"lastDataTime\":\""));
 }
 
-OLV_TEST(json_stats_dropped_is_malformed_plus_stale) {
+TEST(JsonWriter, json_stats_dropped_is_malformed_plus_stale) {
   Snapshot snap;
   snap.stats.udp_received = 10;
   snap.stats.udp_accepted = 6;
@@ -108,18 +109,18 @@ OLV_TEST(json_stats_dropped_is_malformed_plus_stale) {
   snap.stats.udp_rate_hz = 2.0;
   snap.stats.broadcast_seq = 7;
   const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 1);
-  OLV_CHECK(contains(msg, "\"udpReceived\":10"));
-  OLV_CHECK(contains(msg, "\"udpAccepted\":6"));
-  OLV_CHECK(contains(msg, "\"udpDropped\":4"));  // 3 + 1
-  OLV_CHECK(contains(msg, "\"udpRateHz\":" + fmt(2.0, "%.2f")));
-  OLV_CHECK(contains(msg, "\"broadcastSeq\":7"));
+  EXPECT_TRUE(contains(msg, "\"udpReceived\":10"));
+  EXPECT_TRUE(contains(msg, "\"udpAccepted\":6"));
+  EXPECT_TRUE(contains(msg, "\"udpDropped\":4"));  // 3 + 1
+  EXPECT_TRUE(contains(msg, "\"udpRateHz\":" + fmt(2.0, "%.2f")));
+  EXPECT_TRUE(contains(msg, "\"broadcastSeq\":7"));
 }
 
-OLV_TEST(json_hello_message) {
+TEST(JsonWriter, json_hello_message) {
   const std::string msg = buildHelloMessage(std::chrono::system_clock::time_point{}, 1.0);
-  OLV_CHECK(contains(msg, "\"type\":\"hello\""));
-  OLV_CHECK(contains(msg, "\"protocolVersion\":1"));
-  OLV_CHECK(contains(msg, "\"broadcastHz\":" + fmt(1.0, "%.1f")));
-  OLV_CHECK(contains(msg, "\"maxObjects\":5000"));
-  OLV_CHECK(contains(msg, "\"serverTime\":\""));
+  EXPECT_TRUE(contains(msg, "\"type\":\"hello\""));
+  EXPECT_TRUE(contains(msg, "\"protocolVersion\":1"));
+  EXPECT_TRUE(contains(msg, "\"broadcastHz\":" + fmt(1.0, "%.1f")));
+  EXPECT_TRUE(contains(msg, "\"maxObjects\":5000"));
+  EXPECT_TRUE(contains(msg, "\"serverTime\":\""));
 }

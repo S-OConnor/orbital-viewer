@@ -92,7 +92,8 @@ every tick, even before any UDP data has arrived.</p>
   <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Notes</th></tr></thead>
   <tbody>
     <tr><td>0</td><td><code>id</code></td><td>u32</td><td>—</td></tr>
-    <tr><td>1</td><td><code>cat</code></td><td>int 1–5</td><td>1 debris · 2 star · 3 comet · 4 satellite · 5 groundHot</td></tr>
+    <tr><td>1</td><td><code>cat</code></td><td>int 0–5</td><td>0 unknown · 1 debris · 2 star · 3 comet · 4 satellite · 5 groundHot;
+        any other integer renders as <code>unknown</code> (forward compatibility)</td></tr>
     <tr><td>2–4</td><td><code>px, py, pz</code></td><td>number</td><td>ECEF meters, rounded to 0.1&nbsp;m</td></tr>
     <tr><td>5–7</td><td><code>vx, vy, vz</code></td><td>number or <code>null</code></td>
         <td>m/s rounded to 0.01; all three <code>null</code> when the source sent no
@@ -113,9 +114,11 @@ per broadcast at 5,000 objects compared with key/value objects.</p>
   <li>Treat unknown message <code>type</code>s as ignorable (forward compatibility).
   Note the row shape itself is strict — new columns would be a breaking change.</li>
   <li>Reject malformed messages: non-JSON, missing/unknown <code>type</code>, missing
-  <code>objects</code> on state, rows of length &ne; 11, non-numeric id/cat/pos,
-  partial velocity triples. The reference implementation
-  (<code>parseStateMessage</code>) counts errors and keeps the connection alive.</li>
+  <code>objects</code> on state, rows of length &ne; 11, non-numeric id/pos,
+  non-integer <code>cat</code>, partial velocity triples. An integer
+  <code>cat</code> outside 0&ndash;5 still parses, as <code>unknown</code>. The
+  reference implementation (<code>parseStateMessage</code>) counts errors and
+  keeps the connection alive.</li>
   <li>Client-side staleness: no <code>state</code> frame for &gt; 3&nbsp;s &rarr; show
   a stalled-connection indicator.</li>
 </ul>

@@ -28,20 +28,19 @@ for an engineer's first day on the project.</p>
 <table>
   <thead><tr><th>Path</th><th>Purpose</th></tr></thead>
   <tbody>
-    <tr><td><code>CMakeLists.txt</code></td><td>Top-level build: declares the project,
-        includes <code>cmake/common.cmake</code>, finds the dependencies (Threads,
-        Boost &ge; 1.74 in CONFIG mode, open-dis-cpp), adds the <code>src/</code>,
-        <code>tools/</code> and (when <code>OLV_BUILD_TESTS</code>) <code>test/</code>
-        subdirectories, and includes <code>cmake/tooling.cmake</code>.</td></tr>
-    <tr><td><code>cmake/common.cmake</code></td><td>Shared toolchain setup: C++20, Release
-        default, <code>OLV_BUILD_TESTS</code>/<code>OLV_WERROR</code> options, Homebrew
-        prefix auto-detection, and the INTERFACE targets
-        <code>olv_proto</code>, <code>olv_test_support</code>, <code>olv_warnings</code>.</td></tr>
-    <tr><td><code>cmake/tooling.cmake</code></td><td><code>format</code>/<code>format-check</code>/<code>lint</code>
-        convenience targets (clang-format, cppcheck).</td></tr>
-    <tr><td><code>cmake/open_dis_cpp.cmake</code></td><td>Locates the installed
-        open-dis-cpp prefix and exposes the imported static target
-        <code>open_dis_cpp</code> (headers marked SYSTEM).</td></tr>
+    <tr><td><code>CMakeLists.txt</code></td><td>The whole build in one file: C++20/Release
+        toolchain setup, <code>OLV_BUILD_TESTS</code>/<code>OLV_WERROR</code> options,
+        Homebrew prefix auto-detection, the INTERFACE targets <code>olv_proto</code>,
+        <code>olv_test_support</code>, <code>olv_warnings</code>, finds the dependencies
+        (Threads, Boost &ge; 1.74 in CONFIG mode,
+        <code>find_package(OpenDIS 1.2 REQUIRED CONFIG)</code> &rarr;
+        <code>OpenDIS::OpenDIS6</code>), adds the <code>src/</code>, <code>tools/</code>
+        and (when <code>OLV_BUILD_TESTS</code>) <code>test/</code> subdirectories, and
+        defines the <code>format</code>/<code>format-check</code>/<code>lint</code>
+        convenience targets at the bottom. <code>tools/simulator/CMakeLists.txt</code>
+        inlines its own minimal copy of the toolchain/dependency setup so it stays
+        independently configurable; there is no separate <code>cmake/</code>
+        directory.</td></tr>
     <tr><td><code>LICENSE</code> / <code>THIRD_PARTY.md</code></td><td>MIT license; complete
         dependency &amp; license table, asset provenance, air-gap notes.</td></tr>
     <tr><td><code>.clang-format</code> / <code>.clang-tidy</code> / <code>.editorconfig</code></td>
@@ -168,10 +167,14 @@ for an engineer's first day on the project.</p>
         <code>install_open_dis.sh</code>, <code>integration_test.sh</code>,
         <code>gen_sbom.py</code>, <code>serve_frontend.sh</code>,
         <code>make_example_csv.py</code>, <code>cleanup.sh</code>, <code>serve_docs.sh</code>.</td></tr>
-    <tr><td><code>containers/</code></td><td><code>Containerfile.cpp</code> (multi-stage;
-        targets <code>backend</code>, <code>simulator</code>),
-        <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code> (three
-        services, bridge network, port env vars).</td></tr>
+    <tr><td><code>containers/</code></td><td><code>Dockerfile.builder</code> (the
+        Rocky Linux 10.2 build-environment image: toolchain + Boost + open-dis-cpp,
+        built once and pushed to a registry for offline builds),
+        <code>Dockerfile</code> (multi-stage; builds FROM the builder image, targets
+        <code>backend</code>, <code>simulator</code>, both Rocky Linux 10.2-minimal at
+        runtime), <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code>
+        (four services incl. an opt-in <code>builder</code> profile, bridge network,
+        port env vars).</td></tr>
     <tr><td><code>sbom/</code></td><td>Generated CycloneDX 1.5 SBOMs (committed snapshots;
         regenerate with <code>gen_sbom.py</code>).</td></tr>
   </tbody>

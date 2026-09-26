@@ -25,9 +25,14 @@ tests (<code>node:test</code>), and a shell-driven end-to-end integration test �
 all wired into two commands.</p>
 
 <h2 id="run-everything">Running everything</h2>
-<pre><code class="language-sh">ctest --test-dir build --output-on-failure     # backend_unit + sim_unit + integration
-node --test "frontend/tests/*.test.mjs"        # frontend logic tests (quote the glob!)
+<pre><code class="language-sh">docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'ctest --test-dir build-docker --output-on-failure'  # backend_unit + sim_unit + integration
+node --test "frontend/tests/*.test.mjs"        # frontend logic tests (host, quote the glob!)
 </code></pre>
+<p>(Assumes <code>build-docker</code> already exists — see
+<a href="../user-guide/installation.html#building-from-source">Installation: Building
+the binaries</a> for the build step. Podman: drop <code>--user</code> where the build
+command uses it; add <code>:z</code> to the volume on SELinux hosts.)</p>
 <div class="note"><strong>Quote the glob.</strong> <code>node --test</code> expands the
 pattern itself; an unquoted glob can behave differently across shells. The quoted
 form is the project's canonical invocation.</div>
@@ -74,9 +79,9 @@ and satellite carry-forward, chunking edge cases (1, 128, &gt;128), sequence
 monotonicity, generator determinism, DIS builder marshaling.</p>
 
 <h3 id="run-one">Running a single case</h3>
-<pre><code class="language-sh">./build/olv_backend_tests --list        # enumerate case names
-./build/olv_backend_tests               # run all (no per-case filter exists)
-ctest --test-dir build -R backend_unit          # via ctest
+<pre><code class="language-sh">./build-docker/olv_backend_tests --list        # enumerate case names
+./build-docker/olv_backend_tests               # run all (no per-case filter exists)
+ctest --test-dir build-docker -R backend_unit          # via ctest (run inside the container)
 </code></pre>
 
 <h2 id="frontend-tests">Frontend logic tests</h2>
@@ -137,12 +142,12 @@ ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout:</p>
 
 <h2 id="performance-testing">Performance testing</h2>
 <pre><code class="language-sh"># Protocol-ceiling soak (backend + renderer under max load)
-./build/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 600
+./build-docker/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 600
 # Watch: Stats panel rate ~40 pkt/s, no drops in the log, smooth frame rate.
 
 # Faster-than-spec stress
-./build/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 60
-./build/olv_backend --broadcast-hz 4
+./build-docker/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 60
+./build-docker/olv_backend --broadcast-hz 4
 </code></pre>
 <p>There is no automated perf harness or budget; the acceptance bar from the plan is
 "5,000 objects at 1&nbsp;Hz renders smoothly on localhost". Use browser DevTools

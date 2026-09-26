@@ -20,77 +20,73 @@
 <nav class="breadcrumbs" id="breadcrumbs"></nav>
 
 <h1>Installation</h1>
-<p class="lead">Two paths: <a href="#containers">containers</a> (fastest — nothing to
-install beyond Podman/Docker) or <a href="#building-from-source">building from
-source</a>. Both are covered end to end below.</p>
+<p class="lead">Everything builds, tests, and runs in containers — the only host
+prerequisite is Docker or Podman. <a href="#containers">Bring up the whole stack</a>
+with one command, or <a href="#building-from-source">build the binaries yourself</a>
+inside the same build-environment image. Both are covered end to end below.</p>
 
 <h2 id="prerequisites">Prerequisites</h2>
-
-<h3 id="containers-prereq">For the container path</h3>
 <ul>
   <li>Podman (with <code>podman compose</code> or <code>podman-compose</code>) <em>or</em>
   Docker (with <code>docker compose</code> or <code>docker-compose</code>).
   <code>scripts/run_all.sh</code> auto-detects whichever is present, in that order;
-  override with the <code>OLV_COMPOSE</code> environment variable.</li>
-  <li>Internet access on first build (base images + apt packages + the open-dis-cpp
-  tarball), or the <a href="#air-gapped">air-gap mirrors</a> below.</li>
+  override with the <code>OLV_COMPOSE</code> environment variable. This is the
+  <strong>only</strong> host requirement — the C++20 toolchain, CMake, Boost &ge; 1.74
+  headers, and the one compiled third-party dependency (<code>open-dis-cpp</code>
+  v1.2.0) all live inside the <code>olv-builder</code> container image built from
+  <code>containers/Dockerfile.builder</code>.</li>
+  <li>Internet access on first build (base images + dnf packages + the open-dis-cpp
+  tarball, baked into the <code>olv-builder</code> image), or the
+  <a href="#air-gapped">air-gap mirrors</a> below.</li>
 </ul>
-
-<h3 id="source-prereq">For the source path</h3>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Requirement</th><th>Minimum</th><th>Needed for</th></tr></thead>
   <tbody>
-    <tr><td>C++ compiler</td><td>C++20 (GCC &ge; 12 / Clang &ge; 14)</td><td>backend + simulator</td></tr>
-    <tr><td>CMake</td><td>3.20</td><td>build</td></tr>
-    <tr><td>Boost headers</td><td>1.74</td><td>backend + simulator (header-only Asio/Beast — no compiled Boost libs)</td></tr>
-    <tr><td>open-dis-cpp</td><td>v1.2.0 (pinned)</td><td>DIS support — required to build even if you only use OLV1 mode</td></tr>
-    <tr><td>Node.js (optional)</td><td>18</td><td>frontend logic tests + integration test's parser check only</td></tr>
-    <tr><td>Python 3 (optional)</td><td>3.x, stdlib only</td><td><code>gen_sbom.py</code>, <code>serve_frontend.sh</code>, <code>make_example_csv.py</code></td></tr>
-    <tr><td>cppcheck / clang-format (optional)</td><td>—</td><td><code>lint</code> / <code>format</code> targets (no-op if absent)</td></tr>
+    <tr><td>Docker or Podman</td><td>—</td><td>everything — building, testing, and running (see above)</td></tr>
+    <tr><td>Node.js (optional)</td><td>18</td><td>frontend logic tests + integration test's parser check only — runs on the host</td></tr>
+    <tr><td>Python 3 (optional)</td><td>3.x, stdlib only</td><td><code>gen_sbom.py</code>, <code>serve_frontend.sh</code>, <code>make_example_csv.py</code> — run on the host</td></tr>
+    <tr><td>cppcheck / clang-format (optional)</td><td>—</td><td><code>lint</code> / <code>format</code> targets; not in the <code>olv-builder</code> image today, so these no-op unless added or run natively</td></tr>
   </tbody>
 </table>
 </div>
+<div class="note"><strong>Native build (advanced, unsupported):</strong> a native
+C++20 toolchain (GCC &ge; 12 / Clang &ge; 14), CMake &ge; 3.20, Boost &ge; 1.74
+headers, and an OpenDIS CMake package (<code>OpenDIS::OpenDIS6</code>) on
+<code>CMAKE_PREFIX_PATH</code> also work — see <code>containers/Dockerfile.builder</code>
+for the exact package list this repo is tested against, and
+<code>scripts/install_open_dis.sh</code> for what it runs to get open-dis-cpp. This
+path has no documented step-by-step; the container is the supported workflow.</div>
 
-<h3 id="dependency-installation">Installing system dependencies</h3>
-<pre><code class="language-sh"># Debian / Ubuntu
-sudo apt install g++ cmake libboost-dev
+<h2 id="building-from-source">Building the binaries</h2>
+<pre><code class="language-sh"># 1. Build the build-environment image once (or pull a prebuilt one — see
+#    OLV_BUILDER_IMAGE under Container environment variables below)
+docker build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
 
-# Fedora
-sudo dnf install gcc-c++ cmake boost-devel
+# 2. Build + test inside it — binaries land in ./build-docker on the host
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake -S . -B build-docker -DCMAKE_BUILD_TYPE=Release && cmake --build build-docker -j"$(nproc)" && ctest --test-dir build-docker --output-on-failure'
 
-# Immutable/Atomic distros (Bazzite, Silverblue, ...) via Homebrew/Linuxbrew
-brew install cmake boost
+# frontend logic tests run on the host (optional):
+node --test "frontend/tests/*.test.mjs"
 </code></pre>
-
-<h3 id="open-dis">Installing open-dis-cpp (one time)</h3>
-<p>The one compiled third-party dependency. It is <em>not</em> vendored — build and
-install it once into a prefix:</p>
-<pre><code class="language-sh">scripts/install_open_dis.sh --prefix ~/.local    # or /usr/local, /opt/open-dis
-</code></pre>
-<p>The script downloads the pinned v1.2.0 release tarball, verifies its SHA-256
-<em>before</em> compiling, builds only the self-contained <code>dis6</code> tree
-(static, <code>-O2</code>), and installs headers plus <code>libopendis6.a</code> and the
-upstream LICENSE. CMake automatically searches <code>/usr/local</code>,
-<code>/opt/open-dis</code>, and <code>~/.local</code>; any other prefix needs
-<code>-DOLV_OPEN_DIS_PREFIX=DIR</code> at configure time.</p>
-<div class="note"><strong>Note:</strong> the container build runs this script itself —
-if you only use <code>scripts/run_all.sh</code>, there is nothing to install here.</div>
-
-<h2 id="building-from-source">Building from source</h2>
-<pre><code class="language-sh">cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-
-# verify
-ctest --test-dir build --output-on-failure          # backend + sim units, integration
-node --test "frontend/tests/*.test.mjs"             # frontend logic tests (optional)
-</code></pre>
-<p>Binaries land at their per-subdirectory defaults:</p>
+<div class="note">With <strong>Podman</strong>, drop <code>--user</code> — rootless
+Podman already maps the container's root user to you; add <code>:z</code> to the
+volume flag on SELinux hosts. <code>ctest</code> passes all three suites inside the
+image; the integration test's frontend-parser sub-check is skipped there since
+Node isn't installed in <code>olv-builder</code> (run <code>ctest</code> on the host
+against the same <code>build-docker</code> tree, where Node is available, to
+exercise it).</div>
+<p>Binaries land at:</p>
 <ul>
-  <li><code>build/olv_backend</code> — the server</li>
-  <li><code>build/olv_ws_probe</code> — test-support WebSocket capture client</li>
-  <li><code>build/tools/simulator/olv_sim</code> — the simulator</li>
+  <li><code>build-docker/olv_backend</code> — the server</li>
+  <li><code>build-docker/olv_ws_probe</code> — test-support WebSocket capture client</li>
+  <li><code>build-docker/tools/simulator/olv_sim</code> — the simulator</li>
 </ul>
+<p>They need only glibc and libstdc++ to run (Boost is header-only, open-dis is
+linked statically), so they run directly on a compatible Linux host with no
+container involved at runtime; if the host's glibc is incompatible, run them the
+same way via <code>docker run</code>.</p>
 <p>Useful configure options (details in
 <a href="../developer-guide/build-system.html">Build System</a>):</p>
 <div class="table-wrap">
@@ -100,8 +96,7 @@ node --test "frontend/tests/*.test.mjs"             # frontend logic tests (opti
     <tr><td><code>-DCMAKE_BUILD_TYPE</code></td><td><code>Release</code> (when unset)</td><td>optimization level</td></tr>
     <tr><td><code>-DOLV_BUILD_TESTS</code></td><td><code>ON</code></td><td>build unit tests + enable CTest</td></tr>
     <tr><td><code>-DOLV_WERROR</code></td><td><code>OFF</code></td><td>treat warnings as errors</td></tr>
-    <tr><td><code>-DOLV_OPEN_DIS_PREFIX=DIR</code></td><td>—</td><td>nonstandard open-dis-cpp install location</td></tr>
-    <tr><td><code>-DCMAKE_PREFIX_PATH=$(brew --prefix)</code></td><td>—</td><td>find Homebrew-installed Boost (usually automatic)</td></tr>
+    <tr><td><code>-DCMAKE_PREFIX_PATH=DIR</code></td><td>—</td><td>nonstandard open-dis-cpp install location (native build only; not needed inside <code>olv-builder</code>)</td></tr>
   </tbody>
 </table>
 </div>
@@ -125,18 +120,29 @@ scripts/run_all.sh --ws-port 9765 --udp-port 48000
 </code></pre>
 
 <h3 id="manual-images">Building images manually</h3>
-<pre><code class="language-sh">podman build -f containers/Containerfile.cpp --target backend   -t olv-backend .
-podman build -f containers/Containerfile.cpp --target simulator -t olv-sim .
+<p>The build-environment image below is the same <code>olv-builder</code> image used to
+build the binaries directly in <a href="#building-from-source">Building the
+binaries</a> above.</p>
+<pre><code class="language-sh"># build-environment image (toolchain + Boost + open-dis-cpp) that backend/simulator
+# compile FROM — build once, or point OLV_BUILDER_IMAGE at a registry copy:
+podman build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
+
+podman build -f containers/Dockerfile --target backend   -t olv-backend .
+podman build -f containers/Dockerfile --target simulator -t olv-sim .
 podman build -f containers/Containerfile.frontend -t olv-frontend .
 
-# or all three via compose (docker compose works identically):
+# or all three via compose (docker compose works identically); this also
+# builds olv-builder first via its opt-in profile:
+podman compose -f containers/compose.yaml --profile builder build builder
 podman compose -f containers/compose.yaml up --build
 </code></pre>
-<p>Image facts: backend/simulator build in a Debian bookworm-slim stage and run as
-non-root UID 10001; the frontend image is nginx:alpine-slim serving
-<code>frontend/</code> at the web root with <code>docs/</code> mounted so in-app About
-links resolve. The build context excludes host build artifacts via
-<code>.dockerignore</code>.</p>
+<p>Image facts: backend/simulator compile in the <code>olv-builder</code>
+build-environment image (Rocky Linux 10.2 + gcc-c++/cmake/boost-devel/open-dis-cpp)
+and run in a Rocky Linux 10.2-minimal stage as non-root UID 10001 (no packages
+installed at runtime — Boost is header-only, open-dis is linked statically); the
+frontend image is nginx:alpine-slim serving <code>frontend/</code> at the web root with
+<code>docs/</code> copied in alongside it so in-app About links resolve. The build
+context excludes host build artifacts via <code>.dockerignore</code>.</p>
 
 <h3 id="env-vars">Container environment variables</h3>
 <div class="table-wrap">
@@ -148,7 +154,9 @@ links resolve. The build context excludes host build artifacts via
     <tr><td><code>OLV_UDP_PORT</code></td><td>47000</td><td>published host port for OLV1 UDP ingest (container port 47000/udp)</td></tr>
     <tr><td><code>OLV_COMPOSE</code></td><td>auto-detect</td><td>compose command override, e.g. <code>"docker compose"</code></td></tr>
     <tr><td><code>OLV_OPEN_DIS_TARBALL</code></td><td>—</td><td>path to a pre-fetched open-dis-cpp tarball (air gap)</td></tr>
-    <tr><td><code>OLV_OPEN_DIS_URL</code></td><td>GitHub release</td><td>mirror URL for the tarball (also a Containerfile build arg)</td></tr>
+    <tr><td><code>OLV_OPEN_DIS_URL</code></td><td>GitHub release</td><td>mirror URL for the tarball (also a <code>Dockerfile.builder</code> build arg)</td></tr>
+    <tr><td><code>OLV_BUILDER_IMAGE</code></td><td><code>localhost/olv-builder:latest</code></td><td>prebuilt build-environment image to compile <code>backend</code>/<code>simulator</code> FROM (registry image skips building it locally)</td></tr>
+    <tr><td><code>OLV_RUNTIME_IMAGE</code></td><td><code>docker.io/rockylinux/rockylinux:10.2-minimal</code></td><td>runtime base image for the <code>backend</code>/<code>simulator</code> stages</td></tr>
   </tbody>
 </table>
 </div>
@@ -158,20 +166,27 @@ container-internal ports are fixed. <code>run_all.sh</code> sets them from its
 
 <h2 id="air-gapped">Air-gapped installation</h2>
 <ol>
-  <li>On a connected host, download the open-dis-cpp v1.2.0 tarball (URL inside
-  <code>scripts/install_open_dis.sh</code>) and transfer it.</li>
-  <li>Point the installer at it: <code>OLV_OPEN_DIS_TARBALL=/path/to/tarball
-  scripts/install_open_dis.sh --prefix ~/.local</code> — the SHA-256 check still runs.</li>
-  <li>For containers, additionally mirror the apt repos and pre-pull
-  <code>debian:bookworm-slim</code> and <code>nginx:alpine-slim</code>; pass the tarball
-  mirror as <code>--build-arg OLV_OPEN_DIS_URL=...</code>.</li>
-  <li>Nothing else touches the network — at runtime the stack is fully offline.</li>
+  <li>On a connected machine, build <code>containers/Dockerfile.builder</code> once
+  (mirror the <code>dnf</code> repos, and pass the open-dis-cpp tarball mirror as
+  <code>--build-arg OLV_OPEN_DIS_URL=...</code>, or pre-fetch the tarball and pass it
+  via <code>OLV_OPEN_DIS_TARBALL</code> — see <code>scripts/install_open_dis.sh</code>,
+  which the image runs internally; the pinned SHA-256 is enforced either way), then
+  push the image to an internal registry along with a mirrored
+  <code>rockylinux:10.2-minimal</code> and <code>nginx:alpine-slim</code>.</li>
+  <li>On the offline machine, pull those images and point the build at them —
+  <code>OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:1.0.0</code> (and
+  <code>OLV_RUNTIME_IMAGE=...</code> for the runtime base) — see
+  <a href="#env-vars">Container environment variables</a>.</li>
+  <li>Nothing else touches the network — at runtime the stack is fully offline. (A
+  native/advanced build has the same open-dis-cpp tarball requirement; see the note
+  under <a href="#prerequisites">Prerequisites</a>.)</li>
 </ol>
 
 <h2 id="verify">Verifying the installation</h2>
-<pre><code class="language-sh">./build/olv_backend --help        # prints usage, exit 0
-./build/tools/simulator/olv_sim --help
-ctest --test-dir build --output-on-failure
+<pre><code class="language-sh">./build-docker/olv_backend --help        # prints usage, exit 0
+./build-docker/tools/simulator/olv_sim --help
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'ctest --test-dir build-docker --output-on-failure'
 </code></pre>
 <p>Expected: <code>backend_unit</code>, <code>sim_unit</code>, and <code>integration</code>
 all pass (integration takes up to ~40&nbsp;s and requires free ephemeral ports).

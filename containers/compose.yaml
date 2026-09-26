@@ -16,9 +16,16 @@
 #   OLV_HTTP_PORT (default 8000). scripts/run_all.sh sets these from its
 #   --ws-port / --udp-port / --http-port flags.
 #
-# Build contexts are the repo root (".."), since both Containerfiles COPY
-# repo-relative paths (the whole tree for Containerfile.cpp, frontend/ for
-# Containerfile.frontend).
+# Build contexts are the repo root (".."), since the container files COPY
+# repo-relative paths (the whole tree for Dockerfile, scripts/ for
+# Dockerfile.builder, frontend/ for Containerfile.frontend).
+#
+# Build environment: backend and simulator compile FROM the olv-builder image
+# (containers/Dockerfile.builder), which compose does not order before them.
+# Build it first via its opt-in profile (scripts/run_all.sh does this):
+#   podman compose -f containers/compose.yaml --profile builder build builder
+# or use one pulled from your registry by setting OLV_BUILDER_IMAGE (and
+# OLV_RUNTIME_IMAGE for the runtime base) before `up --build`.
 #
 # Networking: compose creates an internal network for these services by
 # default; the simulator reaches the backend by its service name ("backend")
@@ -27,16 +34,28 @@
 # published below.
 #
 # Air-gap: all three images must be built (or already present) locally first
-# — see containers/Containerfile.cpp and containers/Containerfile.frontend
-# for their base-image/apt-mirror notes. No service reaches the internet at
-# runtime.
+# — see containers/Dockerfile.builder, containers/Dockerfile and
+# containers/Containerfile.frontend for their base-image/mirror notes. No
+# service reaches the internet at runtime.
 
 services:
+  # Build-only: the olv-builder image (toolchain + Boost + open-dis-cpp) that
+  # backend/simulator compile FROM. Behind a profile so `up` never runs it.
+  builder:
+    profiles: ["builder"]
+    image: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
+    build:
+      context: ..
+      dockerfile: containers/Dockerfile.builder
+
   backend:
     build:
       context: ..
-      dockerfile: containers/Containerfile.cpp
+      dockerfile: containers/Dockerfile
       target: backend
+      args:
+        OLV_BUILDER_IMAGE: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
+        OLV_RUNTIME_IMAGE: ${OLV_RUNTIME_IMAGE:-docker.io/rockylinux/rockylinux:10.2-minimal}
     ports:
       - "${OLV_WS_PORT:-8765}:8765"
       - "${OLV_UDP_PORT:-47000}:47000/udp"
@@ -60,8 +79,11 @@ services:
   simulator:
     build:
       context: ..
-      dockerfile: containers/Containerfile.cpp
+      dockerfile: containers/Dockerfile
       target: simulator
+      args:
+        OLV_BUILDER_IMAGE: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
+        OLV_RUNTIME_IMAGE: ${OLV_RUNTIME_IMAGE:-docker.io/rockylinux/rockylinux:10.2-minimal}
     depends_on:
       - backend
     # Replay the bundled example mission on loop (the CSV is baked into the

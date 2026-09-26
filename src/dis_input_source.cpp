@@ -69,14 +69,15 @@ std::uint32_t foldEntityId(std::uint16_t site, std::uint16_t app, std::uint16_t 
 }
 
 // DIS EntityType (kind, domain) -> OLV ObjectType (§3.4). Exhaustive by
-// construction via the kDebris fallback; never an error.
+// construction via the kUnknown fallback; never an error.
 std::uint8_t mapObjectType(std::uint8_t kind, std::uint8_t domain) {
   using proto::ObjectType;
   if (kind == 1 && domain == 5) return static_cast<std::uint8_t>(ObjectType::kSatellite);
   if (kind == 1 && domain == 1) return static_cast<std::uint8_t>(ObjectType::kGroundHot);
   if (kind == 3 && domain == 1) return static_cast<std::uint8_t>(ObjectType::kGroundHot);
   if (kind == 2) return static_cast<std::uint8_t>(ObjectType::kComet);
-  return static_cast<std::uint8_t>(ObjectType::kDebris);
+  if (kind == 0 && domain == 5) return static_cast<std::uint8_t>(ObjectType::kDebris);
+  return static_cast<std::uint8_t>(ObjectType::kUnknown);
 }
 
 std::string entityIdString(std::uint16_t site, std::uint16_t app, std::uint16_t entity) {

@@ -15,6 +15,8 @@
 # Requires a container engine with compose support. Detection order:
 # 'podman compose', 'docker compose', 'podman-compose', 'docker-compose'.
 # Override with OLV_COMPOSE, e.g.  OLV_COMPOSE="docker compose" scripts/run_all.sh
+# Set OLV_BUILDER_IMAGE to use a prebuilt build-environment image (e.g. from
+# your registry) instead of building containers/Dockerfile.builder locally.
 
 set -u
 
@@ -75,6 +77,17 @@ trap cleanup EXIT
 # reaches only this script and not the log-follow child below.
 trap 'exit 130' INT
 trap 'exit 143' TERM
+
+# --- build environment image (backend/simulator compile FROM it) -----------
+# Layer-cached, so this is quick after the first run. Skip it when
+# OLV_BUILDER_IMAGE names a prebuilt image (e.g. pulled from a registry).
+if [ -z "${OLV_BUILDER_IMAGE:-}" ]; then
+  echo "== building olv-builder (containers/Dockerfile.builder) =="
+  if ! "${COMPOSE[@]}" --profile builder build builder; then
+    echo "run_all.sh: building the olv-builder image failed" >&2
+    exit 1
+  fi
+fi
 
 # --- bring the stack up (detached; builds missing images) ------------------
 UP_ARGS=(up -d --remove-orphans)

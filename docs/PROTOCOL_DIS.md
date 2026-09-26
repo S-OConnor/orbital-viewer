@@ -99,7 +99,7 @@ scale the probability is negligible.
 The DIS `EntityType` `(kind, domain)` pair selects the OLV object type
 (enum values per docs/PROTOCOL_UDP.md §3); the table is exhaustive by
 construction via the fallback row — an unmapped combination is a normal
-outcome (no log, no drop), rendered as debris:
+outcome (no log, no drop), rendered as unknown:
 
 | DIS kind | DIS domain | OLV type |
 |---|---|---|
@@ -107,7 +107,8 @@ outcome (no log, no drop), rendered as debris:
 | 1 (Platform) | 1 (Land) | `GROUND_HOT` (5) |
 | 3 (Lifeform) | 1 (Land) | `GROUND_HOT` (5) |
 | 2 (Munition) | *any* | `COMET` (3) |
-| *anything else* | *anything else* | `DEBRIS` (1) — fallback |
+| 0 (Other) | 5 (Space) | `DEBRIS` (1) |
+| *anything else* | *anything else* | `UNKNOWN` (0) — fallback |
 
 DIS has no analogue for OLV's per-object `confidence`/`intensity`/`flags`,
 so they are fixed: `confidence = 100`, `intensity = 0.0`, `flags =
@@ -185,7 +186,7 @@ types/out-of-range are startup errors).
 
 The simulator can emit the same subset (`[send] protocol = "dis"`, see
 `config/simulator.toml` and
-[`tools/simulator/src/dis_builder.hpp`](../simulator/src/dis_builder.hpp)): one
+[`tools/simulator/src/dis_builder.hpp`](../tools/simulator/src/dis_builder.hpp)): one
 Entity State PDU per entity per cycle, satellite first under the configured
 `dis_satellite_entity_id`, each object's 32-bit OLV id spread losslessly as
 `application = id >> 16`, `entity = id & 0xFFFF` with a fixed configured
@@ -194,4 +195,5 @@ the same positions, velocities, and mapped types as the equivalent OLV1
 run, with the DIS-inherent losses documented above: object ids become the
 backend's FNV-1a folds (deterministic but not the raw OLV ids), confidence
 and intensity are fixed at 100 / 0.0, and `STAR` objects degrade to
-`DEBRIS` (§5).
+`UNKNOWN` (§5). The simulator emits debris as `(0, 5)` and star/unknown
+objects as `(0, 0)`.

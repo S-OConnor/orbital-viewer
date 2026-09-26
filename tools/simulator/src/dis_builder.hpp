@@ -19,9 +19,9 @@
 //    be decoded as the satellite — with the defaults ("1:1:1") that requires
 //    object id 0x00010001; avoid such ids in CSV missions.
 //  - EntityType carries only the OLV object type: satellite → (kind 1, domain
-//    5), ground_hot → (1, 1), comet → (2, 0), debris → (0, 0). STAR has no
-//    row in the backend's frozen §3.4 table, so stars are emitted as (0, 0)
-//    and decode as debris; per-object confidence/intensity are likewise not
+//    5), ground_hot → (1, 1), comet → (2, 0), debris → (0, 5). STAR has no
+//    row in the backend's frozen §3.4 table, so stars (and unknown objects)
+//    are emitted as (0, 0) and decode as unknown; per-object confidence/intensity are likewise not
 //    representable in DIS (the backend fixes them at 100 / 0.0).
 //  - Timestamp: DIS time-of-hour ticks derived from `t_seconds` (31-bit tick
 //    field, LSB flag 0), so a monotonically increasing caller time keeps the

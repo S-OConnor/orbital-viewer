@@ -17,9 +17,10 @@ targets localhost/LAN use with no runtime internet access.
   vendored public-domain NASA Blue Marble (day) and Black Marble (night)
   imagery — see [frontend/assets/README.md](frontend/assets/README.md) and
   [THIRD_PARTY.md](THIRD_PARTY.md).
-- All five tracked-object categories: debris, stars, comets, other
-  satellites, and hot ground objects (rendered with distinct colors/sizes).
-- Optional time-accurate celestial background: the ~180 brightest stars, the
+- All six tracked-object categories: debris, stars, comets, other
+  satellites, hot ground objects, and unknown (objects whose type couldn't
+  be determined) — each rendered with a distinct color/size.
+- Optional time-accurate celestial background: the ~200 brightest stars, the
   Moon (with an illuminated-fraction readout), and the five naked-eye planets,
   all positioned from the state message's `serverTime` and drawn in both view
   modes (see [docs/features/FEATURE_SKY.md](docs/features/FEATURE_SKY.md)).
@@ -61,78 +62,78 @@ the backend's two threads, and no TLS/auth by design (see §11).
 
 ## Prerequisites
 
-A C++20 compiler, CMake ≥ 3.20, and Boost ≥ 1.74 headers (Asio/Beast are
-header-only — no compiled Boost libraries are linked).
-
-```sh
-# Debian / Ubuntu
-sudo apt install g++ cmake libboost-dev
-
-# Fedora
-sudo dnf install gcc-c++ cmake boost-devel
-
-# Immutable/Atomic distros (Bazzite, Silverblue, etc.) via Homebrew/Linuxbrew
-brew install cmake boost
-```
-
-Plus the one compiled third-party dependency, `open-dis-cpp` (IEEE 1278.1
-DIS support; BSD-2-Clause, pinned v1.2.0). It is not vendored — build and
-install it once into a prefix:
-
-```sh
-scripts/install_open_dis.sh --prefix ~/.local     # or /usr/local, /opt/open-dis
-```
-
-The script downloads the pinned, sha256-verified release tarball (air-gapped
-hosts: point `OLV_OPEN_DIS_TARBALL` at a mirrored copy, or `OLV_OPEN_DIS_URL`
-at an internal mirror), compiles the self-contained `dis6` tree, and installs
-headers + `libopendis6.a`. CMake finds it automatically in `/usr/local`,
-`/opt/open-dis`, or `~/.local`; other prefixes need
-`-DOLV_OPEN_DIS_PREFIX=DIR` at configure time. (The container build does this
-step itself — nothing to install for `scripts/run_all.sh`.)
+**Docker or Podman — that's the only thing you need on the host.** The C++20
+toolchain, CMake, Boost ≥ 1.74 headers, and the one compiled third-party
+dependency (`open-dis-cpp` v1.2.0, IEEE 1278.1 DIS support) all live inside
+the `olv-builder` container image built from
+[`containers/Dockerfile.builder`](containers/Dockerfile.builder); nothing
+needs to be installed on the host to build, test, or run the backend and
+simulator (see [Build & run](#build--run) below).
 
 Optional, for the full development workflow:
 
 - **Node.js ≥ 18** — runs the frontend logic tests (`node --test "frontend/tests/*.test.mjs"`)
-  and the integration test's frontend-parser check. Never required to serve
-  or run the frontend itself.
+  and the integration test's frontend-parser check. Runs on the host; never
+  required to serve or run the frontend itself.
 - **Python 3** — runs `scripts/gen_sbom.py`, `scripts/serve_frontend.sh`,
-  and `scripts/make_example_csv.py` (stdlib only, no pip packages).
-- **cppcheck**, **clang-format** — optional lint/format tooling (see §8).
+  and `scripts/make_example_csv.py` (stdlib only, no pip packages). Runs on
+  the host.
+- **cppcheck**, **clang-format** — optional lint/format tooling (see §8);
+  not included in the `olv-builder` image today, so the `lint`/`format`
+  CMake targets no-op unless you add them or run natively (see below).
+
+> **Native build (advanced, unsupported):** a native C++20 toolchain, CMake
+> ≥ 3.20, Boost ≥ 1.74 headers, and an OpenDIS CMake package
+> (`OpenDIS::OpenDIS6`) on `CMAKE_PREFIX_PATH` also work — see
+> [`containers/Dockerfile.builder`](containers/Dockerfile.builder) for the
+> exact package list this repo is tested against, and
+> `scripts/install_open_dis.sh` for what it runs to get open-dis-cpp. This
+> path has no documented step-by-step; the container is the supported
+> workflow.
 
 ## Build & run
 
 ```sh
-# Build (Boost >= 1.74 headers + CMake >= 3.20 + C++20 compiler)
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
+# 1. Build the build-environment image once (or pull a prebuilt one from your
+#    registry and skip straight to step 2 — see OLV_BUILDER_IMAGE in §Containers)
+docker build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
 
-# Unit + integration tests
-ctest --test-dir build --output-on-failure
+# 2. Build + test inside it — binaries land in ./build-docker on the host
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake -S . -B build-docker && cmake --build build-docker -j"$(nproc)" && ctest --test-dir build-docker --output-on-failure'
+# (podman: drop --user — rootless Podman already maps the container's root to
+# you; add :z to the volume flag on SELinux hosts)
 
-# Frontend logic tests (Node >= 18, dev-only dependency)
+# Frontend logic tests (Node >= 18, runs on the host, dev-only dependency)
 node --test "frontend/tests/*.test.mjs"
 
-# Run (three processes)
-./build/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
-./build/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
-./build/tools/simulator/olv_sim --generate 5000 --rate 1        # load test
+# 3. Run (three processes) — the binaries need only glibc/libstdc++ (Boost is
+# header-only, open-dis is linked statically), so they run directly on a
+# compatible host; otherwise run them via the same `docker run` pattern
+./build-docker/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+./build-docker/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
+./build-docker/tools/simulator/olv_sim --generate 5000 --rate 1        # load test
 scripts/serve_frontend.sh 8000                            # then open http://localhost:8000/frontend/
 
 # Or ingest IEEE 1278.1 DIS Entity State PDUs instead of OLV1 (see
 # docs/PROTOCOL_DIS.md; first uncomment dis_satellite_entity_id in the config —
 # DIS mode requires it and it has no CLI flag)
-./build/olv_backend --config config/backend.toml --input-mode dis
-./build/tools/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
+./build-docker/olv_backend --config config/backend.toml --input-mode dis
+./build-docker/tools/simulator/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
 
-# Lint / format / SBOM
-cmake --build build --target format lint
+# Lint / format (inside the container; add cppcheck/clang-format to a derived
+# image, or run natively, to make these do more than no-op) / SBOM (host):
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake --build build-docker --target format lint'
 python3 scripts/gen_sbom.py --out sbom/
 ```
 
-Binaries land at `build/olv_backend`, `build/olv_ws_probe`,
-and `build/tools/simulator/olv_sim` (each target's default per-subdirectory output
-directory; no `CMAKE_RUNTIME_OUTPUT_DIRECTORY` override is configured).
+Binaries land at `build-docker/olv_backend`, `build-docker/olv_ws_probe` (both
+have an explicit per-target `RUNTIME_OUTPUT_DIRECTORY` pointing at the
+top-level build directory), and `build-docker/tools/simulator/olv_sim` (no
+override, so it uses CMake's default per-subdirectory output location).
+`build-docker/` (like any `build*/` directory) is excluded from container
+build contexts by `.dockerignore`.
 
 ### One-liner (containers)
 
@@ -153,9 +154,8 @@ scripts/run_all.sh --build                 # force an image rebuild after code c
 scripts/run_all.sh --http-port 9000        # remap a published host port (also --ws-port/--udp-port)
 ```
 
-Then open <http://localhost:8000/>. (To run the binaries directly without
-containers instead, see the three-process commands above and
-`scripts/serve_frontend.sh`.)
+Then open <http://localhost:8000/>. (To build and run the binaries yourself
+instead of the full container stack, see [Build & run](#build--run) above.)
 
 ## Configuration files
 
@@ -194,7 +194,7 @@ see the header comment in `toml.hpp` for the exact grammar.
 ## Simulator usage
 
 ```sh
-./build/tools/simulator/olv_sim [options]
+./build-docker/tools/simulator/olv_sim [options]
 ```
 
 | Flag | Purpose |
@@ -207,7 +207,7 @@ see the header comment in `toml.hpp` for the exact grammar.
 | `--rate N` | Update rate in Hz (protocol target/default: 1 Hz). |
 | `--loop` | Replay a `--csv` mission repeatedly instead of exiting after one pass. |
 | `--chunk N` | Cap objects per UDP packet (protocol max `kMaxObjectsPerPacket` = 128); lower it to stay under one Ethernet MTU and avoid IP fragmentation. |
-| `--duration N` | Stop sending after N seconds; `0` runs indefinitely. |
+| `--duration N` | Generate mode only: stop sending after N seconds; `0` runs indefinitely (default `120`). |
 | `--seed N` | Seed the synthetic generator (`--generate`); runs are always deterministic, default seed `1`. |
 | `--quiet` | Suppress console progress output. |
 
@@ -225,7 +225,7 @@ time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,fla
 | `time_s` | Seconds from mission start; rows sharing a `time_s` are sent together as one update cycle. |
 | `kind` | Row kind — the primary satellite state vs. a tracked object record. |
 | `id` | Object/satellite identifier (`u32`). |
-| `type` | Object type: `1` debris, `2` star, `3` comet, `4` satellite, `5` ground-hot (see `docs/PROTOCOL_UDP.md` §3). |
+| `type` | Object type: `0`/empty unknown, `1` debris, `2` star, `3` comet, `4` satellite, `5` ground-hot (see `docs/PROTOCOL_UDP.md` §3). |
 | `px_m, py_m, pz_m` | ECEF position, meters. |
 | `vx_mps, vy_mps, vz_mps` | ECEF velocity, m/s (blank/omitted when no velocity is available). |
 | `confidence` | 0–100 (%). |
@@ -235,8 +235,9 @@ time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,fla
 ## Testing
 
 ```sh
-ctest --test-dir build --output-on-failure   # backend + simulator unit tests, and integration
-node --test "frontend/tests/*.test.mjs"                # frontend logic (DOM-free) tests
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'ctest --test-dir build-docker --output-on-failure'   # backend + simulator unit tests, and integration
+node --test "frontend/tests/*.test.mjs"                # frontend logic (DOM-free) tests, on the host
 ```
 
 `ctest` runs:
@@ -258,14 +259,20 @@ node --test "frontend/tests/*.test.mjs"                # frontend logic (DOM-fre
 ## Lint / format
 
 ```sh
-cmake --build build --target format        # clang-format, in place
-cmake --build build --target format-check  # clang-format, --dry-run --Werror
-cmake --build build --target lint          # cppcheck (warning/performance/portability)
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake --build build-docker --target format'        # clang-format, in place
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake --build build-docker --target format-check'  # clang-format, --dry-run --Werror
+docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake --build build-docker --target lint'           # cppcheck (warning/performance/portability)
 ```
 
-Both targets no-op with a notice if the underlying tool isn't installed.
-`clang-tidy` (config: `.clang-tidy`) isn't wired into a CMake target since it
-needs a compilation database — run it via your IDE, or manually:
+Both targets no-op with a notice if the underlying tool isn't installed — the
+`olv-builder` image doesn't include `clang-format`/`cppcheck` today, so add
+them to a derived image (or run these targets from a native build) to get
+real output. `clang-tidy` (config: `.clang-tidy`) isn't wired into a CMake
+target since it needs a compilation database, and needs a native toolchain to
+run via your IDE or manually (advanced):
 
 ```sh
 cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
@@ -275,13 +282,18 @@ clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 ## Containers
 
 Multi-stage, Podman-friendly images (non-root at runtime); see
-`containers/Containerfile.cpp` (targets `backend`, `simulator`) and
+`containers/Dockerfile.builder` (the Rocky Linux 10.2 build-environment image
+— toolchain + Boost + open-dis-cpp, meant to be built once and pushed to an
+internal registry for offline builds — this is the same image used to build
+the binaries directly in [Build & run](#build--run) above), `containers/Dockerfile`
+(targets `backend`, `simulator`, both Rocky Linux 10.2-minimal at runtime) and
 `containers/Containerfile.frontend` for the exact commands and air-gap
 notes.
 
 ```sh
-podman build -f containers/Containerfile.cpp --target backend   -t olv-backend .
-podman build -f containers/Containerfile.cpp --target simulator -t olv-sim .
+podman build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
+podman build -f containers/Dockerfile --target backend   -t olv-backend .
+podman build -f containers/Dockerfile --target simulator -t olv-sim .
 podman build -f containers/Containerfile.frontend -t olv-frontend .
 
 # or all three together (podman compose / docker compose are equivalent):
@@ -291,8 +303,9 @@ scripts/run_all.sh
 ```
 
 Then open <http://localhost:8000/> — in the container image nginx serves the
-frontend at the root (the compose file also mounts `docs/` there so the About
-modal's protocol links resolve). The frontend's default WebSocket setting
+frontend at the root (`containers/Containerfile.frontend` also `COPY`s `docs/`
+into the image alongside it, so the About modal's protocol links resolve).
+The frontend's default WebSocket setting
 (`localhost:8765`) matches the backend's published port, so no configuration
 is needed. Published host ports can be remapped without touching the
 containers' internal ports via `OLV_WS_PORT` / `OLV_UDP_PORT` /
@@ -332,19 +345,21 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 
 ## Troubleshooting
 
-- **`Could NOT find Boost` / CMake can't find Boost** (common on immutable
-  distros with Homebrew/Linuxbrew-installed Boost):
+- **`Could NOT find Boost` / CMake can't find Boost** — only relevant to a
+  native/advanced build (see §Prerequisites); the supported
+  `containers/Dockerfile.builder` image already has Boost installed. Natively,
+  this is common on immutable distros with Homebrew/Linuxbrew-installed Boost:
   ```sh
   cmake -S . -B build -DCMAKE_PREFIX_PATH=$(brew --prefix)
   ```
-  (`cmake/common.cmake` also auto-adds `$HOMEBREW_PREFIX` and
-  `/home/linuxbrew/.linuxbrew` to `CMAKE_PREFIX_PATH` when present, so this
-  is usually only needed with a nonstandard Homebrew install location.)
-- **`open-dis-cpp not found` at configure time:** the DIS library hasn't
-  been installed yet (see §Prerequisites) — run
-  `scripts/install_open_dis.sh --prefix ~/.local` (or another prefix), then
-  reconfigure; a prefix outside the default search list needs
-  `-DOLV_OPEN_DIS_PREFIX=DIR`.
+  (the top-level `CMakeLists.txt` also auto-adds `$HOMEBREW_PREFIX` and
+  `/home/linuxbrew/.linuxbrew` to `CMAKE_PREFIX_PATH` when present.)
+- **`open-dis-cpp not found` at configure time:** only relevant to a
+  native/advanced build — the `olv-builder` container image already has it
+  installed (it runs `scripts/install_open_dis.sh` internally). Building
+  natively anyway, point CMake at the install with `-DCMAKE_PREFIX_PATH=DIR`
+  (or `-DOpenDIS_DIR=DIR/lib64/cmake/OpenDIS`) if it isn't in `/usr/local` or
+  `~/.local`.
 - **UDP packets from the simulator never arrive / blocked by `firewalld`:**
   ```sh
   sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp   # runtime only
@@ -369,16 +384,17 @@ output: [`docs/SBOM.md`](docs/SBOM.md). Dependency/license table:
 
 ```
 .
-├── CMakeLists.txt, cmake/               # project setup, dependencies, subdirs; format/lint targets
+├── CMakeLists.txt                       # project setup, dependencies, subdirs; format/lint targets
 ├── include/olv/                         # backend headers (C++20, Boost.Asio/Beast)
 ├── src/                                 # backend sources (olv_backend)
 ├── test/                                # backend unit tests + support/olv_test.hpp
 ├── tools/                               # ws_probe.cpp (integration-test WS client)
 │   └── simulator/                       # olv_sim (C++20), standalone-configurable
 ├── frontend/                            # plain HTML/CSS/JS, no frameworks
-├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/
+├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
+├── config/                              # commented example backend.toml / simulator.toml
 ├── scripts/                             # integration test, sbom gen, run/serve helpers
-└── containers/                          # Containerfiles + compose.yaml
+└── containers/                          # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
 ```
 
 See [`docs/PLAN.md`](docs/PLAN.md) §3 for the full annotated tree.

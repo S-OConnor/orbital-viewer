@@ -8,7 +8,10 @@
 //
 // Wire format: docs/PROTOCOL_WS.md (normative).
 
+// Any integer category not listed here (a newer or confused sender) parses as
+// 'unknown' rather than failing the whole frame.
 const CATEGORY_NAMES = {
+  0: 'unknown',
   1: 'debris',
   2: 'star',
   3: 'comet',
@@ -125,10 +128,10 @@ function parseObjectRow(row, index) {
   if (!isFiniteNumber(id)) {
     throw new Error(`parseStateMessage: objects[${index}].id must be a number`);
   }
-  const catName = CATEGORY_NAMES[cat];
-  if (!catName) {
-    throw new Error(`parseStateMessage: objects[${index}] has unknown category ${cat}`);
+  if (!Number.isInteger(cat)) {
+    throw new Error(`parseStateMessage: objects[${index}].cat must be an integer`);
   }
+  const catName = CATEGORY_NAMES[cat] || 'unknown';
   if (![px, py, pz].every(isFiniteNumber)) {
     throw new Error(`parseStateMessage: objects[${index}] position must be finite numbers`);
   }

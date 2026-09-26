@@ -117,6 +117,23 @@ OLV_TEST(csv_type_out_of_range) {
   expectErrorOnLine(joinRow({"1", "obj", "10", "6", "0", "0", "0", "", "", "", "", "", ""}), 2);
 }
 
+OLV_TEST(csv_unknown_type_forms) {
+  // Empty cell, the name, and the numeric value all map to kUnknown.
+  const std::vector<std::string> rows = {
+      joinRow({"0", "sat", "1", "", "6921000", "0", "0", "0", "0", "7500", "", "", ""}),
+      joinRow({"1", "obj", "10", "", "100000", "0", "0", "", "", "", "", "", ""}),
+      joinRow({"1", "obj", "11", "unknown", "100000", "0", "0", "", "", "", "", "", ""}),
+      joinRow({"1", "obj", "12", "0", "100000", "0", "0", "", "", "", "", "", ""}),
+  };
+  std::istringstream in(makeCsv(rows));
+  olv::sim::ParseResult r = olv::sim::parseCsv(in);
+  OLV_CHECK(static_cast<bool>(r));
+  OLV_CHECK_EQ(r.rows.size(), std::size_t{4});
+  for (std::size_t i = 1; i < r.rows.size(); ++i) {
+    OLV_CHECK_EQ(r.rows[i].rec.type, static_cast<std::uint8_t>(olv::proto::ObjectType::kUnknown));
+  }
+}
+
 OLV_TEST(csv_confidence_out_of_range) {
   expectErrorOnLine(joinRow({"1", "obj", "10", "debris", "0", "0", "0", "", "", "", "101", "", ""}),
                     2);
@@ -175,6 +192,15 @@ OLV_TEST(csv_example_mission_file_parses) {
     std::fprintf(stderr, "example_mission.csv:%d: %s\n", r.error->line, r.error->message.c_str());
   }
   OLV_CHECK(r.rows.size() > 1000);
+
+  // The example deliberately carries a large unknown-type population.
+  std::size_t unknown_rows = 0;
+  for (const olv::sim::CsvRow& row : r.rows) {
+    if (!row.is_sat && row.rec.type == static_cast<std::uint8_t>(olv::proto::ObjectType::kUnknown)) {
+      ++unknown_rows;
+    }
+  }
+  OLV_CHECK(unknown_rows >= 1000);
 
   olv::sim::GroupResult grouped = olv::sim::buildFrames(r.rows);
   OLV_CHECK(static_cast<bool>(grouped));

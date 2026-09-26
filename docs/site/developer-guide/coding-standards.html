@@ -41,14 +41,16 @@ Both are described here.</p>
         readability-*</code> minus trailing-return-type, identifier-length,
         magic-numbers, implicit-bool-conversion, easily-swappable-parameters,
         cognitive-complexity. Header filter covers
-        <code>(backend|simulator)/(src|include|tools)/</code>.</td></tr>
+        <code>/(include/olv|src|tools)/</code>.</td></tr>
   </tbody>
 </table>
 </div>
-<pre><code class="language-sh">cmake --build build --target format         # fix in place
-cmake --build build --target format-check   # verify (CI-suitable, --Werror)
-cmake --build build --target lint           # cppcheck
+<pre><code class="language-sh">cmake --build build-docker --target format         # fix in place
+cmake --build build-docker --target format-check   # verify (CI-suitable, --Werror)
+cmake --build build-docker --target lint           # cppcheck
 </code></pre>
+<p>(run inside the <code>olv-builder</code> container — see
+<a href="../user-guide/installation.html#building-from-source">Installation</a>.)</p>
 
 <h2 id="naming">Naming conventions (as practiced in the codebase)</h2>
 <div class="table-wrap">
@@ -110,10 +112,11 @@ cmake --build build --target lint           # cppcheck
 <h2 id="review">Review checklist</h2>
 <p>No CI exists, so review carries the enforcement load. Before approving:</p>
 <ol>
-  <li><code>cmake --build build --target format-check lint</code> — clean.</li>
-  <li><code>ctest --test-dir build --output-on-failure</code> and
-  <code>node --test "frontend/tests/*.test.mjs"</code> — green, including
-  integration.</li>
+  <li><code>cmake --build build-docker --target format-check lint</code> (inside
+  <code>olv-builder</code>) — clean.</li>
+  <li><code>ctest --test-dir build-docker --output-on-failure</code> (inside
+  <code>olv-builder</code>) and <code>node --test "frontend/tests/*.test.mjs"</code>
+  (host) — green, including integration.</li>
   <li>New behavior has tests at the right layer (unit for logic, integration for
   cross-component contracts).</li>
   <li>Wire/config/API changes updated the normative docs and sample configs.</li>

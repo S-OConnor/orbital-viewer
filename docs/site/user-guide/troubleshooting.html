@@ -46,44 +46,52 @@ diagnostic tool throughout.</p>
 </div>
 
 <h2 id="build">Build-time problems</h2>
+<p>These almost never come up with the supported workflow (build inside the
+<code>olv-builder</code> container — see
+<a href="installation.html#building-from-source">Installation</a>), since Boost and
+open-dis-cpp are already installed in that image. The two entries below only apply
+if you're doing a native/advanced build.</p>
 
-<h3 id="boost-not-found"><code>Could NOT find Boost</code></h3>
+<h3 id="boost-not-found"><code>Could NOT find Boost</code> (native build only)</h3>
 <p>Common on immutable distros with Homebrew/Linuxbrew-installed Boost:</p>
 <pre><code class="language-sh">cmake -S . -B build -DCMAKE_PREFIX_PATH=$(brew --prefix)</code></pre>
-<p><code>cmake/common.cmake</code> auto-adds <code>$HOMEBREW_PREFIX</code> and
+<p>The top-level <code>CMakeLists.txt</code> auto-adds <code>$HOMEBREW_PREFIX</code> and
 <code>/home/linuxbrew/.linuxbrew</code> to the prefix path, so this is usually only
 needed for nonstandard Homebrew locations. Boost is found in CONFIG mode; very old
 Boost packages without CMake config files won't work — use &ge; 1.74.</p>
 
-<h3 id="open-dis-not-found"><code>open-dis-cpp not found</code> at configure time</h3>
-<p>The DIS library isn't installed yet:</p>
-<pre><code class="language-sh">scripts/install_open_dis.sh --prefix ~/.local
-cmake -S . -B build            # reconfigure
-</code></pre>
-<p>Prefixes outside <code>/usr/local</code>, <code>/opt/open-dis</code>, <code>~/.local</code>
-need <code>-DOLV_OPEN_DIS_PREFIX=DIR</code>. Air-gapped hosts: see
+<h3 id="open-dis-not-found"><code>open-dis-cpp not found</code> at configure time (native build only)</h3>
+<p>The <code>olv-builder</code> container image always has it (it runs
+<code>scripts/install_open_dis.sh</code> internally). Building natively anyway and
+missing it, install it yourself and reconfigure — point CMake at a nonstandard
+prefix with <code>-DCMAKE_PREFIX_PATH=DIR</code> (or
+<code>-DOpenDIS_DIR=DIR/lib64/cmake/OpenDIS</code>) if it isn't in
+<code>/usr/local</code> or <code>~/.local</code> (with <code>~/.local/bin</code> on
+<code>PATH</code>). Air-gapped hosts: see
 <a href="installation.html#air-gapped">air-gapped installation</a>.</p>
 
 <h3 id="stale-cache">Weird CMake errors after moving/copying the repo</h3>
-<p>A stale <code>build/</code> directory with an old <code>CMakeCache.txt</code> from
-another path. Delete <code>build/</code> and reconfigure.</p>
+<p>A stale <code>build-docker/</code> directory with an old <code>CMakeCache.txt</code>
+from another path. Delete it and reconfigure.</p>
 
 <h2 id="runtime">Runtime problems</h2>
 
 <h3 id="config-error">Backend/simulator exits immediately with a config error</h3>
-<p>Working as designed: strict config. The message names the file, key, and line —
-e.g. <code>backend.toml:7: network.udp_port out of range</code>. Fix the named key.
+<p>Working as designed: strict config. The message names the file and the offending
+key — e.g. <code>error: backend.toml: network.udp_port out of range (1-65535):
+999999</code> — plus a line number too when the problem is TOML grammar itself (a
+stray array, a dotted key) rather than a schema violation. Fix the named key.
 Remember the TOML subset: no arrays, no dotted keys, no single quotes
-(<a href="../reference/file-formats.html#toml">grammar</a>). Exit code 2 = bad
-arguments/config; exit code 1 = runtime failure (e.g. log file unwritable, port
-bind).</p>
+(<a href="../reference/file-formats.html#toml">grammar</a>). For the backend, exit
+code 2 = bad arguments/config, exit code 1 = runtime failure (e.g. log file
+unwritable, port bind); the simulator always exits 1, for both kinds of failure.</p>
 
 <h3 id="ws-busy"><code>bind: address already in use</code> on 8765</h3>
 <p>Another <code>olv_backend</code> (or anything else) already owns the port:</p>
 <pre><code class="language-sh">ss -tlnp | grep 8765            # who owns it
 scripts/cleanup.sh              # stops containerized stacks + stray processes
 # or run on a different port:
-./build/olv_backend --ws-port 8766   # update frontend Settings to match
+./build-docker/olv_backend --ws-port 8766   # update frontend Settings to match
 </code></pre>
 
 <h3 id="udp-blocked">Simulator packets never arrive (Stats stays at 0)</h3>
@@ -106,12 +114,15 @@ sudo firewall-cmd --reload
 <table>
   <thead><tr><th>Log reason</th><th>Meaning</th><th>Likely cause</th></tr></thead>
   <tbody>
-    <tr><td><code>bad_magic</code> / <code>bad_version</code> / <code>bad_msg_type</code></td>
+    <tr><td><code>bad_magic</code> / <code>bad_version</code> / <code>bad_msg_type</code> /
+        <code>too_short</code> / <code>too_long</code></td>
         <td>Not a valid OLV1 packet</td><td>Wrong sender/protocol pointed at the port</td></tr>
-    <tr><td><code>bad_length</code> / <code>bad_crc</code></td><td>Truncated or corrupted datagram</td>
+    <tr><td><code>bad_length</code> / <code>bad_crc</code> / <code>too_many_objects</code></td>
+        <td>Truncated, corrupted, or malformed-count datagram</td>
         <td>Network corruption; a non-OLV1 sender; IP fragmentation issues (try <code>--chunk 24</code>)</td></tr>
-    <tr><td><code>non_finite</code> / <code>out_of_range</code> / <code>bad_object_type</code></td>
-        <td>Structurally valid but bad content</td><td>Buggy or malicious data source</td></tr>
+    <tr><td><code>non_finite</code> / <code>out_of_range</code></td>
+        <td>Structurally valid but bad content</td><td>Buggy or malicious data source (an unrecognized
+        object-type byte is not rejected — it is silently normalized to "unknown")</td></tr>
     <tr><td><code>stale</code></td><td>Sequence not newer than the last accepted</td>
         <td>Two simulators feeding one backend (their sequences interleave) — run one
         source per backend, or restart the backend to reset the sequence baseline</td></tr>
@@ -170,11 +181,13 @@ DevTools (corrupt JSON is tolerated and falls back to defaults automatically).</
   <li><strong>State reset:</strong> the backend keeps no persistent state — restarting
   it resets counters, sequence baseline, and the object table. The frontend's only
   persistence is <code>localStorage</code> settings.</li>
-  <li><strong>Rebuild from scratch:</strong> <code>rm -rf build &amp;&amp; cmake -S . -B build
-  -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build build -j</code>; containers:
-  <code>scripts/run_all.sh --build</code>.</li>
-  <li><strong>Sanity baseline:</strong> <code>ctest --test-dir build
-  --output-on-failure</code> — if <code>integration</code> passes, the entire
+  <li><strong>Rebuild from scratch:</strong> <code>rm -rf build-docker &amp;&amp; docker run
+  --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest
+  sh -c 'cmake -S . -B build-docker -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build
+  build-docker -j"$(nproc)"'</code>; containers: <code>scripts/run_all.sh --build</code>.</li>
+  <li><strong>Sanity baseline:</strong> <code>docker run --rm -v "$PWD":/src -w /src
+  localhost/olv-builder:latest sh -c 'ctest --test-dir build-docker
+  --output-on-failure'</code> — if <code>integration</code> passes, the entire
   sim &rarr; backend &rarr; WS &rarr; parser pipeline works on this machine, and the
   problem is configuration or environment.</li>
 </ul>

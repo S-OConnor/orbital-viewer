@@ -120,8 +120,9 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   <code>start()</code>/<code>stop()</code>. Sends <code>hello</code> per connection,
   broadcasts <code>state</code> at <code>hz</code>; 5-frame per-session outbox.</dd>
 
-  <dt>DisInputSource::processDatagram(const uint8_t*, size_t, endpoint)</dt>
-  <dd>Public test seam: runs the full DIS pipeline without a live socket.</dd>
+  <dt>DisInputSource::processDatagram(const uint8_t*, size_t, const std::string&amp; from)</dt>
+  <dd>Public test seam: runs the full DIS pipeline without a live socket;
+  <code>from</code> is used only in log lines.</dd>
 
   <dt>struct Config / parseArgs(argc, argv, error) / applyConfigFile(...)</dt>
   <dd>Defaults &lt; TOML &lt; flags; strict schema; cross-field DIS invariant.
@@ -136,9 +137,9 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   unknown category, partial velocity, hello protocolVersion &ne; 1). Categories map
   1&rarr;debris, 2&rarr;star, 3&rarr;comet, 4&rarr;satellite, 5&rarr;groundHot.</dd>
 
-  <dt>net.js — createConnection({url, onState, onHello, onStatus, wsFactory})</dt>
-  <dd><code>connect()</code>, <code>close()</code>, <code>setEndpoint(url)</code>
-  (immediate reconnect), <code>getStats()</code>. Backoff 1/2/4/8/10&nbsp;s; parse
+  <dt>net.js — createConnection({host, port, onState, onHello, onStatus, wsFactory})</dt>
+  <dd><code>connect()</code>, <code>close()</code>, <code>setEndpoint(host, port)</code>
+  (immediate reconnect), <code>getParseErrorCount()</code>. Backoff 1/2/4/8/10&nbsp;s; parse
   errors counted, connection kept.</dd>
 
   <dt>model.js — createModel()</dt>

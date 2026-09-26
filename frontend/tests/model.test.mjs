@@ -72,6 +72,7 @@ test('getCounts tallies by category plus total', () => {
     comet: 0,
     satellite: 0,
     groundHot: 0,
+    unknown: 0,
     total: 3,
   });
 });

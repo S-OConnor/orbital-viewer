@@ -21,23 +21,31 @@
 
 <h1>Build System</h1>
 <p class="lead">CMake &ge; 3.20: the top-level <code>CMakeLists.txt</code> sets up the
-project and finds dependencies, then adds <code>src/</code>, <code>tools/</code> and
-<code>test/</code>, each of which lists its own sources and target options. Shared
-settings live in <code>cmake/common.cmake</code>; <code>tools/simulator/</code> is
-independently configurable. The frontend has no
-build step at all.</p>
+toolchain and options, defines the shared INTERFACE targets, finds dependencies, then
+adds <code>src/</code>, <code>tools/</code> and <code>test/</code>, each of which lists
+its own sources and target options, before defining the format/format-check/lint
+targets at the bottom. There is no separate <code>cmake/</code> directory —
+<code>tools/simulator/</code> inlines its own minimal copy of the same settings so it
+stays independently configurable. The frontend has no build step at all. The commands
+on this page assume the CMake configure/build happens inside the <code>olv-builder</code>
+container image (<code>containers/Dockerfile.builder</code>) via
+<code>docker run ... cmake ...</code> — see
+<a href="../user-guide/installation.html#building-from-source">Installation: Building
+the binaries</a> for the exact invocation; a native toolchain also works (advanced,
+unsupported) if you already have Boost and an OpenDIS CMake package on
+<code>CMAKE_PREFIX_PATH</code>.</p>
 
 <h2 id="targets">Target map</h2>
 <figure class="diagram">
-<svg viewBox="0 0 860 330" role="img" aria-label="CMake target dependency graph">
+<svg viewBox="0 0 940 330" role="img" aria-label="CMake target dependency graph">
   <defs>
     <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
     </marker>
   </defs>
   <!-- interface targets -->
-  <rect class="d-box2" x="20" y="20" width="820" height="70"/>
-  <text class="d-small" x="430" y="38" text-anchor="middle" font-weight="600">INTERFACE / imported targets</text>
+  <rect class="d-box2" x="20" y="20" width="900" height="70"/>
+  <text class="d-small" x="470" y="38" text-anchor="middle" font-weight="600">INTERFACE / imported targets</text>
   <rect class="d-box" x="50" y="48" width="120" height="32"/>
   <text class="d-mono" x="110" y="68" text-anchor="middle">olv_proto</text>
   <rect class="d-box" x="200" y="48" width="140" height="32"/>
@@ -46,8 +54,8 @@ build step at all.</p>
   <text class="d-mono" x="450" y="68" text-anchor="middle">olv_test_support</text>
   <rect class="d-box" x="560" y="48" width="130" height="32"/>
   <text class="d-mono" x="625" y="68" text-anchor="middle">Boost::headers</text>
-  <rect class="d-box" x="710" y="48" width="120" height="32"/>
-  <text class="d-mono" x="770" y="68" text-anchor="middle">open_dis_cpp</text>
+  <rect class="d-box" x="710" y="48" width="200" height="32"/>
+  <text class="d-mono" x="810" y="68" text-anchor="middle">OpenDIS::OpenDIS6</text>
 
   <!-- libs -->
   <rect class="d-box" x="80" y="140" width="130" height="36"/>
@@ -71,7 +79,7 @@ build step at all.</p>
 
   <line class="d-line" x1="145" y1="140" x2="118" y2="92" marker-end="url(#arr5)"/>
   <line class="d-line" x1="305" y1="140" x2="628" y2="92" marker-end="url(#arr5)"/>
-  <line class="d-line" x1="490" y1="140" x2="762" y2="92" marker-end="url(#arr5)"/>
+  <line class="d-line" x1="490" y1="140" x2="810" y2="92" marker-end="url(#arr5)"/>
   <line class="d-line" x1="470" y1="140" x2="130" y2="88" marker-end="url(#arr5)"/>
   <line class="d-line" x1="110" y1="240" x2="135" y2="178" marker-end="url(#arr5)"/>
   <line class="d-line" x1="130" y1="240" x2="290" y2="178" marker-end="url(#arr5)"/>
@@ -86,10 +94,8 @@ build step at all.</p>
 executables; INTERFACE targets carry headers and flags.</figcaption>
 </figure>
 
-<h2 id="common">cmake/common.cmake</h2>
+<h2 id="common">Top-level CMakeLists.txt: toolchain, options, shared targets</h2>
 <ul>
-  <li>Include-guarded (<code>OLV_COMMON_INCLUDED</code>) so subprojects can bootstrap it
-  standalone.</li>
   <li>C++20 required, extensions off; <code>CMAKE_BUILD_TYPE</code> defaults to
   <strong>Release</strong> when unset.</li>
   <li>Options: <code>OLV_BUILD_TESTS</code> (default ON — builds test binaries and calls
@@ -101,24 +107,33 @@ executables; INTERFACE targets carry headers and flags.</figcaption>
   <code>olv_test_support</code> (adds <code>test/support</code>),
   <code>olv_warnings</code> (<code>-Wall -Wextra -Wpedantic</code> [+
   <code>-Werror</code>]).</li>
+  <li><code>tools/simulator/CMakeLists.txt</code> inlines its own copy of this block
+  under <code>if(NOT DEFINED PROJECT_NAME)</code>, so it works standalone too.</li>
 </ul>
 
-<h2 id="open-dis">cmake/open_dis_cpp.cmake</h2>
-<p>Locates the prefix installed by <code>scripts/install_open_dis.sh</code>:
-search order is <code>-DOLV_OPEN_DIS_PREFIX</code>, then <code>/usr/local</code>,
-<code>/opt/open-dis</code>, <code>$HOME/.local</code>. On success it defines the
-imported static target <code>open_dis_cpp</code> with its headers marked SYSTEM
-(so upstream-generated code doesn't trip our warning set); on failure it stops with
-a FATAL_ERROR that includes the install instructions.</p>
+<h2 id="open-dis">find_package(OpenDIS)</h2>
+<p>The top-level <code>CMakeLists.txt</code> locates the package installed by
+<code>scripts/install_open_dis.sh</code> with upstream's own CMake package config:
+<code>find_package(OpenDIS 1.2 REQUIRED CONFIG)</code>, then links
+<code>OpenDIS::OpenDIS6</code>. CMake's normal <code>CONFIG</code>-mode search finds it
+automatically in <code>/usr/local</code>, and in <code>~/.local</code> when
+<code>~/.local/bin</code> is on <code>PATH</code> (CMake's PATH-derived prefix search);
+any other install location needs <code>-DCMAKE_PREFIX_PATH=DIR</code> or
+<code>-DOpenDIS_DIR=DIR/lib64/cmake/OpenDIS</code>. There is no custom find-module
+anymore — imported-target headers are marked SYSTEM automatically (so
+upstream-generated code doesn't trip our warning set), and a missing package fails
+configure with CMake's own standard <code>find_package</code> error, which names the
+package and the search paths tried.</p>
 
 <h2 id="subprojects">Subproject layout</h2>
 <ul>
-  <li><strong>CMakeLists.txt</strong> (top level) — <code>project()</code>, includes
-  <code>cmake/common.cmake</code>, finds dependencies (<code>Threads</code>,
-  <code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG mode, required by
-  CMake 4-era Boost packages, header-only usage — and
-  <code>cmake/open_dis_cpp.cmake</code>), adds the subdirectories below, and includes
-  <code>cmake/tooling.cmake</code> (<code>format</code>/<code>format-check</code>/<code>lint</code>).</li>
+  <li><strong>CMakeLists.txt</strong> (top level) — <code>project()</code>, sets the
+  toolchain/options and shared INTERFACE targets, finds dependencies
+  (<code>Threads</code>, <code>find_package(Boost 1.74 REQUIRED CONFIG)</code> — CONFIG
+  mode, required by CMake 4-era Boost packages, header-only usage — and
+  <code>find_package(OpenDIS 1.2 REQUIRED CONFIG)</code>), adds the subdirectories
+  below, and defines the <code>format</code>/<code>format-check</code>/<code>lint</code>
+  targets at the bottom.</li>
   <li><strong>src/CMakeLists.txt</strong> — static libs <code>olv_core</code> and
   <code>olv_net</code>, and the <code>olv_backend</code> executable.</li>
   <li><strong>tools/CMakeLists.txt</strong> — the <code>olv_ws_probe</code> tool, then
@@ -129,15 +144,18 @@ a FATAL_ERROR that includes the install instructions.</p>
   with the three target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
   <li><code>olv_backend</code>, <code>olv_ws_probe</code> and <code>olv_backend_tests</code>
   set <code>RUNTIME_OUTPUT_DIRECTORY</code> to the build root, so they still land at
-  <code>build/olv_backend</code> etc.; <code>olv_sim</code> lands in
-  <code>build/tools/simulator/</code>.</li>
+  <code>&lt;build-dir&gt;/olv_backend</code> etc. (<code>build-docker/</code> in the
+  documented container workflow); <code>olv_sim</code> lands in
+  <code>&lt;build-dir&gt;/tools/simulator/</code>.</li>
   <li><strong>tools/simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
   (everything except <code>main.cpp</code>, so tests link the real code),
   <code>olv_sim</code>, and <code>olv_sim_tests</code> (CTest <code>sim_unit</code>).</li>
   <li><code>tools/simulator/CMakeLists.txt</code> begins with an
   <code>if(NOT DEFINED PROJECT_NAME)</code> standalone header — you can configure the
-  simulator in isolation: <code>cmake -S tools/simulator -B build-sim</code>; in that
-  mode it finds Threads, Boost and open-dis-cpp itself.</li>
+  simulator in isolation, e.g. inside the container:
+  <code>docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest cmake -S
+  tools/simulator -B build-sim</code>; in that mode it finds Threads, Boost and
+  open-dis-cpp itself.</li>
 </ul>
 
 <h2 id="flags">Compiler options</h2>
@@ -145,25 +163,31 @@ a FATAL_ERROR that includes the install instructions.</p>
 <table>
   <thead><tr><th>Setting</th><th>Value</th><th>Where</th></tr></thead>
   <tbody>
-    <tr><td>Standard</td><td>C++20, no GNU extensions</td><td>common.cmake</td></tr>
+    <tr><td>Standard</td><td>C++20, no GNU extensions</td><td>CMakeLists.txt</td></tr>
     <tr><td>Warnings</td><td><code>-Wall -Wextra -Wpedantic</code> via <code>olv_warnings</code>
-        (PRIVATE on every first-party target)</td><td>common.cmake</td></tr>
-    <tr><td>Warnings-as-errors</td><td><code>-DOLV_WERROR=ON</code> (off by default)</td><td>common.cmake</td></tr>
+        (PRIVATE on every first-party target)</td><td>CMakeLists.txt</td></tr>
+    <tr><td>Warnings-as-errors</td><td><code>-DOLV_WERROR=ON</code> (off by default)</td><td>CMakeLists.txt</td></tr>
     <tr><td>Optimization</td><td>whatever <code>CMAKE_BUILD_TYPE</code> implies (Release = <code>-O3</code>)</td><td>CMake defaults</td></tr>
-    <tr><td>Third-party isolation</td><td>open-dis headers included as SYSTEM</td><td>open_dis_cpp.cmake</td></tr>
+    <tr><td>Third-party isolation</td><td>open-dis headers included as SYSTEM (automatic for imported CONFIG targets)</td><td>CMakeLists.txt (find_package(OpenDIS))</td></tr>
   </tbody>
 </table>
 </div>
 
 <h2 id="quality-targets">Quality targets</h2>
-<pre><code class="language-sh">cmake --build build --target format         # clang-format -i over include/src/test/tools
-cmake --build build --target format-check   # --dry-run --Werror (CI-suitable)
-cmake --build build --target lint           # cppcheck warning/performance/portability, exit 1 on findings
+<pre><code class="language-sh">cmake --build build-docker --target format         # clang-format -i over include/src/test/tools
+cmake --build build-docker --target format-check   # --dry-run --Werror (CI-suitable)
+cmake --build build-docker --target lint           # cppcheck warning/performance/portability, exit 1 on findings
 </code></pre>
-<p>Both no-op with a notice if the tool isn't installed. The <code>format</code>
-targets carry a Homebrew keg-only HINT path so brew-installed clang-format is found.
+<p>(run each via <code>docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest
+sh -c '...'</code>, as in <a href="../user-guide/installation.html#building-from-source">Installation</a>).
+Both no-op with a notice if the tool isn't installed — neither <code>clang-format</code>
+nor <code>cppcheck</code> are in the <code>olv-builder</code> image today; add them to a
+derived image, or run these targets from a native build, for real output. The
+<code>format</code> targets also carry a Homebrew keg-only HINT path so brew-installed
+clang-format is found on a native build.
 clang-tidy is configured (<code>.clang-tidy</code>) but not wired into a target —
-it needs a compilation database:</p>
+it needs a compilation database and a native toolchain to run it via your IDE or
+manually (advanced):</p>
 <pre><code class="language-sh">cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 </code></pre>
@@ -172,37 +196,53 @@ clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 <ul>
   <li><strong>Boost</strong>: system-provided, never vendored (size). Header-only usage
   means no Boost link libraries and no Boost ABI concerns.</li>
-  <li><strong>open-dis-cpp</strong>: pinned v1.2.0, sha256-verified tarball, compiled
-  once into a prefix by <code>scripts/install_open_dis.sh</code> (only the
-  self-contained <code>dis6</code> tree; builds with <code>-O2 -w -std=c++17</code>;
-  honors <code>CXX</code>/<code>AR</code>; installs LICENSE + provenance). No package
-  manager (vcpkg/Conan) is used anywhere — deliberate, for air-gap simplicity.</li>
+  <li><strong>open-dis-cpp</strong>: pinned v1.2.0, sha256-verified tarball, built once
+  into a prefix by <code>scripts/install_open_dis.sh</code> using upstream's own CMake
+  project (static, Release, warnings silenced; DIS6 <em>and</em> DIS7 are built because
+  upstream's package config requires both, though only DIS6 is used); installs a CMake
+  package config plus LICENSE + provenance. Consumed via
+  <code>find_package(OpenDIS CONFIG)</code> / <code>OpenDIS::OpenDIS6</code> — no custom
+  find-module. No package manager (vcpkg/Conan) is used anywhere — deliberate, for
+  air-gap simplicity.</li>
   <li><strong>Frontend</strong>: zero dependencies; no npm, no lockfiles.</li>
 </ul>
 
 <h2 id="ctest">CTest &amp; CI integration</h2>
-<pre><code class="language-sh">ctest --test-dir build --output-on-failure            # all three tests
-ctest --test-dir build -R backend_unit                # one suite
-ctest --test-dir build -L integration                 # by label
+<pre><code class="language-sh">ctest --test-dir build-docker --output-on-failure            # all three tests
+ctest --test-dir build-docker -R backend_unit                # one suite
+ctest --test-dir build-docker -L integration                 # by label
 </code></pre>
+<p>(run inside the container, e.g. <code>docker run --rm -v "$PWD":/src -w /src
+localhost/olv-builder:latest sh -c 'ctest --test-dir build-docker ...'</code>.)</p>
 <div class="note"><strong>No CI pipeline exists yet.</strong> Everything a pipeline
-needs is already a clean, non-interactive command:
-<code>cmake --build build --target format-check lint</code>,
-<code>ctest --test-dir build</code>, and
+needs is already a clean, non-interactive command, run inside the
+<code>olv-builder</code> image:
+<code>cmake --build build-docker --target format-check lint</code>,
+<code>ctest --test-dir build-docker</code>, plus (on the host)
 <code>node --test "frontend/tests/*.test.mjs"</code>. A minimal CI job is literally
-those three lines after configure (plus <code>scripts/install_open_dis.sh</code> in
-the image). See <a href="release-process.html">Release Process</a>.</div>
+those lines after configure — build/pull <code>olv-builder</code>, configure inside
+it, and run the three checks. See <a href="release-process.html">Release Process</a>.</div>
 
 <h2 id="containers-build">Container builds</h2>
-<p><code>containers/Containerfile.cpp</code> is a multi-stage build: a
-<code>build</code> stage (debian:bookworm-slim + g++/cmake/libboost-dev) runs
-<code>install_open_dis.sh --prefix /usr/local</code> <em>before</em>
-<code>COPY . .</code> for layer-cache friendliness, configures with
-<code>-DOLV_BUILD_TESTS=OFF</code>, and builds only <code>olv_backend olv_sim</code>;
-the <code>backend</code> and <code>simulator</code> runtime targets copy a single
-binary each into a fresh slim base with a non-root user (UID 10001).
-<code>Containerfile.frontend</code> is a one-stage nginx:alpine-slim copy of
-<code>frontend/</code> and <code>docs/</code> — no toolchain at all.</p>
+<p>Two files now split what used to be one: <code>containers/Dockerfile.builder</code>
+builds the <code>olv-builder</code> build-environment image — Rocky Linux 10.2 +
+<code>gcc-c++ cmake make boost-devel</code>, then
+<code>install_open_dis.sh --prefix /usr/local</code> — meant to be built once on a
+connected machine and pushed to an internal registry. <code>containers/Dockerfile</code>'s
+<code>build</code> stage is <code>FROM ${OLV_BUILDER_IMAGE}</code> (default
+<code>localhost/olv-builder:latest</code>) and installs/fetches nothing itself; it
+<code>COPY . .</code>, configures with <code>-DOLV_BUILD_TESTS=OFF</code>, and builds
+only <code>olv_backend olv_sim</code>. The <code>backend</code> and <code>simulator</code>
+runtime targets (backend is the last stage, so it's also the default
+<code>docker build</code> target) copy a single binary each into
+<code>${OLV_RUNTIME_IMAGE}</code> (default <code>rockylinux:10.2-minimal</code>) with a
+non-root user (UID 10001) — no packages installed at runtime, since Boost is
+header-only and open-dis is linked statically. <code>compose.yaml</code> has a
+<code>builder</code> service behind the <code>builder</code> profile so
+<code>up</code> never builds it implicitly; <code>scripts/run_all.sh</code> builds it
+first unless <code>OLV_BUILDER_IMAGE</code> is already set. <code>Containerfile.frontend</code>
+is unchanged: a one-stage nginx:alpine-slim copy of <code>frontend/</code> and
+<code>docs/</code> — no toolchain at all.</p>
 
 <div class="page-nav" id="page-nav"></div>
 </main>

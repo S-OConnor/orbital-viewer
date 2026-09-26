@@ -86,8 +86,9 @@ and carries confidence, intensity, star types, and highlight flags. Use
 <strong>DIS</strong> when interoperating with existing IEEE&nbsp;1278.1 tooling.
 DIS mode has documented, deliberate losses: object ids become FNV-1a folds,
 confidence/intensity are fixed at 100/0, and the STAR category cannot be expressed
-(degrades to DEBRIS). See <a href="../reference/protocol-dis.html">the DIS
-reference</a>.</p>
+(an entity type with no matching <code>(kind, domain)</code> row, including any that
+would be a star, decodes as UNKNOWN). See <a href="../reference/protocol-dis.html">the
+DIS reference</a>.</p>
 
 <h3 id="both-modes">Can the backend listen for OLV1 and DIS at the same time?</h3>
 <p>No — the input source is a boot-time choice (<code>--input-mode</code> /

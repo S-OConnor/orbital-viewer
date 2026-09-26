@@ -7,17 +7,23 @@ network access, no pip packages, air-gap friendly).
 ## What's in each BOM
 
 - **`sbom/backend.cdx.json`** covers `olv_backend` (and, since they share the
-  same dependency, `olv_sim`). `metadata.component` describes
-  `olv-backend@0.1.0` (MIT). `components` lists exactly one entry: **Boost**
-  (type `library`, license `BSL-1.0`), used header-only (Asio, Beast, core).
-  Boost is not vendored, so the script auto-detects the installed version by
-  reading `BOOST_VERSION` out of `boost/version.hpp`, searching in order:
-  `$BOOST_ROOT`, `$BOOST_ROOT/include`, `$HOMEBREW_PREFIX/include`,
-  `/home/linuxbrew/.linuxbrew/include`, `/usr/include`, `/usr/local/include`.
-  `BOOST_VERSION` encodes as `MAJOR*100000 + MINOR*100 + PATCH` (e.g.
-  `109000` → `"1.90.0"`); if no header is found anywhere in that search path,
-  the script records version `"unknown"` and prints a warning to stderr
-  (never fails the run). The purl is `pkg:generic/boost@<version>`.
+  same dependencies, `olv_sim`). `metadata.component` describes
+  `olv-backend@0.1.0` (MIT). `components` lists exactly two entries:
+  - **Boost** (type `library`, license `BSL-1.0`), used header-only (Asio,
+    Beast, core). Boost is not vendored, so the script auto-detects the
+    installed version by reading `BOOST_VERSION` out of `boost/version.hpp`,
+    searching in order: `$BOOST_ROOT`, `$BOOST_ROOT/include`,
+    `$HOMEBREW_PREFIX/include`, `/home/linuxbrew/.linuxbrew/include`,
+    `/usr/include`, `/usr/local/include`. `BOOST_VERSION` encodes as
+    `MAJOR*100000 + MINOR*100 + PATCH` (e.g. `109000` → `"1.90.0"`); if no
+    header is found anywhere in that search path, the script records version
+    `"unknown"` and prints a warning to stderr (never fails the run). The
+    purl is `pkg:generic/boost@<version>`.
+  - **open-dis-cpp** (type `library`, license `BSD-2-Clause`), the pinned
+    `OPEN_DIS_VERSION` (`"1.2.0"`, kept in sync with `install_open_dis.sh`)
+    used by `olv_backend --input-mode dis` and `olv_sim --protocol dis`.
+    Unlike Boost this version is hardcoded (not detected — the pin is
+    authoritative), with purl `pkg:github/open-dis/open-dis-cpp@v1.2.0`.
 - **`sbom/frontend.cdx.json`** covers the static frontend:
   `metadata.component` is `olv-frontend@0.1.0` (MIT). `components` lists
   **zero third-party code** (no frameworks, no bundler, no vendored JS) but
@@ -82,7 +88,7 @@ Every run also prints a one-line license summary per BOM, e.g.:
 ```
 wrote sbom/backend.cdx.json
 wrote sbom/frontend.cdx.json
-license report: backend: olv-backend@0.1.0 (MIT); boost@1.90.0 (BSL-1.0)
+license report: backend: olv-backend@0.1.0 (MIT); boost@1.90.0 (BSL-1.0); open-dis-cpp@1.2.0 (BSD-2-Clause)
 license report: frontend: olv-frontend@0.1.0 (MIT); 0 third-party code components; 2 vendored asset component(s) (public domain)
 ```
 
@@ -113,6 +119,13 @@ asset not found" cases, both of which are warnings, not errors).
       "version": "1.90.0",
       "licenses": [{ "license": { "id": "BSL-1.0" } }],
       "purl": "pkg:generic/boost@1.90.0"
+    },
+    {
+      "type": "library",
+      "name": "open-dis-cpp",
+      "version": "1.2.0",
+      "licenses": [{ "license": { "id": "BSD-2-Clause" } }],
+      "purl": "pkg:github/open-dis/open-dis-cpp@v1.2.0"
     }
   ]
 }
@@ -163,9 +176,12 @@ purpose is dependency/license visibility, not binary provenance.
 
 Regenerate (`python3 scripts/gen_sbom.py`) whenever:
 
-- The required Boost version changes (`find_package(Boost X.Y REQUIRED)` in
-  `cmake/common.cmake`), or the Boost actually installed in your environment
-  changes.
+- The required Boost version changes (`find_package(Boost X.Y REQUIRED CONFIG)`
+  in the top-level `CMakeLists.txt`), or the Boost actually installed in your
+  environment changes.
+- The pinned `open-dis-cpp` version changes (`OPEN_DIS_VERSION` in
+  `scripts/gen_sbom.py`, kept in sync with `VERSION` in
+  `scripts/install_open_dis.sh`).
 - The project version changes (`project(... VERSION X.Y.Z)` in
   `CMakeLists.txt` and `OLV_VERSION` in `scripts/gen_sbom.py`).
 - Any new runtime dependency is introduced anywhere in the repo (backend,
@@ -188,8 +204,9 @@ CI rather than committing it.
 [`syft`](https://github.com/anchore/syft) can generate CycloneDX SBOMs by
 scanning the filesystem/container image directly and is a reasonable
 alternative where available (e.g. `syft dir:. -o cyclonedx-json`), including
-against the built container images from `containers/Containerfile.cpp` and
-`containers/Containerfile.frontend`. `scripts/gen_sbom.py` remains the
+against the built container images from `containers/Dockerfile` (and
+`containers/Dockerfile.builder`) and `containers/Containerfile.frontend`.
+`scripts/gen_sbom.py` remains the
 canonical, dependency-free generator for this repo since it doesn't require
 installing an extra tool and encodes project-specific knowledge (e.g. "Boost
 is header-only, not vendored").

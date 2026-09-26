@@ -18,6 +18,7 @@ const DEFAULTS = {
     comet: true,
     satellite: true,
     groundHot: true,
+    unknown: true,
   },
   host: '',
   port: 8765,

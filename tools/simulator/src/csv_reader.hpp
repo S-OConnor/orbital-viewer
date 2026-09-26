@@ -9,9 +9,9 @@
 //
 //   - `kind`: "sat" (the primary satellite; `type` is ignored/unvalidated for
 //     this row) or "obj" (a tracked object).
-//   - `type`: a name (debris|star|comet|satellite|ground_hot) or the numeric
-//     ObjectType value (1-5). Required and validated for kind=obj; ignored
-//     for kind=sat.
+//   - `type`: a name (unknown|debris|star|comet|satellite|ground_hot) or the
+//     numeric ObjectType value (0-5); an empty cell defaults to unknown (0).
+//     Validated for kind=obj; ignored for kind=sat.
 //   - `px_m,py_m,pz_m`: required ECEF meters.
 //   - `vx_mps,vy_mps,vz_mps`: either all three empty (record has no
 //     velocity; HAS_VELOCITY flag unset, wire velocity sent as 0) or all

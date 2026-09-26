@@ -99,12 +99,13 @@ end-to-end.</em></p>
   <li><strong>Live 3D display</strong> of one primary satellite and up to 5,000 tracked
   objects at 1&nbsp;Hz, in ECEF meters, on a textured, sun-lit Earth globe
   (vendored NASA Blue Marble day / Black Marble night imagery).</li>
-  <li><strong>Five object categories</strong>, each with distinct color, size, and icon:
-  debris, star, comet, satellite, ground-hot.</li>
+  <li><strong>Six object categories</strong>, each with distinct color, size, and icon:
+  debris, star, comet, satellite, ground-hot, and unknown (objects whose type
+  couldn't be determined, e.g. an unmapped DIS entity).</li>
   <li><strong>Two view modes</strong>: a free orbit camera, and a satellite point-of-view
   mode — a 170&deg; equidistant-fisheye nadir view from the primary satellite,
   toggled with <kbd>V</kbd>.</li>
-  <li><strong>Time-accurate celestial background</strong> (optional): ~230 brightest
+  <li><strong>Time-accurate celestial background</strong> (optional): ~200 brightest
   stars, the Moon with illuminated-fraction readout, and the five naked-eye
   planets — all positioned from the state message's <code>serverTime</code>.</li>
   <li><strong>Per-object trails</strong> (0–60&nbsp;s, age-faded), on-screen labels
@@ -201,7 +202,7 @@ and the <a href="../developer-guide/architecture.html">detailed architecture</a>
     <tr><td>Replay a custom mission</td>
         <td>Author a CSV (see <a href="../reference/file-formats.html#csv">CSV format</a>) &rarr; <code>olv_sim --csv mission.csv --loop</code></td></tr>
     <tr><td>Verify the build</td>
-        <td><code>ctest --test-dir build</code> + <code>node --test "frontend/tests/*.test.mjs"</code></td></tr>
+        <td><code>ctest --test-dir build-docker</code> (in <code>olv-builder</code>) + <code>node --test "frontend/tests/*.test.mjs"</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -210,8 +211,9 @@ and the <a href="../developer-guide/architecture.html">detailed architecture</a>
 <p>Two supported deployment shapes, both localhost/LAN-scoped:</p>
 <ul>
   <li><strong>Containers</strong> (recommended for demos/ops): three OCI images —
-  backend and simulator built from <code>containers/Containerfile.cpp</code>
-  (Debian bookworm-slim, non-root UID 10001), frontend from
+  backend and simulator built from <code>containers/Dockerfile</code> (Rocky Linux
+  10.2-minimal at runtime, non-root UID 10001, compiled FROM the
+  <code>containers/Dockerfile.builder</code> build-environment image), frontend from
   <code>containers/Containerfile.frontend</code> (nginx:alpine-slim) — orchestrated by
   <code>containers/compose.yaml</code> under Podman or Docker. Host ports are remappable
   via <code>OLV_HTTP_PORT</code>/<code>OLV_WS_PORT</code>/<code>OLV_UDP_PORT</code>.</li>

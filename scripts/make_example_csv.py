@@ -9,12 +9,19 @@ one-second frames (t = 0..60 inclusive) of:
     closed-form circular-orbit parametrization used by
     tools/simulator/src/generator.cpp (velocity is the exact analytic derivative
     of position, so the pair is physically consistent at every step).
-  - ~25 tracked objects with a fixed, exact mix (not randomly proportioned,
+  - 65 tracked objects with a fixed, exact mix (not randomly proportioned,
     since the count is small): 12 moving debris (circular LEO shells),
     4 other satellites (same orbital family), 2 comets (slow bounded radial
     drift far from Earth), 3 stationary stars (fixed direction, no
     velocity), 4 stationary ground-hot objects (fixed lat/lon, intensities
-    500-1500 K, one flagged HIGHLIGHT).
+    500-1500 K, one flagged HIGHLIGHT), and 40 unknown-type objects (30
+    orbiting LEO-to-MEO with velocity, 10 stationary position-only
+    detections; low confidence). The unknowns cycle through all three CSV
+    spellings of the unknown type — "unknown", "0", and an empty cell — so
+    the example exercises each one.
+
+  The unknowns are appended after every other object and draw from the RNG
+  last, so objects 100-124 are byte-identical to the pre-unknown file.
 
 Run: `python3 scripts/make_example_csv.py` from anywhere; it always writes
 to tools/simulator/data/example_mission.csv relative to the repo root (this
@@ -37,7 +44,12 @@ STEP_S = 1
 SEED = 20260701  # fixed; never time-based, keeps the file byte-reproducible
 
 HIGHLIGHT_FLAG = 2
-TYPE_NAMES = {1: "debris", 2: "star", 3: "comet", 4: "satellite", 5: "ground_hot"}
+TYPE_NAMES = {0: "unknown", 1: "debris", 2: "star", 3: "comet", 4: "satellite", 5: "ground_hot"}
+
+NUM_UNKNOWN_MOVING = 30
+NUM_UNKNOWN_STATIONARY = 10
+# The three equivalent CSV spellings of an unknown type, cycled by object id.
+UNKNOWN_TYPE_CELLS = ("unknown", "0", "")
 
 CSV_HEADER = (
     "time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,confidence,intensity,flags"
@@ -52,7 +64,7 @@ CSV_COMMENT_BLOCK = """\
 #   Header: time_s,kind,id,type,px_m,py_m,pz_m,vx_mps,vy_mps,vz_mps,
 #           confidence,intensity,flags
 #   - kind: "sat" (primary satellite; type ignored) or "obj".
-#   - type: debris|star|comet|satellite|ground_hot, or numeric 1-5.
+#   - type: unknown|debris|star|comet|satellite|ground_hot, numeric 0-5, or empty (= unknown).
 #   - vx/vy/vz: all empty => no velocity; otherwise all three required.
 #   - confidence: 0-100 (empty => 100). intensity: float (empty => 0).
 #   - flags: empty => 0; only bit1 (2, HIGHLIGHT) may be set here — the
@@ -61,7 +73,9 @@ CSV_COMMENT_BLOCK = """\
 #
 # Scenario: 1 satellite (550 km / 53 deg circular LEO) + 12 moving debris +
 # 4 other satellites + 2 comets + 3 stationary stars + 4 stationary
-# ground-hot objects (one HIGHLIGHT-flagged), sampled at 1 Hz from t=0..60s.
+# ground-hot objects (one HIGHLIGHT-flagged) + 40 unknown-type objects (30
+# orbiting, 10 stationary; type cell cycles "unknown" / "0" / empty),
+# sampled at 1 Hz from t=0..60s.
 """
 
 
@@ -99,7 +113,7 @@ def f2(x):
 
 
 def build_objects(rng):
-  """Returns the fixed list of ~25 tracked-object definitions (exact mix)."""
+  """Returns the fixed list of 65 tracked-object definitions (exact mix)."""
   objects = []
   next_id = 100
 
@@ -188,12 +202,51 @@ def build_objects(rng):
     })
     next_id += 1
 
+  # 30 moving unknowns: circular orbits from LEO out to MEO, low confidence.
+  for _ in range(NUM_UNKNOWN_MOVING):
+    alt = rng.uniform(400_000.0, 20_000_000.0)
+    r = EARTH_RADIUS_M + alt
+    objects.append({
+        "id": next_id,
+        "type": 0,
+        "r": r,
+        "incl": rng.uniform(0.0, math.pi),
+        "raan": rng.uniform(0.0, 2 * math.pi),
+        "phase0": rng.uniform(0.0, 2 * math.pi),
+        "omega": math.sqrt(MU_EARTH / r ** 3),
+        "confidence": rng.randint(10, 70),
+    })
+    next_id += 1
+
+  # 10 stationary unknowns: position-only detections (no velocity) at a
+  # random direction and LEO-to-GEO range.
+  for _ in range(NUM_UNKNOWN_STATIONARY):
+    theta = rng.uniform(0.0, math.pi)
+    phi = rng.uniform(0.0, 2 * math.pi)
+    radius = EARTH_RADIUS_M + rng.uniform(400_000.0, 36_000_000.0)
+    objects.append({
+        "id": next_id,
+        "type": 0,
+        "stationary": True,
+        "pos": (radius * math.sin(theta) * math.cos(phi),
+                radius * math.sin(theta) * math.sin(phi),
+                radius * math.cos(theta)),
+        "confidence": rng.randint(10, 50),
+    })
+    next_id += 1
+
   return objects
 
 
 def object_row(t, obj):
   type_name = TYPE_NAMES[obj["type"]]
-  if obj["type"] in (1, 4):
+  if obj["type"] == 0:
+    type_name = UNKNOWN_TYPE_CELLS[obj["id"] % len(UNKNOWN_TYPE_CELLS)]
+    if obj.get("stationary"):
+      px, py, pz = obj["pos"]
+      return (str(t), "obj", str(obj["id"]), type_name, f3(px), f3(py), f3(pz), "", "", "",
+              str(obj["confidence"]), "", "")
+  if obj["type"] in (0, 1, 4):
     px, py, pz, vx, vy, vz = circular_orbit_state(
         obj["r"], obj["incl"], obj["raan"], obj["phase0"], obj["omega"], t)
     return (str(t), "obj", str(obj["id"]), type_name, f3(px), f3(py), f3(pz), f3(vx), f3(vy),

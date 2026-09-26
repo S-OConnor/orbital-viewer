@@ -164,16 +164,16 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/build-system",
 "title": "Build System",
-"section": "cmake/common.cmake",
+"section": "Top-level CMakeLists.txt: toolchain, options, shared targets",
 "anchor": "common",
-"text": "Build System cmake/common.cmake"
+"text": "Build System Top-level CMakeLists.txt: toolchain, options, shared targets"
 },
 {
 "page": "developer-guide/build-system",
 "title": "Build System",
-"section": "cmake/open_dis_cpp.cmake",
+"section": "find_package(OpenDIS)",
 "anchor": "open-dis",
-"text": "Build System cmake/open_dis_cpp.cmake"
+"text": "Build System find_package(OpenDIS)"
 },
 {
 "page": "developer-guide/build-system",
@@ -1606,9 +1606,9 @@ window.SEARCH_INDEX = [
 {
 "page": "user-guide/getting-started",
 "title": "Getting Started",
-"section": "First run — native binaries",
+"section": "First run — binaries you built",
 "anchor": "first-run-native",
-"text": "Getting Started First run — native binaries"
+"text": "Getting Started First run — binaries you built"
 },
 {
 "page": "user-guide/getting-started",
@@ -1648,37 +1648,9 @@ window.SEARCH_INDEX = [
 {
 "page": "user-guide/installation",
 "title": "Installation",
-"section": "For the container path",
-"anchor": "containers-prereq",
-"text": "Installation For the container path"
-},
-{
-"page": "user-guide/installation",
-"title": "Installation",
-"section": "For the source path",
-"anchor": "source-prereq",
-"text": "Installation For the source path"
-},
-{
-"page": "user-guide/installation",
-"title": "Installation",
-"section": "Installing system dependencies",
-"anchor": "dependency-installation",
-"text": "Installation Installing system dependencies"
-},
-{
-"page": "user-guide/installation",
-"title": "Installation",
-"section": "Installing open-dis-cpp (one time)",
-"anchor": "open-dis",
-"text": "Installation Installing open-dis-cpp (one time)"
-},
-{
-"page": "user-guide/installation",
-"title": "Installation",
-"section": "Building from source",
+"section": "Building the binaries",
 "anchor": "building-from-source",
-"text": "Installation Building from source"
+"text": "Installation Building the binaries"
 },
 {
 "page": "user-guide/installation",
@@ -1746,16 +1718,16 @@ window.SEARCH_INDEX = [
 {
 "page": "user-guide/troubleshooting",
 "title": "Troubleshooting",
-"section": "Could NOT find Boost",
+"section": "Could NOT find Boost (native build only)",
 "anchor": "boost-not-found",
-"text": "Troubleshooting Could NOT find Boost"
+"text": "Troubleshooting Could NOT find Boost (native build only)"
 },
 {
 "page": "user-guide/troubleshooting",
 "title": "Troubleshooting",
-"section": "open-dis-cpp not found at configure time",
+"section": "open-dis-cpp not found at configure time (native build only)",
 "anchor": "open-dis-not-found",
-"text": "Troubleshooting open-dis-cpp not found at configure time"
+"text": "Troubleshooting open-dis-cpp not found at configure time (native build only)"
 },
 {
 "page": "user-guide/troubleshooting",

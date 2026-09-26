@@ -33,7 +33,8 @@ settings; the exhaustive key-by-key tables are in the
   <tbody>
     <tr><td>Backend</td><td><code>config/backend.toml</code></td>
         <td><code>olv_backend --config config/backend.toml</code></td>
-        <td><strong>Strict</strong> — startup aborts with the offending key + line</td></tr>
+        <td><strong>Strict</strong> — startup aborts naming the offending key (plus a
+        line number for TOML grammar errors, e.g. a stray array)</td></tr>
     <tr><td>Simulator</td><td><code>config/simulator.toml</code></td>
         <td><code>olv_sim --config config/simulator.toml</code></td>
         <td><strong>Strict</strong> — same</td></tr>

@@ -33,8 +33,8 @@
   whose position the SAT view renders from. Carried in every OLV1 packet header; in
   DIS mode, promoted by <code>dis_satellite_entity_id</code>.</dd>
   <dt>Tracked object</dt>
-  <dd>Any of the up-to-5,000 non-primary objects: debris, star, comet, satellite,
-  ground-hot.</dd>
+  <dd>Any of the up-to-5,000 non-primary objects: unknown, debris, star, comet,
+  satellite, ground-hot.</dd>
   <dt>Ground-hot</dt>
   <dd>Object category 5 — a hot object on Earth's surface, stationary in ECEF; its
   <code>intensity</code> is a temperature in Kelvin (drives its rendered tint).</dd>
@@ -73,7 +73,7 @@
   the JS math in <code>sat_camera.js</code> must be changed together — picking
   correctness depends on them agreeing exactly.</dd>
   <dt>Sky feature</dt>
-  <dd>The optional celestial background (feature v0.4): ~230 catalog stars, Moon
+  <dd>The optional celestial background (feature v0.4): ~200 catalog stars, Moon
   with illuminated fraction, five naked-eye planets, all positioned from
   <code>serverTime</code>.</dd>
   <dt>Scene clock / scene epoch</dt>

@@ -72,7 +72,9 @@ mode, and automation. Flag-by-flag tables live in the
   <li>Trails on/off + duration slider (0–60&nbsp;s)</li>
   <li>Labels on/off</li>
   <li>Sky (stars, Moon, planets) on/off — on by default</li>
-  <li>Per-category visibility toggles (debris / star / comet / satellite / ground-hot)</li>
+  <li>Per-category visibility toggles (debris / star / comet / satellite / ground-hot /
+  unknown &mdash; "unknown" covers OLV1 object records whose type byte doesn't match
+  a known category; the decoder normalizes rather than rejects them)</li>
   <li>WebSocket host + port with a <em>Reconnect</em> button</li>
   <li><em>Reset to defaults</em> — returns to the site-config-merged baseline</li>
 </ul>
@@ -91,7 +93,7 @@ mode, and automation. Flag-by-flag tables live in the
 <h2 id="simulator">The simulator (<code>olv_sim</code>)</h2>
 
 <h3 id="csv-replay">CSV mission replay</h3>
-<pre><code class="language-sh">./build/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
+<pre><code class="language-sh">./build-docker/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
 </code></pre>
 <p>Rows sharing a <code>time_s</code> value form one update cycle; the satellite state
 carries forward into frames without an explicit <code>sat</code> row. With
@@ -100,15 +102,15 @@ backend never sees the wrap as stale). CSV column format:
 <a href="../reference/file-formats.html#csv">File Formats</a>.</p>
 
 <h3 id="generate">Synthetic generation (load testing)</h3>
-<pre><code class="language-sh">./build/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 0   # forever
-./build/tools/simulator/olv_sim --generate 500 --seed 42 --duration 60  # reproducible minute
+<pre><code class="language-sh">./build-docker/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 0   # forever
+./build-docker/tools/simulator/olv_sim --generate 500 --seed 42 --duration 60  # reproducible minute
 </code></pre>
 <p>Generates one primary satellite (550&nbsp;km, 53&deg; circular LEO) plus N objects
 with a fixed category mix (~70% debris, 10% satellites, 10% ground-hot, 5% comets,
 5% stars). Runs are deterministic for a given <code>--seed</code> (default 1).</p>
 
 <h3 id="chunking">Destination, pacing, chunking</h3>
-<pre><code class="language-sh">./build/tools/simulator/olv_sim --generate 1000 --dest 192.168.1.20 --port 47000 \
+<pre><code class="language-sh">./build-docker/tools/simulator/olv_sim --generate 1000 --dest 192.168.1.20 --port 47000 \
     --rate 2 --chunk 24
 </code></pre>
 <ul>
@@ -120,7 +122,7 @@ with a fixed category mix (~70% debris, 10% satellites, 10% ground-hot, 5% comet
 </ul>
 
 <h2 id="backend">The backend (<code>olv_backend</code>)</h2>
-<pre><code class="language-sh">./build/olv_backend --udp-port 47000 --ws-port 8765 \
+<pre><code class="language-sh">./build-docker/olv_backend --udp-port 47000 --ws-port 8765 \
     --log-file olv_backend.log --log-level info
 </code></pre>
 <ul>
@@ -136,11 +138,11 @@ with a fixed category mix (~70% debris, 10% satellites, 10% ground-hot, 5% comet
 <p>Ingest IEEE&nbsp;1278.1 Entity State PDUs instead of OLV1:</p>
 <pre><code class="language-sh"># 1. Edit config/backend.toml: uncomment dis_satellite_entity_id (required,
 #    no CLI flag exists for it) and optionally dis_exercise_id.
-./build/olv_backend --config config/backend.toml --input-mode dis
+./build-docker/olv_backend --config config/backend.toml --input-mode dis
 
 # 2. Any DIS source on port 47001 now feeds the display. The bundled simulator
 #    can emit DIS itself:
-./build/tools/simulator/olv_sim --generate 100 --protocol dis
+./build-docker/tools/simulator/olv_sim --generate 100 --protocol dis
 </code></pre>
 <p>Semantics worth knowing (full detail:
 <a href="../reference/protocol-dis.html">DIS reference</a>):</p>
@@ -158,19 +160,19 @@ with a fixed category mix (~70% debris, 10% satellites, 10% ground-hot, 5% comet
 
 <h2 id="probe">WebSocket probe (<code>olv_ws_probe</code>)</h2>
 <p>A capture client for scripting and diagnosis — grabs N JSON frames to a file:</p>
-<pre><code class="language-sh">./build/olv_ws_probe --host 127.0.0.1 --port 8765 \
+<pre><code class="language-sh">./build-docker/olv_ws_probe --host 127.0.0.1 --port 8765 \
     --count 6 --timeout 30 --out frames.jsonl
 # one frame per line; exit 0 on success, 1 with "timeout (captured X of N)" otherwise
 </code></pre>
 
 <h2 id="automation">Automation examples</h2>
 <pre><code class="language-sh"># Nightly soak: 5,000 objects for an hour, then assert zero unexpected drops
-./build/olv_backend --ws-port 8765 --log-file soak.log --quiet &amp;
-./build/tools/simulator/olv_sim --generate 5000 --duration 3600 --quiet
+./build-docker/olv_backend --ws-port 8765 --log-file soak.log --quiet &amp;
+./build-docker/tools/simulator/olv_sim --generate 5000 --duration 3600 --quiet
 grep -c "dropped" soak.log        # expect 0
 
 # Capture one snapshot for external processing
-./build/olv_ws_probe --host 127.0.0.1 --port 8765 --count 1 \
+./build-docker/olv_ws_probe --host 127.0.0.1 --port 8765 --count 1 \
     --timeout 10 --out snap.jsonl &amp;&amp; python3 -c \
     "import json;d=[json.loads(l) for l in open('snap.jsonl')];print(d[-1]['stats'])"
 

@@ -6,12 +6,13 @@
 #include <ostream>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "olv/protocol.hpp"
-#include "olv_test.hpp"
 
 using namespace olv;
 
-// Streamable for the test framework's failure reporter (ADL in olv::proto).
+// Streamable for GoogleTest's failure messages (ADL in olv::proto).
 namespace olv::proto {
 inline std::ostream& operator<<(std::ostream& os, DecodeError e) {
   return os << toString(e);
@@ -61,99 +62,105 @@ proto::DecodeError run(const std::vector<std::uint8_t>& b) {
 
 }  // namespace
 
-OLV_TEST(decode_too_short) {
+TEST(Validation, decode_too_short) {
   std::vector<std::uint8_t> b(59, 0);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kTooShort);
+  EXPECT_EQ(run(b), proto::DecodeError::kTooShort);
 }
 
-OLV_TEST(decode_too_long) {
+TEST(Validation, decode_too_long) {
   std::vector<std::uint8_t> b(6205, 0);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kTooLong);
+  EXPECT_EQ(run(b), proto::DecodeError::kTooLong);
 }
 
-OLV_TEST(decode_bad_magic) {
+TEST(Validation, decode_bad_magic) {
   auto b = proto::encode(validPacket(0));
   b[0] = 'X';
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadMagic);
+  EXPECT_EQ(run(b), proto::DecodeError::kBadMagic);
 }
 
-OLV_TEST(decode_bad_version) {
+TEST(Validation, decode_bad_version) {
   auto b = proto::encode(validPacket(0));
   b[4] = 2;
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadVersion);
+  EXPECT_EQ(run(b), proto::DecodeError::kBadVersion);
 }
 
-OLV_TEST(decode_bad_msg_type) {
+TEST(Validation, decode_bad_msg_type) {
   auto b = proto::encode(validPacket(0));
   b[5] = 2;
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadMsgType);
+  EXPECT_EQ(run(b), proto::DecodeError::kBadMsgType);
 }
 
-OLV_TEST(decode_object_count_over_128) {
+TEST(Validation, decode_object_count_over_128) {
   // 60-byte datagram (in range) but count field claims 129 -> kTooManyObjects
   // (checked before the length rule).
   auto b = proto::encode(validPacket(0));
   setU16(b, 52, 129);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kTooManyObjects);
+  EXPECT_EQ(run(b), proto::DecodeError::kTooManyObjects);
 }
 
-OLV_TEST(decode_count_greater_than_total) {
+TEST(Validation, decode_count_greater_than_total) {
   auto b = proto::encode(validPacket(2));  // count=2,total=2
   setU16(b, 54, 1);                        // total=1 < count -> kTooManyObjects
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kTooManyObjects);
+  EXPECT_EQ(run(b), proto::DecodeError::kTooManyObjects);
 }
 
-OLV_TEST(decode_bad_length) {
+TEST(Validation, decode_bad_length) {
   // count field says 1 but no record present (length stays 60).
   proto::StatePacket pkt;
   pkt.object_total = 1;  // total=1 so count<=total holds
   auto b = proto::encode(pkt);
   setU16(b, 52, 1);  // count=1, but datagram is only 60 bytes
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadLength);
+  EXPECT_EQ(run(b), proto::DecodeError::kBadLength);
 }
 
-OLV_TEST(decode_bad_crc) {
+TEST(Validation, decode_bad_crc) {
   auto b = proto::encode(validPacket(1));
   b[16] ^= 0xFF;  // corrupt a satellite position byte, leave CRC stale
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadCrc);
+  EXPECT_EQ(run(b), proto::DecodeError::kBadCrc);
 }
 
-OLV_TEST(decode_non_finite_satellite) {
+TEST(Validation, decode_non_finite_satellite) {
   auto pkt = validPacket(0);
   pkt.sat_px = std::numeric_limits<double>::quiet_NaN();
   auto b = proto::encode(pkt);  // CRC computed over the NaN bytes
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kNonFinite);
+  EXPECT_EQ(run(b), proto::DecodeError::kNonFinite);
 }
 
-OLV_TEST(decode_non_finite_object_velocity) {
+TEST(Validation, decode_non_finite_object_velocity) {
   auto pkt = validPacket(1);
   pkt.objects[0].vx = std::numeric_limits<float>::quiet_NaN();
   auto b = proto::encode(pkt);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kNonFinite);
+  EXPECT_EQ(run(b), proto::DecodeError::kNonFinite);
 }
 
-OLV_TEST(decode_out_of_range_position) {
+TEST(Validation, decode_out_of_range_position) {
   auto pkt = validPacket(0);
   pkt.sat_px = 1.1e13;  // > kMaxCoordinateMeters
   auto b = proto::encode(pkt);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kOutOfRange);
+  EXPECT_EQ(run(b), proto::DecodeError::kOutOfRange);
 }
 
-OLV_TEST(decode_bad_object_type_zero) {
+TEST(Validation, decode_object_type_zero_is_unknown) {
   auto pkt = validPacket(1);
   pkt.objects[0].type = 0;
   auto b = proto::encode(pkt);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadObjectType);
+  proto::StatePacket out;
+  EXPECT_EQ(proto::decode(b.data(), b.size(), out), proto::DecodeError::kNone);
+  EXPECT_EQ(out.objects[0].type, static_cast<std::uint8_t>(proto::ObjectType::kUnknown));
 }
 
-OLV_TEST(decode_bad_object_type_six) {
-  auto pkt = validPacket(1);
-  pkt.objects[0].type = 6;
-  auto b = proto::encode(pkt);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kBadObjectType);
+TEST(Validation, decode_unrecognized_object_type_defaults_to_unknown) {
+  for (std::uint8_t t : {std::uint8_t{6}, std::uint8_t{42}, std::uint8_t{255}}) {
+    auto pkt = validPacket(1);
+    pkt.objects[0].type = t;
+    auto b = proto::encode(pkt);
+    proto::StatePacket out;
+    EXPECT_EQ(proto::decode(b.data(), b.size(), out), proto::DecodeError::kNone);
+    EXPECT_EQ(out.objects[0].type, static_cast<std::uint8_t>(proto::ObjectType::kUnknown));
+  }
 }
 
-OLV_TEST(decode_mutate_then_refresh_crc_reaches_range_check) {
+TEST(Validation, decode_mutate_then_refresh_crc_reaches_range_check) {
   // Demonstrates the mutate+recompute-CRC pattern: patch a position to an
   // out-of-range value directly in the bytes, refresh CRC so decode gets past
   // the CRC gate to the range check.
@@ -165,5 +172,5 @@ OLV_TEST(decode_mutate_then_refresh_crc_reaches_range_check) {
   std::memcpy(&bits, &bad, sizeof(bits));
   for (int i = 0; i < 8; ++i) b[px_off + i] = static_cast<std::uint8_t>((bits >> (8 * i)) & 0xFF);
   refreshCrc(b);
-  OLV_CHECK_EQ(run(b), proto::DecodeError::kOutOfRange);
+  EXPECT_EQ(run(b), proto::DecodeError::kOutOfRange);
 }

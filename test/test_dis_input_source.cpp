@@ -2,7 +2,7 @@
 // PDUs into StateStore (docs/FEATURE_INPUT_SOURCES.md §3/§5). Drives the full
 // path via DisInputSource::processDatagram (no live socket) with hand-built
 // Entity State PDU byte arrays, and inspects the resulting StateStore snapshot
-// and stats. No OLV_TEST_MAIN(); it lives in test_protocol.cpp.
+// and stats.
 
 #include <bit>
 #include <chrono>
@@ -10,10 +10,11 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "olv/dis_input_source.hpp"
 #include "olv/logger.hpp"
 #include "olv/protocol.hpp"
-#include "olv_test.hpp"
 #include "olv/state_store.hpp"
 
 using namespace olv;
@@ -38,8 +39,8 @@ void putBEF32(std::vector<std::uint8_t>& b, std::size_t off, float f) {
 }
 void putBEF64(std::vector<std::uint8_t>& b, std::size_t off, double d) {
   const std::uint64_t v = std::bit_cast<std::uint64_t>(d);
-  for (int i = 0; i < 8; ++i) b[off + static_cast<std::size_t>(i)] =
-      static_cast<std::uint8_t>(v >> (56 - 8 * i));
+  for (int i = 0; i < 8; ++i)
+    b[off + static_cast<std::size_t>(i)] = static_cast<std::uint8_t>(v >> (56 - 8 * i));
 }
 
 // Minimal DIS6 Entity State PDU builder. The base PDU is 144 bytes; field
@@ -116,45 +117,39 @@ std::uint32_t fnv1a(std::uint16_t site, std::uint16_t app, std::uint16_t entity)
 // parseDisEntityId (shared format parser).
 // ---------------------------------------------------------------------------
 
-OLV_TEST(dis_parse_entity_id_valid) {
+TEST(DisInputSource, dis_parse_entity_id_valid) {
   std::uint16_t s = 0, a = 0, e = 0;
-  OLV_CHECK(parseDisEntityId("12:34:56", s, a, e));
-  OLV_CHECK_EQ(s, 12);
-  OLV_CHECK_EQ(a, 34);
-  OLV_CHECK_EQ(e, 56);
-  OLV_CHECK(parseDisEntityId("0:0:0", s, a, e));
-  OLV_CHECK(parseDisEntityId("65535:65535:65535", s, a, e));
+  EXPECT_TRUE(parseDisEntityId("12:34:56", s, a, e));
+  EXPECT_EQ(s, 12);
+  EXPECT_EQ(a, 34);
+  EXPECT_EQ(e, 56);
+  EXPECT_TRUE(parseDisEntityId("0:0:0", s, a, e));
+  EXPECT_TRUE(parseDisEntityId("65535:65535:65535", s, a, e));
 }
 
-OLV_TEST(dis_parse_entity_id_rejects_bad_format) {
+TEST(DisInputSource, dis_parse_entity_id_rejects_bad_format) {
   std::uint16_t s = 0, a = 0, e = 0;
-  OLV_CHECK(!parseDisEntityId("1:2", s, a, e));         // too few fields
-  OLV_CHECK(!parseDisEntityId("1:2:3:4", s, a, e));     // too many fields
-  OLV_CHECK(!parseDisEntityId("1::3", s, a, e));        // empty field
-  OLV_CHECK(!parseDisEntityId("1:2:", s, a, e));        // trailing empty field
-  OLV_CHECK(!parseDisEntityId("a:2:3", s, a, e));       // non-decimal
-  OLV_CHECK(!parseDisEntityId("1:2:65536", s, a, e));   // out of uint16 range
-  OLV_CHECK(!parseDisEntityId("", s, a, e));            // empty
-  OLV_CHECK(!parseDisEntityId(" 1:2:3", s, a, e));      // leading space
+  EXPECT_FALSE(parseDisEntityId("1:2", s, a, e));        // too few fields
+  EXPECT_FALSE(parseDisEntityId("1:2:3:4", s, a, e));    // too many fields
+  EXPECT_FALSE(parseDisEntityId("1::3", s, a, e));       // empty field
+  EXPECT_FALSE(parseDisEntityId("1:2:", s, a, e));       // trailing empty field
+  EXPECT_FALSE(parseDisEntityId("a:2:3", s, a, e));      // non-decimal
+  EXPECT_FALSE(parseDisEntityId("1:2:65536", s, a, e));  // out of uint16 range
+  EXPECT_FALSE(parseDisEntityId("", s, a, e));           // empty
+  EXPECT_FALSE(parseDisEntityId(" 1:2:3", s, a, e));     // leading space
 }
 
-OLV_TEST(dis_ctor_rejects_bad_satellite_id) {
+TEST(DisInputSource, dis_ctor_rejects_bad_satellite_id) {
   StateStore store;
   Logger log;
-  bool threw = false;
-  try {
-    DisInputSource src(cfgFor("not-an-id"), store, log);
-  } catch (const std::invalid_argument&) {
-    threw = true;
-  }
-  OLV_CHECK(threw);
+  EXPECT_THROW(DisInputSource(cfgFor("not-an-id"), store, log), std::invalid_argument);
 }
 
 // ---------------------------------------------------------------------------
 // Satellite vs. object mapping (§3.3, §3.4).
 // ---------------------------------------------------------------------------
 
-OLV_TEST(dis_satellite_entity_recognized) {
+TEST(DisInputSource, dis_satellite_entity_recognized) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -167,16 +162,16 @@ OLV_TEST(dis_satellite_entity_recognized) {
   feed(src, p);
 
   Snapshot s = snap(store);
-  OLV_CHECK(s.satellite.has_value());
-  OLV_CHECK_EQ(s.satellite->id, fnv1a(1, 1, 1));
-  OLV_CHECK_NEAR(s.satellite->px, 7000000.0, 1e-6);
-  OLV_CHECK_NEAR(s.satellite->pz, -200.0, 1e-6);
-  OLV_CHECK_NEAR(s.satellite->vx, 1.5, 1e-6);
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{0});  // satellite is not an object
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{1});
+  EXPECT_TRUE(s.satellite.has_value());
+  EXPECT_EQ(s.satellite->id, fnv1a(1, 1, 1));
+  EXPECT_NEAR(s.satellite->px, 7000000.0, 1e-6);
+  EXPECT_NEAR(s.satellite->pz, -200.0, 1e-6);
+  EXPECT_NEAR(s.satellite->vx, 1.5, 1e-6);
+  EXPECT_EQ(s.objects.size(), std::size_t{0});  // satellite is not an object
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{1});
 }
 
-OLV_TEST(dis_non_satellite_becomes_object) {
+TEST(DisInputSource, dis_non_satellite_becomes_object) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -192,19 +187,19 @@ OLV_TEST(dis_non_satellite_becomes_object) {
   feed(src, p);
 
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{1});
+  EXPECT_EQ(s.objects.size(), std::size_t{1});
   const SnapshotObject& o = s.objects.front();
-  OLV_CHECK_EQ(o.id, fnv1a(2, 2, 7));
-  OLV_CHECK_EQ(o.type, static_cast<std::uint8_t>(proto::ObjectType::kGroundHot));
-  OLV_CHECK_EQ(o.confidence, 100);
-  OLV_CHECK(o.hasVelocity());
-  OLV_CHECK_NEAR(o.intensity, 0.0, 1e-9);
-  OLV_CHECK_NEAR(o.px, 123.0, 1e-6);
-  OLV_CHECK_NEAR(o.vz, -9.0, 1e-6);
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{1});
+  EXPECT_EQ(o.id, fnv1a(2, 2, 7));
+  EXPECT_EQ(o.type, static_cast<std::uint8_t>(proto::ObjectType::kGroundHot));
+  EXPECT_EQ(o.confidence, 100);
+  EXPECT_TRUE(o.hasVelocity());
+  EXPECT_NEAR(o.intensity, 0.0, 1e-9);
+  EXPECT_NEAR(o.px, 123.0, 1e-6);
+  EXPECT_NEAR(o.vz, -9.0, 1e-6);
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{1});
 }
 
-OLV_TEST(dis_entity_type_mapping_table) {
+TEST(DisInputSource, dis_entity_type_mapping_table) {
   struct Row {
     std::uint8_t kind, domain;
     proto::ObjectType want;
@@ -212,8 +207,10 @@ OLV_TEST(dis_entity_type_mapping_table) {
   const Row rows[] = {
       {1, 5, proto::ObjectType::kSatellite}, {1, 1, proto::ObjectType::kGroundHot},
       {3, 1, proto::ObjectType::kGroundHot}, {2, 0, proto::ObjectType::kComet},
-      {2, 9, proto::ObjectType::kComet},     {9, 9, proto::ObjectType::kDebris},   // fallback
-      {1, 2, proto::ObjectType::kDebris},    {5, 5, proto::ObjectType::kDebris},
+      {2, 9, proto::ObjectType::kComet},     {0, 5, proto::ObjectType::kDebris},
+      {9, 9, proto::ObjectType::kUnknown},  // fallback
+      {1, 2, proto::ObjectType::kUnknown},   {5, 5, proto::ObjectType::kUnknown},
+      {0, 0, proto::ObjectType::kUnknown},
   };
   std::uint16_t ent = 10;
   for (const Row& r : rows) {
@@ -228,12 +225,12 @@ OLV_TEST(dis_entity_type_mapping_table) {
     p.domain = r.domain;
     feed(src, p);
     Snapshot s = snap(store);
-    OLV_CHECK_EQ(s.objects.size(), std::size_t{1});
-    OLV_CHECK_EQ(s.objects.front().type, static_cast<std::uint8_t>(r.want));
+    EXPECT_EQ(s.objects.size(), std::size_t{1});
+    EXPECT_EQ(s.objects.front().type, static_cast<std::uint8_t>(r.want));
   }
 }
 
-OLV_TEST(dis_space_platform_that_is_not_satellite_is_an_object) {
+TEST(DisInputSource, dis_space_platform_that_is_not_satellite_is_an_object) {
   // A (1,5) space platform that is not the configured satellite renders as a
   // kSatellite-typed *object*, not the satellite (§3.4 note).
   StateStore store;
@@ -247,11 +244,11 @@ OLV_TEST(dis_space_platform_that_is_not_satellite_is_an_object) {
   p.domain = 5;
   feed(src, p);
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{1});
-  OLV_CHECK_EQ(s.objects.front().type, static_cast<std::uint8_t>(proto::ObjectType::kSatellite));
+  EXPECT_EQ(s.objects.size(), std::size_t{1});
+  EXPECT_EQ(s.objects.front().type, static_cast<std::uint8_t>(proto::ObjectType::kSatellite));
 }
 
-OLV_TEST(dis_distinct_entities_become_distinct_objects) {
+TEST(DisInputSource, dis_distinct_entities_become_distinct_objects) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -266,11 +263,11 @@ OLV_TEST(dis_distinct_entities_become_distinct_objects) {
   feed(src, a);
   feed(src, b);
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{2});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{2});
+  EXPECT_EQ(s.objects.size(), std::size_t{2});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{2});
 }
 
-OLV_TEST(dis_satellite_carried_forward_across_object_pdus) {
+TEST(DisInputSource, dis_satellite_carried_forward_across_object_pdus) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -287,18 +284,18 @@ OLV_TEST(dis_satellite_carried_forward_across_object_pdus) {
   feed(src, obj);
 
   Snapshot s = snap(store);
-  OLV_CHECK(s.satellite.has_value());
-  OLV_CHECK_EQ(s.satellite->id, fnv1a(1, 1, 1));
-  OLV_CHECK_NEAR(s.satellite->px, 42.0, 1e-6);  // still the satellite's, not zeroed
-  OLV_CHECK_NEAR(s.satellite->py, 43.0, 1e-6);
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{1});
+  EXPECT_TRUE(s.satellite.has_value());
+  EXPECT_EQ(s.satellite->id, fnv1a(1, 1, 1));
+  EXPECT_NEAR(s.satellite->px, 42.0, 1e-6);  // still the satellite's, not zeroed
+  EXPECT_NEAR(s.satellite->py, 43.0, 1e-6);
+  EXPECT_EQ(s.objects.size(), std::size_t{1});
 }
 
 // ---------------------------------------------------------------------------
 // Filtering & unsupported kinds (§3.2, §3.5): counted in received only.
 // ---------------------------------------------------------------------------
 
-OLV_TEST(dis_unsupported_pdu_kind_ignored_not_errored) {
+TEST(DisInputSource, dis_unsupported_pdu_kind_ignored_not_errored) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -306,15 +303,15 @@ OLV_TEST(dis_unsupported_pdu_kind_ignored_not_errored) {
   p.pdu_type = 2;  // Fire PDU — recognized but unsupported
   feed(src, p);
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_received, std::uint64_t{1});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{0});
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});
-  OLV_CHECK_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
-  OLV_CHECK(!s.satellite.has_value());
-  OLV_CHECK_EQ(s.objects.size(), std::size_t{0});
+  EXPECT_EQ(s.stats.udp_received, std::uint64_t{1});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
+  EXPECT_FALSE(s.satellite.has_value());
+  EXPECT_EQ(s.objects.size(), std::size_t{0});
 }
 
-OLV_TEST(dis_exercise_filter_drops_mismatch_accepts_match) {
+TEST(DisInputSource, dis_exercise_filter_drops_mismatch_accepts_match) {
   StateStore store;
   Logger log;
   DisInputConfig c = cfgFor("1:1:1");
@@ -330,50 +327,50 @@ OLV_TEST(dis_exercise_filter_drops_mismatch_accepts_match) {
   feed(src, match);
 
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_received, std::uint64_t{2});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{1});          // only the matching one
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});  // filtered != malformed
-  OLV_CHECK_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_received, std::uint64_t{2});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{1});           // only the matching one
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});  // filtered != malformed
+  EXPECT_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
 }
 
-OLV_TEST(dis_no_exercise_filter_accepts_any_exercise) {
+TEST(DisInputSource, dis_no_exercise_filter_accepts_any_exercise) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);  // exercise_id unset
   EsPdu p;
   p.exercise = 200;
   feed(src, p);
-  OLV_CHECK_EQ(snap(store).stats.udp_accepted, std::uint64_t{1});
+  EXPECT_EQ(snap(store).stats.udp_accepted, std::uint64_t{1});
 }
 
 // ---------------------------------------------------------------------------
 // Malformed rejection (§3.2): counted as udp_dropped_malformed.
 // ---------------------------------------------------------------------------
 
-OLV_TEST(dis_too_short_for_header_is_malformed) {
+TEST(DisInputSource, dis_too_short_for_header_is_malformed) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
   const std::uint8_t buf[8] = {6, 0, 1, 0, 0, 0, 0, 0};  // < 12-byte header
   src.processDatagram(buf, sizeof(buf), "x");
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_received, std::uint64_t{1});
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{1});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_received, std::uint64_t{1});
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{1});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{0});
 }
 
-OLV_TEST(dis_truncated_body_is_malformed) {
+TEST(DisInputSource, dis_truncated_body_is_malformed) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
   const std::vector<std::uint8_t> full = EsPdu{}.build();
   src.processDatagram(full.data(), 50, "x");  // header ok, body truncated
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{1});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{1});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{0});
 }
 
-OLV_TEST(dis_bad_protocol_version_is_malformed) {
+TEST(DisInputSource, dis_bad_protocol_version_is_malformed) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -388,11 +385,11 @@ OLV_TEST(dis_bad_protocol_version_is_malformed) {
     feed(src, p);
   }
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{2});
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{2});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{0});
 }
 
-OLV_TEST(dis_protocol_versions_5_6_7_accepted) {
+TEST(DisInputSource, dis_protocol_versions_5_6_7_accepted) {
   for (std::uint8_t v : {std::uint8_t{5}, std::uint8_t{6}, std::uint8_t{7}}) {
     StateStore store;
     Logger log;
@@ -400,7 +397,7 @@ OLV_TEST(dis_protocol_versions_5_6_7_accepted) {
     EsPdu p;
     p.version = v;
     feed(src, p);
-    OLV_CHECK_EQ(snap(store).stats.udp_accepted, std::uint64_t{1});
+    EXPECT_EQ(snap(store).stats.udp_accepted, std::uint64_t{1});
   }
 }
 
@@ -408,7 +405,7 @@ OLV_TEST(dis_protocol_versions_5_6_7_accepted) {
 // Per-entity timestamp staleness (§3.6).
 // ---------------------------------------------------------------------------
 
-OLV_TEST(dis_older_timestamp_is_stale) {
+TEST(DisInputSource, dis_older_timestamp_is_stale) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -425,12 +422,12 @@ OLV_TEST(dis_older_timestamp_is_stale) {
   feed(src, p);
 
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{2});
-  OLV_CHECK_EQ(s.stats.udp_dropped_stale, std::uint64_t{1});
-  OLV_CHECK_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{2});
+  EXPECT_EQ(s.stats.udp_dropped_stale, std::uint64_t{1});
+  EXPECT_EQ(s.stats.udp_dropped_malformed, std::uint64_t{0});
 }
 
-OLV_TEST(dis_timestamp_zero_always_accepted) {
+TEST(DisInputSource, dis_timestamp_zero_always_accepted) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -442,10 +439,10 @@ OLV_TEST(dis_timestamp_zero_always_accepted) {
   feed(src, p);
   p.timestamp = 0;  // ts = 0 -> accepted despite being "older"
   feed(src, p);
-  OLV_CHECK_EQ(snap(store).stats.udp_accepted, std::uint64_t{2});
+  EXPECT_EQ(snap(store).stats.udp_accepted, std::uint64_t{2});
 }
 
-OLV_TEST(dis_timestamp_wraparound_accepted) {
+TEST(DisInputSource, dis_timestamp_wraparound_accepted) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -458,11 +455,11 @@ OLV_TEST(dis_timestamp_wraparound_accepted) {
   feed(src, p);
   p.timestamp = 0x10u << 1;  // ts = 0x10, gap > 2^30 -> wraparound accept
   feed(src, p);
-  OLV_CHECK_EQ(snap(store).stats.udp_accepted, std::uint64_t{2});
-  OLV_CHECK_EQ(snap(store).stats.udp_dropped_stale, std::uint64_t{0});
+  EXPECT_EQ(snap(store).stats.udp_accepted, std::uint64_t{2});
+  EXPECT_EQ(snap(store).stats.udp_dropped_stale, std::uint64_t{0});
 }
 
-OLV_TEST(dis_staleness_is_per_entity) {
+TEST(DisInputSource, dis_staleness_is_per_entity) {
   StateStore store;
   Logger log;
   DisInputSource src(cfgFor("1:1:1"), store, log);
@@ -482,11 +479,11 @@ OLV_TEST(dis_staleness_is_per_entity) {
   feed(src, b);
 
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{2});
-  OLV_CHECK_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{2});
+  EXPECT_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
 }
 
-OLV_TEST(dis_synthesized_sequence_never_self_stales) {
+TEST(DisInputSource, dis_synthesized_sequence_never_self_stales) {
   // Many accepted PDUs in a row must never trip apply()'s OLV1 sequence
   // staleness — DisInputSource synthesizes a strictly increasing sequence.
   StateStore store;
@@ -500,6 +497,6 @@ OLV_TEST(dis_synthesized_sequence_never_self_stales) {
     feed(src, p);
   }
   Snapshot s = snap(store);
-  OLV_CHECK_EQ(s.stats.udp_accepted, std::uint64_t{20});
-  OLV_CHECK_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
+  EXPECT_EQ(s.stats.udp_accepted, std::uint64_t{20});
+  EXPECT_EQ(s.stats.udp_dropped_stale, std::uint64_t{0});
 }

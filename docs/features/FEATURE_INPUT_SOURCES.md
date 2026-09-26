@@ -21,6 +21,20 @@ component) landed with the Phase 2 code.
 > posture is preserved via `OLV_OPEN_DIS_TARBALL`/`OLV_OPEN_DIS_URL`
 > (mirrored tarball; pinned sha256 enforced either way). Every §3.1 mention
 > of `third_party/open-dis-cpp/` below is historical.
+>
+> **Follow-up (2026-09-26):** the custom `cmake/open_dis_cpp.cmake` module
+> described below was replaced by upstream's own package config —
+> `find_package(OpenDIS CONFIG)` / `OpenDIS::OpenDIS6`, installed by the same
+> `scripts/install_open_dis.sh` (now driving upstream's CMake project instead
+> of a hand-rolled compile). `-DOLV_OPEN_DIS_PREFIX` no longer exists;
+> nonstandard prefixes use `-DCMAKE_PREFIX_PATH=DIR`. The container story also
+> moved: `containers/Containerfile.cpp` was replaced by
+> `containers/Dockerfile.builder` (a Rocky Linux 10.2 build-environment image,
+> built once and pushed to an internal registry) and `containers/Dockerfile`
+> (Rocky Linux 10.2-minimal runtime stages that build FROM it). Every mention
+> of `cmake/open_dis_cpp.cmake`, `open_dis_cpp`, `libopendis6.a`,
+> `-DOLV_OPEN_DIS_PREFIX`, or `containers/Containerfile.cpp` below is
+> historical.
 Companion to docs/PLAN.md (backend threading model, §2/§10) and
 docs/PROTOCOL_UDP.md (the existing OLV1 wire format, unchanged by this work).
 

@@ -97,10 +97,11 @@ Treat that as a hard boundary, not a default to harden later.</div>
   <li><strong>One data source per backend instance.</strong> The OLV1 staleness check
   assumes a single monotonic sequence stream; two simulators aimed at one backend
   will mutually stale each other. Run one backend per source (distinct ports).</li>
-  <li><strong>Air-gapped sites:</strong> mirror the open-dis tarball
-  (<code>OLV_OPEN_DIS_TARBALL</code>/<code>OLV_OPEN_DIS_URL</code>), an apt mirror, and
-  the two base images; after that the stack builds and runs fully offline.
-  Checklist: <a href="installation.html#air-gapped">Installation</a>.</li>
+  <li><strong>Air-gapped sites:</strong> build/push the <code>olv-builder</code> image
+  once (mirror the open-dis tarball via <code>OLV_OPEN_DIS_TARBALL</code>/
+  <code>OLV_OPEN_DIS_URL</code> and a <code>dnf</code> mirror), and mirror the runtime
+  base images; after that the stack builds and runs fully offline. Checklist:
+  <a href="installation.html#air-gapped">Installation</a>.</li>
   <li><strong>Know what's ephemeral.</strong> The backend holds no persistent state —
   a restart is always safe and always clean. The only client-side persistence is
   browser <code>localStorage</code> settings.</li>

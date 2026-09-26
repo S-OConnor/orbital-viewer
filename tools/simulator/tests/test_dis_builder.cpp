@@ -122,8 +122,9 @@ OLV_TEST(dis_builder_entity_type_table) {
   } cases[] =
       {
           {ObjectType::kSatellite, 1, 5}, {ObjectType::kGroundHot, 1, 1},
-          {ObjectType::kComet, 2, 0},     {ObjectType::kDebris, 0, 0},
-          {ObjectType::kStar, 0, 0},  // no §3.4 row: decodes as debris, documented
+          {ObjectType::kComet, 2, 0},     {ObjectType::kDebris, 0, 5},
+          {ObjectType::kStar, 0, 0},  // no §3.4 row: decodes as unknown, documented
+          {ObjectType::kUnknown, 0, 0},
       };
   for (const auto& c : cases) {
     Frame f = makeFrame();

@@ -20,7 +20,9 @@ const DEFAULTS = {
   showLabels: false,
   showSky: true,
   viewMode: 'orbit',
-  categories: { debris: true, star: true, comet: true, satellite: true, groundHot: true },
+  categories: {
+    debris: true, star: true, comet: true, satellite: true, groundHot: true, unknown: true,
+  },
   host: '',
   port: 8765,
 };
@@ -132,6 +134,7 @@ test('category merge keeps other category keys intact', () => {
     comet: true,
     satellite: true,
     groundHot: true,
+    unknown: true,
   });
 });
 

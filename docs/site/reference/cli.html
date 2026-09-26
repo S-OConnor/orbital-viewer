@@ -96,20 +96,29 @@ port bind, fatal exception) · 2 bad arguments or config.</p>
 (<code>OLV_COMPOSE</code> &rarr; <code>podman compose</code> &rarr;
 <code>docker compose</code> &rarr; <code>podman-compose</code> &rarr;
 <code>docker-compose</code>), project name <code>olv</code>, exports the port env
-vars, <code>up -d</code> (+<code>--build</code> with the flag), waits up to 30&nbsp;s
+vars, builds the <code>olv-builder</code> image via its opt-in compose profile
+(<code>compose --profile builder build builder</code>) unless
+<code>OLV_BUILDER_IMAGE</code> is already set to a prebuilt image, then
+<code>up -d</code> (+<code>--build</code> with the flag), waits up to 30&nbsp;s
 for the WS port, prints URLs, streams logs. <kbd>Ctrl-C</kbd> (or any exit) tears the
 stack down. Exit 130/143 on INT/TERM; 1 if the backend never comes up (dumps its
 logs first).</p>
 
 <h3 id="install-open-dis">scripts/install_open_dis.sh</h3>
 <pre><code class="language-sh">scripts/install_open_dis.sh [--prefix DIR] [--src DIR]
-# env: OLV_OPEN_DIS_TARBALL (pre-fetched file), OLV_OPEN_DIS_URL (mirror), CXX, AR
+# env: OLV_OPEN_DIS_TARBALL (pre-fetched file), OLV_OPEN_DIS_URL (mirror)
 </code></pre>
 <p>Default prefix <code>/usr/local</code>. Source resolution: <code>--src</code> &rarr;
 <code>$OLV_OPEN_DIS_TARBALL</code> &rarr; <code>$OLV_OPEN_DIS_URL</code> &rarr; GitHub;
-tarball always sha256-verified before compiling. Installs
-<code>include/dis6</code>, <code>lib/libopendis6.a</code>, and license/provenance
-docs.</p>
+tarball always sha256-verified before compiling. Builds with upstream's own CMake
+project (static, Release, <code>cmake --install</code>) and installs
+<code>include/dis6</code> + <code>include/dis7</code>,
+<code>lib64/libOpenDIS6.a</code> + <code>libOpenDIS7.a</code> (DIS7 is built only
+because upstream's package config requires it; the project links only DIS6), a
+<code>lib64/cmake/OpenDIS/</code> package config consumed via
+<code>find_package(OpenDIS CONFIG)</code>, and license/provenance docs.
+<code>containers/Dockerfile.builder</code> runs this script to bake the library into
+the build-environment image.</p>
 
 <h3 id="integration-test">scripts/integration_test.sh</h3>
 <pre><code class="language-sh">scripts/integration_test.sh BACKEND_BIN SIM_BIN PROBE_BIN [REPO_ROOT]
@@ -149,12 +158,16 @@ always exits 0 (missing optional inputs warn).</p>
 <code>serve_frontend.sh</code> / dev-server processes.</p>
 
 <h2 id="quality">Build-tree quality targets</h2>
-<pre><code class="language-sh">cmake --build build --target format         # clang-format in place
-cmake --build build --target format-check   # verify only (--Werror)
-cmake --build build --target lint           # cppcheck
-ctest --test-dir build [--output-on-failure] [-R name] [-L label]
-node --test "frontend/tests/*.test.mjs"
-node frontend/tests/validate_message.mjs FILE [--min-objects N]
+<p>Run the <code>cmake</code>/<code>ctest</code> lines inside the <code>olv-builder</code>
+container (e.g. <code>docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest
+sh -c '...'</code> — see
+<a href="../user-guide/installation.html#building-from-source">Installation</a>):</p>
+<pre><code class="language-sh">cmake --build build-docker --target format         # clang-format in place
+cmake --build build-docker --target format-check   # verify only (--Werror)
+cmake --build build-docker --target lint           # cppcheck
+ctest --test-dir build-docker [--output-on-failure] [-R name] [-L label]
+node --test "frontend/tests/*.test.mjs"                        # host
+node frontend/tests/validate_message.mjs FILE [--min-objects N]  # host
 </code></pre>
 
 <h2 id="ports">Default ports summary</h2>

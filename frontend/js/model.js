@@ -5,7 +5,7 @@
 // renderer (frozen API, see docs/PLAN.md §6) and ui.js need.
 
 function emptyCounts() {
-  return { debris: 0, star: 0, comet: 0, satellite: 0, groundHot: 0, total: 0 };
+  return { debris: 0, star: 0, comet: 0, satellite: 0, groundHot: 0, unknown: 0, total: 0 };
 }
 
 /**

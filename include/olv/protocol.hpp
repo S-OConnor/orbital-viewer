@@ -40,7 +40,10 @@ inline constexpr double kMaxCoordinateMeters = 1e13;
 
 enum class MsgType : std::uint8_t { kStateUpdate = 1 };
 
+// kUnknown is the catch-all: a sender that does not know an object's type
+// sends 0, and any unrecognized type byte decodes as kUnknown too.
 enum class ObjectType : std::uint8_t {
+  kUnknown = 0,
   kDebris = 1,
   kStar = 2,
   kComet = 3,
@@ -49,11 +52,18 @@ enum class ObjectType : std::uint8_t {
 };
 
 inline constexpr bool isKnownObjectType(std::uint8_t t) {
-  return t >= 1 && t <= 5;
+  return t <= 5;
+}
+
+// Maps any unrecognized type byte to kUnknown; known values pass through.
+inline constexpr std::uint8_t normalizeObjectType(std::uint8_t t) {
+  return isKnownObjectType(t) ? t : static_cast<std::uint8_t>(ObjectType::kUnknown);
 }
 
 inline const char* toString(ObjectType t) {
   switch (t) {
+    case ObjectType::kUnknown:
+      return "unknown";
     case ObjectType::kDebris:
       return "debris";
     case ObjectType::kStar:
@@ -109,7 +119,6 @@ enum class DecodeError {
   kBadCrc,
   kNonFinite,
   kOutOfRange,
-  kBadObjectType,
 };
 
 inline const char* toString(DecodeError e) {
@@ -136,8 +145,6 @@ inline const char* toString(DecodeError e) {
       return "non_finite";
     case DecodeError::kOutOfRange:
       return "out_of_range";
-    case DecodeError::kBadObjectType:
-      return "bad_object_type";
   }
   return "unknown";
 }
@@ -338,7 +345,7 @@ inline DecodeError decode(const std::uint8_t* data, std::size_t len, StatePacket
     const std::uint8_t* p = data + kHeaderSize + std::size_t{i} * kRecordSize;
     ObjectRecord r;
     r.id = detail::getU32(p + 0);
-    r.type = p[4];
+    r.type = normalizeObjectType(p[4]);
     r.flags = p[5];
     r.confidence = p[6] > 100 ? std::uint8_t{100} : p[6];
     r.px = detail::getF64(p + 8);
@@ -349,7 +356,6 @@ inline DecodeError decode(const std::uint8_t* data, std::size_t len, StatePacket
     r.vz = detail::getF32(p + 40);
     r.intensity = detail::getF32(p + 44);
 
-    if (!isKnownObjectType(r.type)) return DecodeError::kBadObjectType;
     if (!detail::finiteAll({r.px, r.py, r.pz, static_cast<double>(r.vx), static_cast<double>(r.vy),
                             static_cast<double>(r.vz), static_cast<double>(r.intensity)})) {
       return DecodeError::kNonFinite;

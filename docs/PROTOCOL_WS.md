@@ -49,7 +49,7 @@ re-parses captured backend frames with the real frontend parser.
 | `lastDataTime` | ISO-8601 UTC, ms · or `null` | receive time of the last **accepted** UDP packet; `null` until first data. Displayed as "latest data time". |
 | `satellite` | object · or `null` | primary satellite state; `null` until first data. `seq` = sequence of the packet that provided it. `pos` m ECEF, `vel` m/s ECEF. |
 | `objects` | array of 11-element rows | see below; rows are objects not yet expired (refreshed within the backend expiry window, default 15 s) |
-| `stats.udpReceived/udpAccepted/udpDropped` | u64 counters | totals since backend start; dropped = malformed + CRC + stale + invalid |
+| `stats.udpReceived/udpAccepted/udpDropped` | u64 counters | totals since backend start; dropped = malformed (any decode failure, including bad CRC) + stale |
 | `stats.udpRateHz` | number | accepted packets/s over the trailing 5 s window |
 | `stats.wsClients` | int | currently connected clients |
 | `stats.objectCount` | int | rows in `objects` |
@@ -60,7 +60,7 @@ re-parses captured backend frames with the real frontend parser.
 | # | Name | Type | Notes |
 |---|---|---|---|
 | 0 | `id` | u32 | |
-| 1 | `cat` | int 1–5 | 1 debris · 2 star · 3 comet · 4 satellite · 5 groundHot |
+| 1 | `cat` | int 0–5 | 0 unknown · 1 debris · 2 star · 3 comet · 4 satellite · 5 groundHot; clients render any other integer as unknown |
 | 2–4 | `px, py, pz` | number | ECEF meters, rounded to 0.1 m |
 | 5–7 | `vx, vy, vz` | number **or `null`** | ECEF m/s rounded to 0.01; all three `null` when the source set no HAS_VELOCITY flag |
 | 8 | `conf` | int 0–100 | confidence % |
@@ -75,7 +75,8 @@ message size at 5,000 objects (~450 KB vs ~800 KB per broadcast).
 - Reconnect with backoff (frontend uses 1 s doubling to 10 s max).
 - Treat unknown `type` values as ignorable (forward compatibility).
 - `parseStateMessage` MUST reject: non-JSON, missing/unknown `type`, missing
-  `objects` array on `state`, rows not of length 11, non-numeric id/cat/pos.
+  `objects` array on `state`, rows not of length 11, non-numeric id/pos,
+  non-integer cat. An integer cat outside 0–5 parses as `unknown`.
 - Client-side staleness: if no `state` frame arrives for >3 s, show the
   connection as stalled (the backend broadcasts every second even with no
   UDP data, so silence means a transport problem).

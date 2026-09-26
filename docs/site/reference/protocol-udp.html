@@ -97,6 +97,7 @@ never corrupts state.</p>
 <table>
   <thead><tr><th>Value</th><th>Name</th><th>Notes</th></tr></thead>
   <tbody>
+    <tr><td>0</td><td><code>UNKNOWN</code></td><td>type not known to the sender; the catch-all default</td></tr>
     <tr><td>1</td><td><code>DEBRIS</code></td><td>orbital debris</td></tr>
     <tr><td>2</td><td><code>STAR</code></td><td>distant direction marker; position = direction &times; large radius
         (e.g. 1e12 m); fixed in ECEF (Earth-rotation drift is a documented simplification)</td></tr>
@@ -106,7 +107,8 @@ never corrupts state.</p>
   </tbody>
 </table>
 </div>
-<p>Any other value rejects the whole packet (<code>kBadObjectType</code>).</p>
+<p>Any other value (6&ndash;255) is not an error: the receiver decodes it as
+<code>UNKNOWN</code> (0). A sender that does not know an object's type should send 0.</p>
 
 <h2 id="crc">CRC</h2>
 <p>CRC-32 IEEE 802.3: reflected, polynomial <code>0x04C11DB7</code>
@@ -126,14 +128,15 @@ before the CRC field. Reference vector: <code>crc32("123456789") =
   <li>CRC mismatch &rarr; <code>kBadCrc</code></li>
   <li>any float NaN/&plusmn;Inf &rarr; <code>kNonFinite</code></li>
   <li>any |position| &gt; 1e13 m &rarr; <code>kOutOfRange</code></li>
-  <li>unknown object_type &rarr; <code>kBadObjectType</code></li>
 </ol>
-<p><strong>State layer (step 11):</strong> with <code>last</code> = last accepted
+<p>An unrecognized <code>object_type</code> does not drop the datagram; that record
+decodes as <code>UNKNOWN</code> (0).</p>
+<p><strong>State layer (step 10):</strong> with <code>last</code> = last accepted
 sequence, accept iff <code>(int32_t)(sequence - last) &gt; 0</code> — wraparound-safe;
 first packet always accepted; duplicates/older drop as <em>stale</em>.</p>
 <p>Every failure drops the <em>whole</em> packet (never partial application), is
-counted per reason, and is logged with the source address. Confidence &gt; 100 is
-the one soft case: clamped, not rejected.</p>
+counted per reason, and is logged with the source address. Confidence &gt; 100 and
+an unrecognized object type are the soft cases: clamped/normalized, not rejected.</p>
 
 <h2 id="versioning">Versioning rules</h2>
 <ul>

@@ -25,11 +25,7 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 
 <h2 id="organization">Repository organization</h2>
 <pre><code class="language-sh">.
-├── CMakeLists.txt                  # top-level build: project setup, dependencies, add_subdirectory
-├── cmake/
-│   ├── common.cmake                # toolchain, options, warnings, shared INTERFACE targets
-│   ├── open_dis_cpp.cmake          # locates the installed open-dis-cpp prefix
-│   └── tooling.cmake               # format / format-check / lint targets
+├── CMakeLists.txt                  # toolchain, options, dependencies, subdirs, format/lint targets
 ├── include/olv/                    # backend headers: protocol, TOML parser, DIS entity id,
 │                                   #   config, logger, state store, input sources, WS server
 ├── src/                            # backend sources + CMakeLists.txt (olv_backend, C++20, Boost.Asio/Beast)
@@ -51,7 +47,7 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 ├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
 ├── scripts/                        # run_all, install_open_dis, integration test, SBOM, ...
-├── containers/                     # Containerfile.cpp, Containerfile.frontend, compose.yaml
+├── containers/                     # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
 └── sbom/                           # generated CycloneDX SBOMs (backend + frontend)
 </code></pre>
 <p>Per-directory detail: <a href="../developer-guide/repo-structure.html">Developer
@@ -124,7 +120,7 @@ they may work, but treat them as unsupported until verified.</div>
 <code>frontend/assets/earth_day.jpg</code> (Blue Marble: Next Generation, Dec 2004) and
 <code>frontend/assets/earth_night.jpg</code> (Black Marble / Suomi NPP VIIRS, 2012).
 SHA-256 hashes are recorded in <code>frontend/assets/README.md</code> and tracked as
-<code>file</code>-type components in the frontend SBOM. The ~230-entry bright-star
+<code>file</code>-type components in the frontend SBOM. The ~200-entry bright-star
 catalog is first-party data hardcoded in <code>frontend/js/star_catalog.js</code>, not
 an asset file.</p>
 <p><strong>SBOMs:</strong> <code>python3 scripts/gen_sbom.py --out sbom/</code> produces
@@ -141,9 +137,13 @@ runtime-computed SHA-256). Strategy: <code>docs/SBOM.md</code>; full license tab
   plus a one-time <code>open-dis-cpp</code> install — the tarball can be pre-fetched
   and supplied via <code>OLV_OPEN_DIS_TARBALL</code>, or mirrored via
   <code>OLV_OPEN_DIS_URL</code>; it is sha256-verified either way.</li>
-  <li><strong>Container build:</strong> additionally needs an apt mirror and pre-pulled
-  base images (<code>debian:bookworm-slim</code>, <code>nginx:alpine-slim</code>); the
-  Containerfile accepts the open-dis mirror URL as a build arg.</li>
+  <li><strong>Container build:</strong> build (or pull from an internal registry) the
+  <code>olv-builder</code> image once on a connected machine — needs a <code>dnf</code>
+  mirror and the open-dis-cpp tarball (or a mirror URL as a build arg). Offline
+  machines then only need <code>olv-builder</code> and a mirrored
+  <code>rockylinux:10.2-minimal</code> runtime image to build
+  <code>containers/Dockerfile</code>'s <code>backend</code>/<code>simulator</code> targets;
+  see <code>containers/Dockerfile.builder</code> for exact commands.</li>
 </ul>
 
 <h2 id="ci">CI/CD status</h2>

@@ -126,7 +126,7 @@ class FooInputSource : public InputSource {
 
   // PUBLIC TEST SEAM — full pipeline without a live socket:
   void processDatagram(const uint8_t* data, std::size_t len,
-                       const boost::asio::ip::udp::endpoint&amp; from);
+                       const std::string&amp; from);  // `from` is used only in log lines
  private:
   // private io_context + socket + std::thread; carried-forward satellite
   // state; uint32_t seq_ = 0 (synthesized, strictly increasing);
@@ -197,7 +197,7 @@ source obeys):</p>
         Cover: every drop reason, the accept path, mapping of each field, satellite
         identification + carry-forward, staleness (first message, newer, older,
         wraparound if applicable), and "synthesized sequence never self-stales".</td>
-        <td><code>test_dis_input_source.cpp</code> (505 lines — the exhaustive example)</td></tr>
+        <td><code>test_dis_input_source.cpp</code> (~500 lines — the exhaustive example)</td></tr>
     <tr><td>Config tests</td>
         <td>Extend <code>test_config.cpp</code>: each new key valid / wrong type /
         out of range / unknown-key still rejected; mode parsing; cross-field

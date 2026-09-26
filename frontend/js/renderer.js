@@ -74,13 +74,15 @@ const SAT_THETA_MAX = (SAT_FOV_DEG / 2) * DEG;
 // Category appearance. groundHot colour is computed per-object from intensity.
 // size is in CSS px (multiplied by DPR in the points shader, then clamped to the
 // GPU point-size cap). icon selects the atlas cell (ICONS.*); cells 0..4 are
-// white masks that get tinted by the per-object colour in the fragment shader.
+// white masks (as is ICONS.unknown) that get tinted by the per-object colour in
+// the fragment shader.
 const CAT = {
   debris:    { color: [0xaa / 255, 0xb2 / 255, 0xbd / 255], size: 10, icon: ICONS.debris },    // #aab2bd
   star:      { color: [1, 1, 1],                             size: 9,  icon: ICONS.star },      // #ffffff
   comet:     { color: [0x6f / 255, 0xd3 / 255, 0xff / 255], size: 14, icon: ICONS.comet },     // #6fd3ff
   satellite: { color: [0x58 / 255, 0xd6 / 255, 0x8d / 255], size: 14, icon: ICONS.satellite }, // #58d68d
   groundHot: { color: [1, 0.5647, 0.251],                   size: 13, icon: ICONS.groundHot },  // base (unused directly)
+  unknown:   { color: [0xc7 / 255, 0x92 / 255, 0xea / 255], size: 12, icon: ICONS.unknown },   // #c792ea
 };
 const SAT_COLOR = [1, 0.8353, 0.2902]; // #ffd54a primary satellite
 const SUN_COLOR = [1.0, 0.93, 0.7];    // warm white/yellow disc
@@ -759,6 +761,7 @@ export function createRenderer(glCanvas, overlayCanvas) {
         comet: c.comet !== false,
         satellite: c.satellite !== false,
         groundHot: c.groundHot !== false,
+        unknown: c.unknown !== false,
       },
     };
   }

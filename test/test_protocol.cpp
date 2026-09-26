@@ -1,16 +1,16 @@
 // test_protocol.cpp — CRC vector, sizes, encode/decode round-trip, truncation.
-// Holds OLV_TEST_MAIN() for the single olv_backend_tests binary.
 
 #include <cstdint>
 #include <ostream>
 #include <vector>
 
+#include <gtest/gtest.h>
+
 #include "olv/protocol.hpp"
-#include "olv_test.hpp"
 
 using namespace olv;
 
-// Streamable for the test framework's failure reporter (ADL in olv::proto).
+// Streamable for GoogleTest's failure messages (ADL in olv::proto).
 namespace olv::proto {
 inline std::ostream& operator<<(std::ostream& os, DecodeError e) {
   return os << toString(e);
@@ -38,35 +38,35 @@ proto::ObjectRecord makeObj(std::uint32_t id, proto::ObjectType type, std::uint8
 }
 
 void checkObjEq(const proto::ObjectRecord& a, const proto::ObjectRecord& b) {
-  OLV_CHECK_EQ(a.id, b.id);
-  OLV_CHECK_EQ(a.type, b.type);
-  OLV_CHECK_EQ(a.flags, b.flags);
-  OLV_CHECK_EQ(a.confidence, b.confidence);
-  OLV_CHECK_EQ(a.px, b.px);
-  OLV_CHECK_EQ(a.py, b.py);
-  OLV_CHECK_EQ(a.pz, b.pz);
-  OLV_CHECK_EQ(a.vx, b.vx);
-  OLV_CHECK_EQ(a.vy, b.vy);
-  OLV_CHECK_EQ(a.vz, b.vz);
-  OLV_CHECK_EQ(a.intensity, b.intensity);
+  EXPECT_EQ(a.id, b.id);
+  EXPECT_EQ(a.type, b.type);
+  EXPECT_EQ(a.flags, b.flags);
+  EXPECT_EQ(a.confidence, b.confidence);
+  EXPECT_EQ(a.px, b.px);
+  EXPECT_EQ(a.py, b.py);
+  EXPECT_EQ(a.pz, b.pz);
+  EXPECT_EQ(a.vx, b.vx);
+  EXPECT_EQ(a.vy, b.vy);
+  EXPECT_EQ(a.vz, b.vz);
+  EXPECT_EQ(a.intensity, b.intensity);
 }
 
 }  // namespace
 
-OLV_TEST(crc32_reference_vector) {
+TEST(Protocol, crc32_reference_vector) {
   const char* s = "123456789";
-  OLV_CHECK_EQ(proto::crc32(reinterpret_cast<const std::uint8_t*>(s), 9), 0xCBF43926u);
+  EXPECT_EQ(proto::crc32(reinterpret_cast<const std::uint8_t*>(s), 9), 0xCBF43926u);
 }
 
-OLV_TEST(empty_packet_size_is_60) {
+TEST(Protocol, empty_packet_size_is_60) {
   proto::StatePacket pkt;
   pkt.sequence = 1;
   const auto bytes = proto::encode(pkt);
-  OLV_CHECK_EQ(bytes.size(), std::size_t{60});
-  OLV_CHECK_EQ(bytes.size(), proto::kHeaderSize + proto::kCrcSize);
+  EXPECT_EQ(bytes.size(), std::size_t{60});
+  EXPECT_EQ(bytes.size(), proto::kHeaderSize + proto::kCrcSize);
 }
 
-OLV_TEST(roundtrip_three_objects) {
+TEST(Protocol, roundtrip_three_objects) {
   proto::StatePacket pkt;
   pkt.sequence = 42;
   pkt.sat_id = 7;
@@ -90,20 +90,20 @@ OLV_TEST(roundtrip_three_objects) {
                                 -4842330.0, 3985029.2, 1.0f, -2.0f, 3.0f, 1450.0f));
 
   const auto bytes = proto::encode(pkt);
-  OLV_CHECK_EQ(bytes.size(), proto::kHeaderSize + 3 * proto::kRecordSize + proto::kCrcSize);
+  EXPECT_EQ(bytes.size(), proto::kHeaderSize + 3 * proto::kRecordSize + proto::kCrcSize);
 
   proto::StatePacket dec;
-  OLV_CHECK_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
-  OLV_CHECK_EQ(dec.sequence, pkt.sequence);
-  OLV_CHECK_EQ(dec.sat_id, pkt.sat_id);
-  OLV_CHECK_EQ(dec.sat_px, pkt.sat_px);
-  OLV_CHECK_EQ(dec.sat_py, pkt.sat_py);
-  OLV_CHECK_EQ(dec.sat_pz, pkt.sat_pz);
-  OLV_CHECK_EQ(dec.sat_vx, pkt.sat_vx);
-  OLV_CHECK_EQ(dec.sat_vy, pkt.sat_vy);
-  OLV_CHECK_EQ(dec.sat_vz, pkt.sat_vz);
-  OLV_CHECK_EQ(dec.object_total, std::uint16_t{3});
-  OLV_CHECK_EQ(dec.objects.size(), std::size_t{3});
+  EXPECT_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
+  EXPECT_EQ(dec.sequence, pkt.sequence);
+  EXPECT_EQ(dec.sat_id, pkt.sat_id);
+  EXPECT_EQ(dec.sat_px, pkt.sat_px);
+  EXPECT_EQ(dec.sat_py, pkt.sat_py);
+  EXPECT_EQ(dec.sat_pz, pkt.sat_pz);
+  EXPECT_EQ(dec.sat_vx, pkt.sat_vx);
+  EXPECT_EQ(dec.sat_vy, pkt.sat_vy);
+  EXPECT_EQ(dec.sat_vz, pkt.sat_vz);
+  EXPECT_EQ(dec.object_total, std::uint16_t{3});
+  EXPECT_EQ(dec.objects.size(), std::size_t{3});
 
   // confidence 255 was clamped to 100 on encode.
   proto::ObjectRecord expected_star = pkt.objects[1];
@@ -112,12 +112,12 @@ OLV_TEST(roundtrip_three_objects) {
   checkObjEq(dec.objects[1], expected_star);
   checkObjEq(dec.objects[2], pkt.objects[2]);
 
-  OLV_CHECK(dec.objects[0].hasVelocity());
-  OLV_CHECK(!dec.objects[1].hasVelocity());
-  OLV_CHECK(dec.objects[2].hasVelocity());
+  EXPECT_TRUE(dec.objects[0].hasVelocity());
+  EXPECT_FALSE(dec.objects[1].hasVelocity());
+  EXPECT_TRUE(dec.objects[2].hasVelocity());
 }
 
-OLV_TEST(max_packet_128_objects) {
+TEST(Protocol, max_packet_128_objects) {
   proto::StatePacket pkt;
   pkt.sequence = 5;
   pkt.object_total = proto::kMaxObjectsPerPacket;
@@ -126,15 +126,15 @@ OLV_TEST(max_packet_128_objects) {
                                   10, static_cast<double>(i), 0.0, 0.0, 1.0f, 2.0f, 3.0f, 0.0f));
   }
   const auto bytes = proto::encode(pkt);
-  OLV_CHECK_EQ(bytes.size(), std::size_t{6204});
-  OLV_CHECK_EQ(bytes.size(), proto::kMaxPacketSize);
+  EXPECT_EQ(bytes.size(), std::size_t{6204});
+  EXPECT_EQ(bytes.size(), proto::kMaxPacketSize);
 
   proto::StatePacket dec;
-  OLV_CHECK_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
-  OLV_CHECK_EQ(dec.objects.size(), std::size_t{128});
+  EXPECT_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
+  EXPECT_EQ(dec.objects.size(), std::size_t{128});
 }
 
-OLV_TEST(encode_truncates_above_128) {
+TEST(Protocol, encode_truncates_above_128) {
   proto::StatePacket pkt;
   pkt.sequence = 9;
   pkt.object_total = 200;
@@ -143,12 +143,10 @@ OLV_TEST(encode_truncates_above_128) {
         makeObj(1, proto::ObjectType::kDebris, 0, 0, 0.0, 0.0, 0.0, 0.0f, 0.0f, 0.0f, 0.0f));
   }
   const auto bytes = proto::encode(pkt);
-  OLV_CHECK_EQ(bytes.size(), std::size_t{6204});
+  EXPECT_EQ(bytes.size(), std::size_t{6204});
 
   proto::StatePacket dec;
-  OLV_CHECK_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
-  OLV_CHECK_EQ(dec.objects.size(), std::size_t{128});
-  OLV_CHECK_EQ(dec.object_total, std::uint16_t{200});
+  EXPECT_EQ(proto::decode(bytes.data(), bytes.size(), dec), proto::DecodeError::kNone);
+  EXPECT_EQ(dec.objects.size(), std::size_t{128});
+  EXPECT_EQ(dec.object_total, std::uint16_t{200});
 }
-
-OLV_TEST_MAIN()

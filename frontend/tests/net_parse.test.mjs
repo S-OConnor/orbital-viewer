@@ -113,9 +113,21 @@ test('rejects non-numeric id in an object row', () => {
   assert.throws(() => parseStateMessage(JSON.stringify(obj)));
 });
 
-test('rejects unknown category number', () => {
+test('category 0 parses as unknown', () => {
+  const obj = sampleStateObj();
+  obj.objects = [[1, 0, 0, 0, 0, null, null, null, 100, 0, 0]];
+  assert.equal(parseStateMessage(JSON.stringify(obj)).objects[0].cat, 'unknown');
+});
+
+test('unrecognized category number defaults to unknown', () => {
   const obj = sampleStateObj();
   obj.objects = [[1, 9, 0, 0, 0, null, null, null, 100, 0, 0]];
+  assert.equal(parseStateMessage(JSON.stringify(obj)).objects[0].cat, 'unknown');
+});
+
+test('rejects non-integer category', () => {
+  const obj = sampleStateObj();
+  obj.objects = [[1, 'debris', 0, 0, 0, null, null, null, 100, 0, 0]];
   assert.throws(() => parseStateMessage(JSON.stringify(obj)));
 });
 

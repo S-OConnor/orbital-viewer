@@ -38,8 +38,9 @@ is stripped (CRLF-safe). The first non-comment line must be <em>exactly</em>:</p
     <tr><td><code>kind</code></td><td><code>sat</code> or <code>obj</code>. The first frame must
         contain a <code>sat</code> row; later frames without one carry the satellite forward</td></tr>
     <tr><td><code>id</code></td><td>u32</td></tr>
-    <tr><td><code>type</code></td><td>objects: 1–5 or a name — <code>debris</code>, <code>star</code>,
-        <code>comet</code>, <code>satellite</code>, <code>ground_hot</code>; ignored on <code>sat</code> rows</td></tr>
+    <tr><td><code>type</code></td><td>objects: 0–5 or a name — <code>unknown</code>, <code>debris</code>,
+        <code>star</code>, <code>comet</code>, <code>satellite</code>, <code>ground_hot</code>; empty
+        &rarr; <code>unknown</code> (0); ignored on <code>sat</code> rows</td></tr>
     <tr><td><code>px_m, py_m, pz_m</code></td><td>finite doubles, ECEF meters</td></tr>
     <tr><td><code>vx_mps, vy_mps, vz_mps</code></td><td>all three empty (= no velocity) or all three
         present; partial triples are an error</td></tr>
@@ -96,7 +97,7 @@ reject unknown keys; the frontend ignores them with a warning.</p>
 <h2 id="log">Backend log format</h2>
 <pre><code class="language-sh">&lt;ISO-8601 UTC, ms&gt; &lt;LEVEL&gt; [component] message
 
-2026-07-01T12:34:56.789Z INFO  [main] startup udp=0.0.0.0:47000 ws=0.0.0.0:8765 ...
+2026-07-01T12:34:56.789Z INFO  [main] startup udp_bind=0.0.0.0 udp_port=47000 ws_bind=0.0.0.0 ws_port=8765 ...
 2026-07-01T12:35:03.001Z WARN  [udp]  dropped bad_crc len=6204 from=10.0.0.7:58211
 </code></pre>
 <ul>

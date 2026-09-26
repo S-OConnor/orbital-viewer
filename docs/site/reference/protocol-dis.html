@@ -81,7 +81,8 @@ not an error: one WARN per colliding pair, later entity wins — negligible at
     <tr><td>1 (Platform)</td><td>1 (Land)</td><td><code>GROUND_HOT</code> (5)</td></tr>
     <tr><td>3 (Lifeform)</td><td>1 (Land)</td><td><code>GROUND_HOT</code> (5)</td></tr>
     <tr><td>2 (Munition)</td><td>any</td><td><code>COMET</code> (3)</td></tr>
-    <tr><td>anything else</td><td>anything else</td><td><code>DEBRIS</code> (1) — normal fallback, no log</td></tr>
+    <tr><td>0 (Other)</td><td>5 (Space)</td><td><code>DEBRIS</code> (1)</td></tr>
+    <tr><td>anything else</td><td>anything else</td><td><code>UNKNOWN</code> (0) — normal fallback, no log</td></tr>
   </tbody>
 </table>
 </div>
@@ -147,11 +148,12 @@ dis_satellite_entity_id = "1:1:1"   # REQUIRED in DIS mode
   the configured fixed <code>dis_site</code>.</li>
   <li>Timestamps: 31-bit ticks-into-hour derived from the cycle counter (monotone
   across CSV loop wraps), relative-flag LSB = 0.</li>
-  <li>EntityType emitted: satellite (1,5), ground_hot (1,1), comet (2,0), everything
-  else (0,0).</li>
+  <li>EntityType emitted: satellite (1,5), ground_hot (1,1), comet (2,0), debris (0,5);
+  star and any unmapped type fall back to (0,0), since <code>STAR</code> has no DIS
+  row (§5).</li>
   <li><strong>Round-trip losses</strong> (inherent to DIS, by spec): backend-side ids
   become FNV-1a folds (not the raw OLV ids); confidence/intensity fixed at 100/0.0;
-  STAR degrades to DEBRIS.</li>
+  STAR degrades to UNKNOWN.</li>
 </ul>
 
 <p>Related: <a href="protocol-udp.html">OLV1 UDP</a> ·

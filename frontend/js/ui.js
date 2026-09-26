@@ -9,13 +9,14 @@
 // All DOM lookups are centralized here in one `nodes` map built at
 // createUi() call time.
 
-const CATEGORY_LIST = ['debris', 'star', 'comet', 'satellite', 'groundHot'];
+const CATEGORY_LIST = ['debris', 'star', 'comet', 'satellite', 'groundHot', 'unknown'];
 const CATEGORY_LABEL = {
   debris: 'Debris',
   star: 'Star',
   comet: 'Comet',
   satellite: 'Satellite',
   groundHot: 'Ground hot',
+  unknown: 'Unknown',
 };
 const EARTH_RADIUS_KM = 6371.0;
 const EM_DASH = '—';

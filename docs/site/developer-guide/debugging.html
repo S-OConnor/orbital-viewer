@@ -42,7 +42,7 @@ engineer's toolbox.</p>
 
 <h2 id="logging">Logging &amp; tracing</h2>
 <pre><code class="language-sh"># Everything the backend does, live:
-./build/olv_backend --log-level debug --log-file dbg.log
+./build-docker/olv_backend --log-level debug --log-file dbg.log
 tail -f dbg.log
 # debug level adds: every accepted packet (seq/objs/total/source),
 # stale drops, DIS filtered/ignored PDU lines.
@@ -52,9 +52,9 @@ tail -f dbg.log
   <li>Simulator: watch the per-cycle stdout line; send errors always print with
   errno text.</li>
   <li>Frontend: DevTools console shows config warnings and parse errors;
-  <code>connection.getStats()</code> and the parse-error counter are inspectable from
-  the console via the module registry if you expose them, or add temporary logging
-  in <code>net.js</code>'s catch block.</li>
+  <code>connection.getParseErrorCount()</code> (the object <code>createConnection()</code>
+  returns) is inspectable from the console via the module registry if you expose it,
+  or add temporary logging in <code>net.js</code>'s catch block.</li>
 </ul>
 
 <h2 id="wire-debugging">Watching the wire</h2>
@@ -65,15 +65,18 @@ sudo tcpdump -i lo -X udp port 47000
 # aren't 4F 4C 56 31 ("OLV1") is not an OLV1 packet.
 
 # WebSocket: capture frames as text
-./build/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
+./build-docker/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
     --timeout 10 --out frames.jsonl
 python3 -m json.tool &lt;(head -1 frames.jsonl)     # pretty-print the hello
 node frontend/tests/validate_message.mjs frames.jsonl   # strict re-parse
 </code></pre>
 
 <h2 id="gdb">Native debugging (gdb/lldb)</h2>
-<pre><code class="language-sh">cmake -S . -B build-dbg -DCMAKE_BUILD_TYPE=Debug
-cmake --build build-dbg -j
+<pre><code class="language-sh"># Configure + build a Debug tree inside olv-builder (see Installation: Building
+# the binaries for the full docker run invocation):
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake -S . -B build-dbg -DCMAKE_BUILD_TYPE=Debug && cmake --build build-dbg -j"$(nproc)"'
+# gdb itself runs on the host against the resulting binary:
 gdb --args ./build-dbg/olv_backend --udp-port 47000 --ws-port 8765
 </code></pre>
 <ul>
@@ -81,8 +84,9 @@ gdb --args ./build-dbg/olv_backend --udp-port 47000 --ws-port 8765
   and the input thread. Useful breakpoints: <code>StateStore::apply</code> (every
   accepted packet), <code>WsServer</code>'s broadcast tick, <code>proto::decode</code>
   return paths.</li>
-  <li>Deadlock suspicion: there is exactly one application mutex
-  (<code>StateStore::mutex_</code>) — if both threads are stuck, one of them is
+  <li>Deadlock suspicion: two mutexes exist — <code>StateStore::mutex_</code> and
+  <code>Logger::mutex_</code> — but only <code>StateStore::mutex_</code> guards
+  anything that could block for a while; if both threads are stuck, one of them is
   holding it across something blocking, which the design forbids
   (<code>snapshot()</code> copies precisely to avoid this).</li>
   <li>Unit tests are ordinary binaries: <code>gdb ./build-dbg/olv_backend_tests</code>
@@ -90,12 +94,14 @@ gdb --args ./build-dbg/olv_backend --udp-port 47000 --ws-port 8765
 </ul>
 
 <h2 id="sanitizers">Sanitizers</h2>
-<p>No preconfigured sanitizer build exists; add flags at configure time:</p>
-<pre><code class="language-sh">cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
-  -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined"
-cmake --build build-asan -j
-ctest --test-dir build-asan --output-on-failure
+<p>No preconfigured sanitizer build exists; add flags at configure time (inside
+<code>olv-builder</code>, same volume-mount pattern as above):</p>
+<pre><code class="language-sh">docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest sh -c '
+  cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
+    -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+    -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" &amp;&amp;
+  cmake --build build-asan -j"$(nproc)" &amp;&amp;
+  ctest --test-dir build-asan --output-on-failure'
 
 # Thread races (the StateStore/two-thread contract):
 #   use -fsanitize=thread in a separate build tree (TSan and ASan don't mix)
@@ -130,8 +136,8 @@ model — worth running after any change to <code>state_store</code>,
 
 <h2 id="profiling">Profiling</h2>
 <pre><code class="language-sh"># Backend CPU profile under load (perf, Linux)
-perf record -g ./build/olv_backend --quiet --log-file /dev/null &amp;
-./build/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 30
+perf record -g ./build-docker/olv_backend --quiet --log-file /dev/null &amp;
+./build-docker/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 30
 perf report
 # Expect hotspots in json_writer (serialization) and decode/crc32.
 </code></pre>

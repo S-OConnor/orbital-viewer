@@ -46,10 +46,12 @@ recommended practice, not an established one.</div>
 
 <h2 id="workflow">Recommended release workflow</h2>
 <ol>
-  <li><strong>Freeze &amp; verify.</strong>
-<pre><code class="language-sh">cmake --build build --target format-check lint
-ctest --test-dir build --output-on-failure
-node --test "frontend/tests/*.test.mjs"
+  <li><strong>Freeze &amp; verify</strong> (inside <code>olv-builder</code> — see
+  <a href="../user-guide/installation.html#building-from-source">Installation:
+  Building the binaries</a> for the full <code>docker run</code> invocation):
+<pre><code class="language-sh">cmake --build build-docker --target format-check lint
+ctest --test-dir build-docker --output-on-failure
+node --test "frontend/tests/*.test.mjs"   # host
 </code></pre></li>
   <li><strong>Bump the version</strong> in <code>CMakeLists.txt</code>,
   <code>scripts/gen_sbom.py</code> (<code>OLV_VERSION</code>), and the About text;
@@ -65,12 +67,20 @@ python3 scripts/make_example_csv.py         # only if the CSV contract changed
   <li><strong>Tag:</strong> annotated semver tag, e.g.
   <code>git tag -a v0.2.0 -m "..."</code>; push the tag.</li>
   <li><strong>Build release artifacts:</strong>
-<pre><code class="language-sh"># Native binaries (Release)
-cmake -S . -B build-rel -DCMAKE_BUILD_TYPE=Release -DOLV_BUILD_TESTS=OFF
-cmake --build build-rel -j
-# Container images, tagged with the version
-podman build -f containers/Containerfile.cpp --target backend   -t olv-backend:v0.2.0 .
-podman build -f containers/Containerfile.cpp --target simulator -t olv-sim:v0.2.0 .
+<pre><code class="language-sh"># Release binaries, built inside olv-builder
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
+  sh -c 'cmake -S . -B build-rel -DCMAKE_BUILD_TYPE=Release -DOLV_BUILD_TESTS=OFF && cmake --build build-rel -j"$(nproc)"'
+# Build-environment image (only needed again if its inputs changed — toolchain
+# packages or the pinned open-dis-cpp version); push it to the internal registry:
+podman build -f containers/Dockerfile.builder -t harbor.example.com/olv/olv-builder:v0.2.0 .
+podman push harbor.example.com/olv/olv-builder:v0.2.0
+# Container images, tagged with the version, built FROM the (pinned) builder image:
+podman build -f containers/Dockerfile --target backend   \
+    --build-arg OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:v0.2.0 \
+    -t olv-backend:v0.2.0 .
+podman build -f containers/Dockerfile --target simulator \
+    --build-arg OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:v0.2.0 \
+    -t olv-sim:v0.2.0 .
 podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
 </code></pre></li>
   <li><strong>Smoke the release exactly as users run it:</strong>
@@ -87,8 +97,9 @@ podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
   manual or site-specific.</li>
   <li><strong>Ship the SBOMs</strong> (<code>sbom/*.cdx.json</code>) alongside
   artifacts; they are deterministic except for their timestamp.</li>
-  <li><strong>Air-gapped consumers</strong> additionally need the open-dis tarball and
-  base images — include them in the release bundle for such sites (see
+  <li><strong>Air-gapped consumers</strong> additionally need the pushed
+  <code>olv-builder</code> image and the mirrored runtime base images — include (or
+  point at) them in the release bundle for such sites (see
   <a href="../user-guide/installation.html#air-gapped">Installation</a>).</li>
 </ul>
 

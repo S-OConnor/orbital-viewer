@@ -8,7 +8,7 @@
 // TOP row of the image (canvas convention), consistent with iconUV()'s v
 // axis (v=0 = image top).
 //
-// Category icons (debris, star, comet, satellite, groundHot) are painted
+// Category icons (debris, star, comet, satellite, groundHot, unknown) are painted
 // pure white — rgba(255,255,255,*), only alpha ever varies — so the
 // renderer can recolor them per object by multiplying the vertex color in
 // the shader (this is also how groundHot gets its per-object heat color).
@@ -29,7 +29,7 @@ export const CELL = 64;        // base cell size in px (callers scale by DPR)
 // Cell indices, row-major, row 0 at the TOP of the image.
 export const ICONS = {
   debris: 0, star: 1, comet: 2, satellite: 3, groundHot: 4, satMarker: 5,
-  skyDot: 6,
+  skyDot: 6, unknown: 7,
 };
 
 // Fractional padding kept empty on each side of a cell before an icon's
@@ -37,8 +37,8 @@ export const ICONS = {
 const PAD = 0.13;
 
 // White used throughout the category icons. Only rgba(255,255,255,*) ever
-// appears as a fillStyle/strokeStyle in the icons below (index 0-4) — the
-// renderer depends on this to tint them per object.
+// appears as a fillStyle/strokeStyle in the category icons below (index 0-4
+// and 7) — the renderer depends on this to tint them per object.
 const WHITE = 'rgba(255,255,255,1)';
 
 /**
@@ -336,7 +336,30 @@ function drawSkyDot(ctx, cellPx) {
   }
 }
 
-// Cell index -> drawing helper, for the 7 defined icons. Cells 7-15 are left
+/**
+ * unknown (index 7): a bold question mark — a stroked hook sweeping from the
+ * left over the top and down to centre, a short stem, and a round dot — for
+ * objects whose type the sender did not know.
+ */
+function drawUnknown(ctx, cellPx) {
+  const c = cellPx / 2;
+  const hookR = cellPx * 0.15;
+  const hookCy = c - cellPx * 0.12;
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = cellPx * 0.1;
+  ctx.beginPath();
+  // Clockwise from the left point (pi) over the top to the bottom (2.5 pi).
+  ctx.arc(c, hookCy, hookR, Math.PI, Math.PI * 2.5);
+  ctx.lineTo(c, hookCy + hookR + cellPx * 0.1);
+  ctx.stroke();
+
+  ctx.fillStyle = WHITE;
+  ctx.beginPath();
+  ctx.arc(c, c + cellPx * 0.28, cellPx * 0.06, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+// Cell index -> drawing helper, for the 8 defined icons. Cells 8-15 are left
 // out of this map and therefore stay untouched/transparent by paintAtlas().
 const PAINTERS = {
   [ICONS.debris]: drawDebris,
@@ -346,18 +369,19 @@ const PAINTERS = {
   [ICONS.groundHot]: drawGroundHot,
   [ICONS.satMarker]: drawSatMarker,
   [ICONS.skyDot]: drawSkyDot,
+  [ICONS.unknown]: drawUnknown,
 };
 
 /**
  * Paint every defined icon into ctx, a CanvasRenderingContext2D-compatible
  * object for a square canvas of size (ATLAS_GRID * cellPx). Clears/fills
  * nothing outside icon shapes (transparent background); cells with no
- * entry in PAINTERS (7-15) are never touched. Deterministic: identical
+ * entry in PAINTERS (8-15) are never touched. Deterministic: identical
  * cellPx produces an identical sequence of ctx calls every time.
  *
  * Note: Object.entries() on PAINTERS always yields its integer-like keys in
  * ascending numeric order (per the ECMAScript property-order rules), so
- * icons are painted in index order 0..6 regardless of PAINTERS' literal
+ * icons are painted in index order 0..7 regardless of PAINTERS' literal
  * layout above.
  *
  * @param {CanvasRenderingContext2D} ctx target context (or compatible stub)

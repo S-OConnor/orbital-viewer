@@ -14,7 +14,7 @@
 //
 // The concrete rules implemented here are the frozen §3 decisions: Entity State
 // PDUs only (§3.2), FNV-1a-32 EntityID fold and satellite_entity_id match
-// (§3.3), the EntityType table with a kDebris fallback and fixed
+// (§3.3), the EntityType table with a kUnknown fallback and fixed
 // confidence/intensity/flags (§3.4), the optional exercise_id filter (§3.5),
 // and the per-entity DIS-timestamp staleness rule plus satellite carry-forward /
 // synthesized-sequence calling convention into StateStore::apply (§3.6).

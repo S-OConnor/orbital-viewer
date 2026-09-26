@@ -69,17 +69,20 @@ std::optional<T> parseFloating(const std::string& s) {
 
 std::optional<std::uint8_t> typeFromName(const std::string& s) {
   static const std::unordered_map<std::string, std::uint8_t> kNames{
-      {"debris", 1}, {"star", 2}, {"comet", 3}, {"satellite", 4}, {"ground_hot", 5}};
+      {"unknown", 0}, {"debris", 1}, {"star", 2},       {"comet", 3},
+      {"satellite", 4}, {"ground_hot", 5}};
   auto it = kNames.find(s);
   if (it == kNames.end()) return std::nullopt;
   return it->second;
 }
 
-// Accepts either a numeric ObjectType value (1-5) or a known name.
+// Accepts either a numeric ObjectType value (0-5) or a known name; an empty
+// cell means the type is not known and defaults to unknown (0).
 std::optional<std::uint8_t> parseType(const std::string& s) {
+  if (s.empty()) return static_cast<std::uint8_t>(proto::ObjectType::kUnknown);
   if (auto n = parseIntegral<int>(s)) {
-    if (*n >= 1 && *n <= 5) return static_cast<std::uint8_t>(*n);
-    return std::nullopt;  // numeric but out of range, e.g. "6" or "0"
+    if (*n >= 0 && *n <= 5) return static_cast<std::uint8_t>(*n);
+    return std::nullopt;  // numeric but out of range, e.g. "6"
   }
   return typeFromName(s);
 }
@@ -150,7 +153,7 @@ ParseResult parseCsv(std::istream& in) {
       auto type_val = parseType(f[3]);
       if (!type_val) {
         fail(line_no, "type: unrecognized value '" + f[3] +
-                          "' (expected 1-5 or debris|star|comet|satellite|ground_hot)");
+                          "' (expected 0-5, empty, or unknown|debris|star|comet|satellite|ground_hot)");
         return result;
       }
       row.rec.type = *type_val;

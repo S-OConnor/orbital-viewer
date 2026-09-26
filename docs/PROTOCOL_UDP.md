@@ -95,13 +95,15 @@ offset size type field
 
 | Value | Name | Notes |
 |---|---|---|
+| 0 | `UNKNOWN` | type not known to the sender; the catch-all default |
 | 1 | `DEBRIS` | orbital debris |
 | 2 | `STAR` | distant direction marker; position = direction × large radius (e.g. 1e12 m). Fixed in ECEF for the demo (Earth-rotation drift intentionally ignored — documented simplification). |
 | 3 | `COMET` | |
 | 4 | `SATELLITE` | tracked satellite other than the primary |
 | 5 | `GROUND_HOT` | hot object on Earth's surface; stationary in ECEF |
 
-Any other value ⇒ the packet is rejected (`kBadObjectType`).
+Any other value (6–255) is not an error: the receiver decodes it as
+`UNKNOWN` (0). A sender that does not know an object's type should send 0.
 
 ## 4. Receiver validation (normative)
 
@@ -118,11 +120,13 @@ order:
 7. CRC mismatch (`kBadCrc`)
 8. any f32/f64 field is NaN or ±Inf (`kNonFinite`)
 9. any position component with |value| > 1e13 m (`kOutOfRange`)
-10. unknown object_type (`kBadObjectType`)
+
+An unrecognized `object_type` does not drop the datagram; that record is
+decoded as `UNKNOWN` (§3).
 
 and additionally, at the state layer:
 
-11. **Stale sequence:** with `last` = last accepted sequence, accept iff
+10. **Stale sequence:** with `last` = last accepted sequence, accept iff
     `(int32_t)(sequence - last) > 0` (wraparound-safe); the first packet after
     startup is always accepted. Duplicates and reordered-older packets are
     dropped and counted as stale.

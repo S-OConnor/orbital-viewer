@@ -21,8 +21,8 @@ namespace {
 constexpr double kTicksPerSecond = 2147483648.0 / 3600.0;  // 2^31 time-of-hour ticks
 
 // Inverse of the backend's frozen (kind, domain) -> ObjectType table (§3.4).
-// STAR and any unknown type intentionally emit (0, 0), the backend's kDebris
-// fallback bucket.
+// STAR and UNKNOWN intentionally emit (0, 0), the backend's kUnknown fallback
+// bucket.
 void mapEntityType(std::uint8_t olv_type, std::uint8_t& kind, std::uint8_t& domain) {
   using proto::ObjectType;
   switch (static_cast<ObjectType>(olv_type)) {
@@ -37,6 +37,10 @@ void mapEntityType(std::uint8_t olv_type, std::uint8_t& kind, std::uint8_t& doma
     case ObjectType::kComet:
       kind = 2;
       domain = 0;
+      return;
+    case ObjectType::kDebris:
+      kind = 0;
+      domain = 5;
       return;
     default:
       kind = 0;
