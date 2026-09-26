@@ -82,6 +82,15 @@ PROFILE_ARGS=()
 UP_ARGS=(up -d --remove-orphans)
 [ "${FORCE_BUILD}" -eq 1 ] && UP_ARGS+=(--build)
 
+# Always rebuild the frontend image: it is just frontend/ + docs/ COPY'd onto
+# nginx (a cache hit when nothing changed), and `up` alone only builds it when
+# missing — so a stale image would keep serving old JS that can reject newer
+# backend frames (connected, but nothing drawn).
+if [ "${FORCE_BUILD}" -eq 0 ]; then
+  echo "== building frontend image =="
+  "${COMPOSE[@]}" build frontend || olv_die "frontend image build failed"
+fi
+
 SERVICES="backend + frontend"
 [ "${WITH_SIM}" -eq 1 ] && SERVICES="${SERVICES} + simulator"
 echo "== starting ${SERVICES} (ws=${OLV_WS_PORT} udp=${OLV_UDP_PORT} http=${OLV_HTTP_PORT}) =="
