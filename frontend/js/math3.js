@@ -144,3 +144,21 @@ export function sub(a, b) {
 export function scale(v, s) {
   return [v[0] * s, v[1] * s, v[2] * s];
 }
+
+/**
+ * True when the segment from `eye` to point (px,py,pz) passes through a sphere
+ * of radius `r` centred at the origin before reaching the point — i.e. the
+ * point is hidden behind the sphere as seen from `eye`. Used to cull overlay
+ * labels for objects on the far side of the Earth.
+ */
+export function occludedBySphere(eye, px, py, pz, r) {
+  const dx = px - eye[0], dy = py - eye[1], dz = pz - eye[2];
+  const a = dx * dx + dy * dy + dz * dz;
+  if (a === 0) return false;
+  const b = eye[0] * dx + eye[1] * dy + eye[2] * dz; // half-b
+  const c = eye[0] * eye[0] + eye[1] * eye[1] + eye[2] * eye[2] - r * r;
+  const disc = b * b - a * c;
+  if (disc <= 0) return false;
+  const t = (-b - Math.sqrt(disc)) / a; // nearest entry along the segment
+  return t > 0 && t < 1;
+}

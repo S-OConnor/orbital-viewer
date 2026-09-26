@@ -30,7 +30,7 @@
 // IMPORT-SAFE: no DOM / WebGL access happens at import time; everything runs
 // inside createRenderer().
 
-import { perspective, multiply, transform, normalize } from './math3.js';
+import { perspective, multiply, transform, normalize, occludedBySphere } from './math3.js';
 import { createCamera } from './camera.js';
 import { sunDirectionEcef } from './sun.js';
 // Sibling modules on frozen interfaces (v0.2). Both are IMPORT-SAFE: their
@@ -58,6 +58,10 @@ import {
 const DEG = Math.PI / 180;
 const SCALE = 1e-6;      // metres -> scene units (1 unit = 1,000 km)
 const EARTH_R = 6.371;   // Earth radius in units
+// Occlusion radius for overlay labels/picking: a hair inside EARTH_R so
+// near-side surface objects and the tessellated sphere's chord sag don't
+// falsely hide anything.
+const OCCLUDE_R = EARTH_R * 0.999;
 const SHELL = 120;       // distant objects (stars) clamp onto this radius
 const MAX_OBJECTS = 5000;
 const TRAIL_CAP = 64;    // ring-buffer samples kept per object
@@ -1198,6 +1202,8 @@ export function createRenderer(glCanvas, overlayCanvas) {
     };
   }
 
+  const behindEarth = (eye, o) => occludedBySphere(eye, o.x, o.y, o.z, OCCLUDE_R);
+
   function drawOverlay(eye, sunPos) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // work in CSS px, clear device px
     ctx.clearRect(0, 0, cssW, cssH);
@@ -1223,13 +1229,15 @@ export function createRenderer(glCanvas, overlayCanvas) {
       }
     }
 
-    // Labels: nearest 200 objects by camera distance + satellite + selection.
+    // Labels: nearest 200 visible objects by camera distance + satellite +
+    // selection. Objects behind the Earth are skipped — the overlay canvas has
+    // no depth buffer, so without this their ids draw on top of the globe.
     if (settings.showLabels) {
       ctx.font = '11px monospace';
       ctx.fillStyle = 'rgba(220,228,238,0.92)';
-      let list = renderObjects;
-      if (renderObjects.length > 200) {
-        const withD = renderObjects.map((o) => ({
+      let list = renderObjects.filter((o) => !behindEarth(eye, o));
+      if (list.length > 200) {
+        const withD = list.map((o) => ({
           o,
           d: (o.x - eye[0]) ** 2 + (o.y - eye[1]) ** 2 + (o.z - eye[2]) ** 2,
         }));
@@ -1241,7 +1249,7 @@ export function createRenderer(glCanvas, overlayCanvas) {
         const p = projectToScreen(o.x, o.y, o.z);
         if (p) ctx.fillText(String(o.id), p.sx + 6, p.sy);
       }
-      if (satRender && !activeView.fisheye) {
+      if (satRender && !activeView.fisheye && !behindEarth(eye, satRender)) {
         const p = projectToScreen(satRender.x, satRender.y, satRender.z);
         if (p) {
           ctx.fillStyle = '#ffd54a';
@@ -1497,6 +1505,7 @@ export function createRenderer(glCanvas, overlayCanvas) {
     let bestD = Infinity;
     let bestCam = Infinity;
     const consider = (o) => {
+      if (behindEarth(eye, o)) return; // can't click through the globe
       const p = projectToScreen(o.x, o.y, o.z);
       if (!p) return;
       const d = Math.hypot(p.sx - x, p.sy - y);
