@@ -49,6 +49,7 @@ add_library(olv_sim_lib STATIC
   src/frame_builder.cpp
   src/generator.cpp
   src/dis_builder.cpp
+  src/olv2_builder.cpp
   src/sim_config.cpp)
 target_include_directories(olv_sim_lib PUBLIC src)
 target_link_libraries(olv_sim_lib PUBLIC olv_proto OpenDIS::OpenDIS6 PRIVATE olv_warnings)
@@ -67,6 +68,7 @@ if(OLV_BUILD_TESTS)
     tests/test_csv_reader.cpp
     tests/test_frame_builder.cpp
     tests/test_dis_builder.cpp
+    tests/test_olv2_builder.cpp
     tests/test_sim_config.cpp)
   target_link_libraries(olv_sim_tests PRIVATE olv_sim_lib olv_test_support olv_warnings)
   add_test(NAME sim_unit COMMAND olv_sim_tests)

@@ -8,9 +8,16 @@
 //  - apply() enforces the stateful validation step (sequence staleness,
 //    wraparound-safe) and merges the packet's object records into a table
 //    keyed by object id. The satellite state is replaced wholesale.
+//  - applyTrack() is the OLV2 entry point (docs/features/FEATURE_OLV2.md
+//    §5.2): it upserts one track's newest sample, replaces the satellite only
+//    when the sample is newer than the stored one, and queues every target
+//    sample as a trail point. It performs no staleness check (the OLV2 input
+//    source owns per-track staleness) and never touches apply()'s OLV1
+//    sequence state, so OLV1/DIS behavior is unchanged.
 //  - snapshot() prunes objects not refreshed within the expiry window,
-//    computes the trailing 5 s accepted-packet rate, and returns a copy that
-//    the caller may use without holding any lock.
+//    computes the trailing 5 s accepted-packet rate, drains the pending
+//    trail points, and returns a copy that the caller may use without
+//    holding any lock.
 
 #pragma once
 
@@ -55,11 +62,33 @@ struct SnapshotObject {
   bool hasVelocity() const { return (flags & proto::kFlagHasVelocity) != 0; }
 };
 
+// One target sample forwarded to clients as a WS `trailPoints` row
+// (docs/PROTOCOL_WS.md §2). Only the OLV2 input mode produces these.
+struct TrailPoint {
+  std::uint32_t id = 0;
+  double t = 0.0;  // sample time, UTC seconds since the Unix epoch
+  double px = 0.0, py = 0.0, pz = 0.0;
+};
+
+// Store-neutral form of one accepted OLV2 datagram; Olv2InputSource
+// translates the wire packet into this so StateStore never depends on the
+// OLV2 wire types.
+struct TrackUpdate {
+  SatelliteState satellite;       // newest satellite sample; seq = datagram sequence,
+                                  // velocity already estimated when not on the wire
+  double satellite_t = 0.0;       // sample time of `satellite`, for newest-wins across tracks
+  SnapshotObject target;          // newest target sample, as an object row
+  std::vector<TrailPoint> trail;  // every target sample of the datagram, ascending t
+};
+
 struct Snapshot {
   std::optional<SatelliteState> satellite;
   std::vector<SnapshotObject> objects;
   std::optional<std::chrono::system_clock::time_point> last_data_time;
   Stats stats;
+  // Trail points applied since the previous snapshot() (drained, so each
+  // point is reported exactly once). Empty outside OLV2 mode.
+  std::vector<TrailPoint> trail_points;
 };
 
 enum class ApplyResult { kApplied, kStaleSequence };
@@ -83,8 +112,23 @@ class StateStore {
   ApplyResult apply(const proto::StatePacket& pkt, std::chrono::system_clock::time_point wall,
                     std::chrono::steady_clock::time_point mono);
 
-  // Copies the current state; prunes expired objects and old rate samples.
+  // OLV2: merges one accepted track datagram. Counts it as accepted (rate
+  // window, last_data_time = `wall`), upserts `u.target` (refreshing its
+  // expiry at `mono`), replaces the satellite iff no satellite is stored yet,
+  // the stored one came from apply(), or u.satellite_t is strictly greater
+  // than the stored satellite sample time, and appends `u.trail` to the
+  // pending trail buffer (oldest points dropped beyond
+  // kMaxPendingTrailPoints). The caller owns staleness.
+  void applyTrack(const TrackUpdate& u, std::chrono::system_clock::time_point wall,
+                  std::chrono::steady_clock::time_point mono);
+
+  // Copies the current state; prunes expired objects and old rate samples,
+  // and moves the pending trail buffer into Snapshot::trail_points. Callers
+  // other than the single broadcast tick would steal trail points from it.
   Snapshot snapshot(std::chrono::steady_clock::time_point mono);
+
+  // Bound on queued trail points between snapshots (5000 tracks x 25 points).
+  static constexpr std::size_t kMaxPendingTrailPoints = 125000;
 
   std::chrono::seconds objectExpiry() const { return object_expiry_; }
 
@@ -103,6 +147,10 @@ class StateStore {
   Stats stats_;
   bool have_seq_ = false;
   std::uint32_t last_seq_ = 0;
+  // OLV2: sample time of the stored satellite; nullopt when it came from
+  // apply() (or none yet), in which case applyTrack always replaces it.
+  std::optional<double> satellite_t_;
+  std::vector<TrailPoint> pending_trail_;
 };
 
 }  // namespace olv

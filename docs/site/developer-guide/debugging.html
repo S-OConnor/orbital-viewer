@@ -34,8 +34,9 @@ engineer's toolbox.</p>
   10</code> gives an identical packet stream every run; most bugs can be pinned to a
   seed + timestamp.</li>
   <li><strong>Shrink to a unit test.</strong> Nearly every seam has a test-friendly
-  entry point: <code>proto::decode</code> on crafted bytes,
-  <code>DisInputSource::processDatagram</code>, <code>parseStateMessage</code> on a
+  entry point: <code>proto::decode</code> / <code>proto::olv2::decode</code> on crafted
+  bytes, <code>DisInputSource::processDatagram</code> /
+  <code>Olv2InputSource::processDatagram</code>, <code>parseStateMessage</code> on a
   captured frame, <code>fisheyeProjectNdc</code> on a single point. Encode the repro
   as a test before fixing.</li>
 </ol>
@@ -45,7 +46,8 @@ engineer's toolbox.</p>
 build/dist/backend/bin/olv_backend --log-level debug --log-file dbg.log
 tail -f dbg.log
 # debug level adds: every accepted packet (seq/objs/total/source),
-# stale drops, DIS filtered/ignored PDU lines.
+# stale drops, DIS filtered/ignored PDU lines, OLV2 accepted/stale-track lines
+# (track=/points=/seq=, component "olv2").
 </code></pre>
 <ul>
   <li>The logger flushes every line — logs are complete even after a crash.</li>
@@ -60,9 +62,11 @@ tail -f dbg.log
 <h2 id="wire-debugging">Watching the wire</h2>
 <pre><code class="language-sh"># UDP: is anything arriving? (loopback capture)
 sudo tcpdump -i lo -X udp port 47000
+sudo tcpdump -i lo -X udp port 47002    # OLV2's default listen port
 
 # Decode-level check without the backend: any packet whose 4 first bytes
-# aren't 4F 4C 56 31 ("OLV1") is not an OLV1 packet.
+# aren't 4F 4C 56 31 ("OLV1") is not an OLV1 packet; OLV2 packets start
+# 4F 4C 56 32 ("OLV2") instead, on their own port (47002 by default).
 
 # WebSocket: capture frames as text
 build/container/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
@@ -81,8 +85,9 @@ gdb --args build/dist/backend/bin/olv_backend --udp-port 47000 --ws-port 8765
 <ul>
   <li>Remember the thread model: <code>info threads</code> shows the main (WS) thread
   and the input thread. Useful breakpoints: <code>StateStore::apply</code> (every
-  accepted packet), <code>WsServer</code>'s broadcast tick, <code>proto::decode</code>
-  return paths.</li>
+  accepted OLV1/DIS packet) or <code>StateStore::applyTrack</code> (every accepted OLV2
+  datagram), <code>WsServer</code>'s broadcast tick, <code>proto::decode</code>/
+  <code>proto::olv2::decode</code> return paths.</li>
   <li>Deadlock suspicion: two mutexes exist — <code>StateStore::mutex_</code> and
   <code>Logger::mutex_</code> — but only <code>StateStore::mutex_</code> guards
   anything that could block for a while; if both threads are stuck, one of them is

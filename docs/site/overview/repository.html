@@ -26,8 +26,9 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 <h2 id="organization">Repository organization</h2>
 <pre><code class="language-sh">.
 ├── CMakeLists.txt                  # toolchain, options, dependencies, subdirs, format/lint targets
-├── include/olv/                    # backend headers: protocol, TOML parser, DIS entity id,
-│                                   #   config, logger, state store, input sources, WS server
+├── include/olv/                    # backend headers: protocol, protocol_olv2, TOML parser,
+│                                   #   DIS entity id, config, logger, state store,
+│                                   #   input sources, WS server
 ├── src/                            # backend sources + CMakeLists.txt (olv_backend, C++20, Boost.Asio/Beast)
 ├── test/                           # backend unit tests + CMakeLists.txt (unit + integration CTests)
 │   └── support/olv_test.hpp        # first-party ~120-line C++ test framework
@@ -35,7 +36,8 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 │   ├── CMakeLists.txt              # olv_ws_probe; adds simulator/
 │   ├── ws_probe.cpp                # WebSocket capture client (integration test)
 │   └── simulator/                  # olv_sim (C++20)
-│       ├── src/                    # CSV reader, frame builder, generator, DIS builder
+│       ├── src/                    # CSV reader, frame builder, generator, DIS builder,
+│       │                           #   OLV2 batcher
 │       ├── data/example_mission.csv  # bundled 61-frame example mission
 │       └── tests/                  # simulator unit tests
 ├── frontend/                       # plain HTML/CSS/JS, no frameworks, no build step
@@ -44,7 +46,7 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 │   ├── css/ · assets/              # stylesheet; vendored NASA Earth imagery
 │   ├── dev/smoke.html              # standalone renderer smoke-test page
 │   └── tests/                      # node:test suites + validate_message.mjs
-├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
+├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,OLV2,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
 ├── scripts/                         # build/test/package pipeline, run_all, integration test, serve helpers, ...
 ├── containers/                     # Dockerfile.builder/.backend/.simulator, Containerfile.frontend, compose.yaml

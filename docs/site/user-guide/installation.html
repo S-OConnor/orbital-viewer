@@ -57,6 +57,10 @@ headers, and an OpenDIS CMake package (<code>OpenDIS::OpenDIS6</code>) on
 for the exact package list this repo is tested against, and
 how it builds and installs open-dis-cpp (the <code>OPEN_DIS_*</code> step). This
 path has no documented step-by-step; the container is the supported workflow.</div>
+<p>Note: this open-dis-cpp dependency is only needed for the backend's <strong>DIS</strong>
+input mode. The backend's third input mode, <strong>OLV2</strong>
+(<code>--input-mode olv2</code>, <a href="../reference/protocol-olv2.html">OLV2
+reference</a>), is plain UDP like OLV1 and adds no third-party dependency at all.</p>
 
 <h2 id="building-from-source">Building the binaries</h2>
 <pre><code class="language-sh"># 1. Build the build-environment image once (or point OLV_BUILDER_IMAGE at a

@@ -28,10 +28,21 @@
   <dt>OLV1</dt>
   <dd>The first-party binary UDP wire protocol, version 1
   (<a href="protocol-udp.html">reference</a>).</dd>
+  <dt>OLV2</dt>
+  <dd>The first-party per-track, batched time-series UDP wire protocol: one
+  datagram = one target track, 1&ndash;25 new time-stamped update points, each
+  carrying the satellite (ownship) state alongside the target's
+  (<a href="protocol-olv2.html">reference</a>).</dd>
+  <dt>Track / TRACK_UPDATE</dt>
+  <dd>OLV2's unit of update: one target object plus up to 25 disjoint,
+  strictly-time-ordered samples of it and the satellite, sent in one
+  datagram.</dd>
   <dt>Primary satellite</dt>
   <dd>The single privileged satellite whose telemetry fills the Satellite panel and
   whose position the SAT view renders from. Carried in every OLV1 packet header; in
-  DIS mode, promoted by <code>dis_satellite_entity_id</code>.</dd>
+  DIS mode, promoted by <code>dis_satellite_entity_id</code>; in OLV2, every
+  datagram's satellite block <em>is</em> the ownship (no separate ownship
+  entity).</dd>
   <dt>Tracked object</dt>
   <dd>Any of the up-to-5,000 non-primary objects: unknown, debris, star, comet,
   satellite, ground-hot.</dd>
@@ -43,8 +54,8 @@
   set. Cycles over 128 objects are split into multiple self-contained packets.</dd>
   <dt>Input source</dt>
   <dd>The backend's boot-selected intake strategy (<code>InputSource</code>):
-  <code>Olv1InputSource</code> (default) or <code>DisInputSource</code>. Exactly one
-  per process.</dd>
+  <code>Olv1InputSource</code> (default), <code>DisInputSource</code>, or
+  <code>Olv2InputSource</code>. Exactly one per process.</dd>
   <dt>StateStore</dt>
   <dd>The backend's single mutex-protected shared state: object table, satellite,
   counters. The only synchronization point in the system.</dd>
@@ -86,6 +97,16 @@
   <dt>Highlight flag</dt>
   <dd>Wire flag bit1 (value 2): the data source requests visual emphasis for an
   object.</dd>
+  <dt>Trail point / <code>trailPoints</code></dt>
+  <dd>An OLV2 target sample <code>(id, t, px, py, pz)</code> forwarded to
+  WebSocket clients once, as a delta since the previous broadcast; the
+  optional <code>trailPoints</code> array
+  (<a href="protocol-ws.html#trail-points">reference</a>) is present only in
+  OLV2 mode and only when new samples arrived.</dd>
+  <dt>Batch / disjoint batch</dt>
+  <dd>An OLV2 datagram's set of 1&ndash;25 points. Disjoint means consecutive
+  datagrams for one track never overlap; a datagram whose first point is not
+  newer than the track's newest accepted point is dropped whole as stale.</dd>
 </dl>
 
 <h2 id="acronyms">Acronyms</h2>
@@ -121,6 +142,7 @@
   <tbody>
     <tr><td><code>47000/udp</code></td><td>OLV1 intake (backend default)</td></tr>
     <tr><td><code>47001/udp</code></td><td>DIS intake (backend, <code>--input-mode dis</code>)</td></tr>
+    <tr><td><code>47002/udp</code></td><td>OLV2 intake (backend, <code>--input-mode olv2</code>)</td></tr>
     <tr><td><code>8765/tcp</code></td><td>WebSocket broadcast</td></tr>
     <tr><td><code>8000/tcp</code></td><td>frontend HTTP (dev server / container)</td></tr>
     <tr><td><code>8090/tcp</code></td><td>this documentation site (<code>scripts/serve_docs.sh</code>)</td></tr>
@@ -145,6 +167,8 @@
     <tr><td>170&deg;</td><td>SAT view fisheye field of view</td></tr>
     <tr><td>1e-6</td><td>renderer scale: 1 scene unit = 1,000 km</td></tr>
     <tr><td>1e13 m</td><td>coordinate validity bound per axis</td></tr>
+    <tr><td>25</td><td>max points per OLV2 datagram (<code>kMaxPoints</code>)</td></tr>
+    <tr><td>112 / 2128</td><td>min / max OLV2 packet bytes (24 + 84 + 4 / 24 + 25&times;84 + 4)</td></tr>
   </tbody>
 </table>
 </div>

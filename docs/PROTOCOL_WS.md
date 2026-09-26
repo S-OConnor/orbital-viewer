@@ -70,13 +70,39 @@ re-parses captured backend frames with the real frontend parser.
 Row-array encoding is used instead of key/value objects to roughly halve
 message size at 5,000 objects (~450 KB vs ~800 KB per broadcast).
 
+### `trailPoints` (optional)
+
+Present only when the backend runs the OLV2 input mode
+([PROTOCOL_OLV2.md](PROTOCOL_OLV2.md)) and target samples arrived since the
+previous broadcast. The key is **omitted** (not `[]`) when there are none, so
+OLV1 and DIS state frames are unchanged. Placed after `objects`:
+
+```json
+"trailPoints": [[2001, 1790000000.125, 6923371.4, 12000.0, -55000.2],
+                [2001, 1790000000.225, 6923380.9, 12011.5, -55001.0]]
+```
+
+| # | Name | Type | Notes |
+|---|---|---|---|
+| 0 | `id` | u32 | object id (matches an `objects` row id) |
+| 1 | `t` | number | sample time, UTC seconds since the Unix epoch, rounded to 1 ms |
+| 2–4 | `px, py, pz` | number | ECEF meters, rounded to 0.1 m |
+
+Semantics: a **delta** — every sample applied since the previous broadcast,
+each reported exactly once, grouped by arrival and ascending `t` within one
+track. It is not a history: a client that connects mid-stream builds trails
+from that point on. Clients use these samples, instead of the 1 Hz `objects`
+positions, to draw trails for the ids they cover.
+
 ## 3. Client behavior (informative)
 
 - Reconnect with backoff (frontend uses 1 s doubling to 10 s max).
 - Treat unknown `type` values as ignorable (forward compatibility).
 - `parseStateMessage` MUST reject: non-JSON, missing/unknown `type`, missing
   `objects` array on `state`, rows not of length 11, non-numeric id/pos,
-  non-integer cat. An integer cat outside 0–5 parses as `unknown`.
+  non-integer cat. An integer cat outside 0–5 parses as `unknown`. An absent
+  `trailPoints` parses as `[]`; a present one MUST be an array of 5-element
+  rows of finite numbers, else the message is rejected.
 - Client-side staleness: if no `state` frame arrives for >3 s, show the
   connection as stalled (the backend broadcasts every second even with no
   UDP data, so silence means a transport problem).

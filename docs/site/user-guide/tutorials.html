@@ -147,6 +147,38 @@ validator re-parses frames with the <em>real</em> frontend parser, and the log g
 confirms the backend's audit trail. For the full production version of this flow,
 read <code>scripts/integration_test.sh</code>.</p>
 
+<h2 id="t7">Tutorial 7 (advanced): end-to-end OLV2, and tuning its batch period</h2>
+<ol>
+  <li>Unlike DIS, OLV2 needs no required config key — <code>olv2_bind</code>/
+  <code>olv2_port</code> already default to <code>"0.0.0.0"</code>/<code>47002</code>
+  (distinct from OLV1's 47000 and DIS's 47001), so the mode flag alone is enough:
+<pre><code class="language-sh">build/dist/backend/bin/olv_backend --input-mode olv2 --log-level debug --log-file olv2.log
+build/dist/simulator/bin/olv_sim --generate 50 --protocol olv2 --rate 10 --duration 120
+</code></pre>
+  (With <code>--protocol olv2</code> and no <code>--port</code>, the simulator targets
+  47002 automatically.)</li>
+  <li>Tune the batch size: <code>[send] olv2_points</code> (default 10) sets points
+  per datagram. At <code>--rate 10</code>, a 10-point batch fills every 1&nbsp;s —
+  well under the backend's 15&nbsp;s <code>expiry_seconds</code>. Edit
+  <code>config/simulator.toml</code> to set <code>olv2_points = 25</code> and rerun
+  at <code>--rate 1</code>: the batch period (points &divide; rate) is now 25&nbsp;s,
+  above <code>expiry_seconds</code> — <code>olv_sim</code> prints a startup warning
+  (it warns above a 10&nbsp;s batch period), and objects in the viewer blink out
+  between datagrams.</li>
+  <li>Watch trails: enable Settings &rarr; <em>Show trails</em>. Because OLV2 forwards
+  every accepted point as a WebSocket <code>trailPoints</code> row (not just the
+  1&nbsp;Hz snapshot position), trails render at the source's true sample rate.</li>
+  <li>Observe the documented OLV2 losses/differences versus DIS: every object shows
+  intensity 0 (no intensity field on the wire), but confidence passes through
+  unchanged (0&ndash;100) rather than DIS's fixed 100, and object/track ids pass
+  through unchanged rather than DIS's FNV-1a folded ids.</li>
+  <li>Cross-check the satellite: it is the same satellite panel/sat-view camera as
+  OLV1 and DIS — OLV2 has no separate ownship entity (D2 in
+  <code>docs/features/FEATURE_OLV2.md</code>); every datagram's satellite sample
+  updates that one shared satellite, and only when its point is newer than the
+  one already stored.</li>
+</ol>
+
 <div class="page-nav" id="page-nav"></div>
 </main>
 </div>

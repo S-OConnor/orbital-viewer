@@ -34,6 +34,7 @@ test('applyState then getSnapshot matches the renderer snap shape exactly', () =
     objects: msg.objects,
     lastDataTime: msg.lastDataTime,
     serverTime: msg.serverTime,
+    trailPoints: [],
   });
 });
 
@@ -44,7 +45,40 @@ test('getSnapshot before any applyState is empty/null', () => {
     objects: [],
     lastDataTime: null,
     serverTime: null,
+    trailPoints: [],
   });
+});
+
+test('getSnapshot exposes trailPoints from a state message', () => {
+  const model = createModel();
+  const msg = sampleMsg();
+  msg.trailPoints = [
+    { id: 2001, t: 1790000000.125, pos: [6923371.4, 12000.0, -55000.2] },
+    { id: 2001, t: 1790000000.225, pos: [6923380.9, 12011.5, -55001.0] },
+  ];
+  model.applyState(msg, 1000);
+  assert.deepEqual(model.getSnapshot().trailPoints, msg.trailPoints);
+});
+
+test('getSnapshot: trailPoints is replaced, not accumulated, by the next applyState', () => {
+  const model = createModel();
+  const first = sampleMsg();
+  first.trailPoints = [{ id: 2001, t: 1, pos: [1, 2, 3] }];
+  model.applyState(first, 1000);
+  assert.equal(model.getSnapshot().trailPoints.length, 1);
+
+  const second = sampleMsg();
+  second.trailPoints = [
+    { id: 2001, t: 2, pos: [4, 5, 6] },
+    { id: 2001, t: 3, pos: [7, 8, 9] },
+  ];
+  model.applyState(second, 2000);
+  assert.deepEqual(model.getSnapshot().trailPoints, second.trailPoints);
+
+  const third = sampleMsg();
+  delete third.trailPoints;
+  model.applyState(third, 3000);
+  assert.deepEqual(model.getSnapshot().trailPoints, []);
 });
 
 test('getSnapshot: serverTime passthrough from a state message', () => {

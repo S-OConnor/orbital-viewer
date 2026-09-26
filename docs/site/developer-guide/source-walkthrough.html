@@ -36,9 +36,11 @@ signatures.</p>
   <li><strong>Construction</strong> (inside one try/catch):
   <code>StateStore store(expiry)</code> &rarr;
   <code>makeInputSource(cfg, store, log)</code> — the factory returns
-  <code>Olv1InputSource</code> or <code>DisInputSource</code>; the DIS constructor
-  parses the satellite EntityID and binds its socket, so bad DIS config fails here,
-  before threads — &rarr; <code>io_context</code> &rarr;
+  <code>Olv1InputSource</code>, <code>DisInputSource</code>, or <code>Olv2InputSource</code>;
+  the DIS constructor parses the satellite EntityID and binds its socket, and the OLV2
+  constructor just binds its socket (<code>olv2_bind:olv2_port</code>, default
+  <code>0.0.0.0:47002</code>), so bad config fails here, before threads — &rarr;
+  <code>io_context</code> &rarr;
   <code>WsServer(ioc, bind, port, store, log, hz)</code> (binds the TCP acceptor).</li>
   <li><strong><code>input-&gt;start()</code></strong> spawns thread 1;
   <strong><code>ws.start()</code></strong> arms the acceptor + broadcast timer.</li>
@@ -73,6 +75,14 @@ ring for the 5&nbsp;s rate window. Four public methods, each fully locked:
 object upsert &rarr; timestamps), <code>snapshot(mono)</code> (prune &rarr; copy
 &rarr; sort by id). Carry-forward is a property of <em>not clearing</em>: objects
 persist until expiry, which is what makes 40-packet chunked cycles coherent.</p>
+<p>A fifth method, <code>applyTrack(update, wall, mono)</code>, is OLV2's additive
+counterpart to <code>apply()</code> (never called by OLV1/DIS): upserts the target row,
+replaces the satellite only if the update's sample time is newer than the one already
+stored (tracks interleave, so an older batch must not move it backwards), and appends
+every trail point to a pending buffer capped at <code>kMaxPendingTrailPoints = 125000</code>
+(oldest dropped). <code>snapshot()</code> additionally drains that buffer into
+<code>Snapshot::trail_points</code> — a delta since the previous call, not a running
+history.</p>
 
 <h3 id="wsserver">WsServer &amp; sessions</h3>
 <p>Beast async accept loop; each session does the WebSocket handshake, sends the
@@ -88,7 +98,11 @@ Connect/disconnect log lines carry the endpoint and client count.</p>
 velocities to 0.01&nbsp;m/s, objects as 11-element row arrays,
 <code>udpDropped = malformed + stale</code>. Produces <code>hello</code> and
 <code>state</code> messages exactly as specified in
-<a href="../reference/protocol-ws.html">PROTOCOL_WS</a>.</p>
+<a href="../reference/protocol-ws.html">PROTOCOL_WS</a>. Additionally serializes the
+optional <code>trailPoints</code> array from <code>Snapshot::trail_points</code> — rows
+<code>[id, t, px, py, pz]</code> (<code>t</code> at <code>%.3f</code>, positions at
+<code>%.1f</code>) — and <strong>omits the key entirely</strong> when that vector is
+empty, so OLV1 and DIS frames stay byte-identical to pre-OLV2 output.</p>
 
 <h3 id="dis-source">DisInputSource</h3>
 <p><code>processDatagram()</code> (public test seam) implements the seven-step DIS
@@ -100,10 +114,28 @@ HAS_VELOCITY. The satellite (matched by full EntityID) is carried forward into
 every synthesized packet, and a strictly-increasing local sequence keeps the shared
 staleness gate quiet.</p>
 
+<h3 id="olv2-source">Olv2InputSource</h3>
+<p><code>processDatagram()</code> (public test seam,
+<a href="../reference/protocol-olv2.html">PROTOCOL_OLV2</a> §4&ndash;§5) implements a
+simpler, fully first-party pipeline &mdash; no third-party decoder: count &rarr;
+<code>proto::olv2::decode</code> (the ten stateless structural/CRC/finiteness/range/
+time-order checks) &rarr; per-track staleness
+(<code>last_t_[track_id]</code>; drop iff the datagram's first point is not newer than
+the newest point previously accepted for that track; a track's first datagram is always
+accepted) &rarr; translate into a <code>TrackUpdate</code> &rarr;
+<code>StateStore::applyTrack</code>. Mapping: the <em>newest</em> point becomes the
+target's object row (type/confidence/HIGHLIGHT from the header, HAS_VELOCITY from that
+point's flag) and the satellite sample (velocity from the wire when
+<code>SAT_HAS_VEL</code> is set, else finite-differenced from the last two points, else
+zero); <em>every</em> point becomes one <code>trailPoints</code> row. A change in
+<code>sat_id</code> from the previously accepted datagram is logged once at warn and
+still applied (the design assumes one satellite per deployment).</p>
+
 <h2 id="sim-lifecycle">Simulator lifecycle (olv_sim)</h2>
 <ol>
   <li><strong><code>parseSimArgs()</code></strong> — same two-pass config/flag model;
-  picks destination port 47001 automatically in DIS mode when no port given.</li>
+  picks destination port 47001 automatically in DIS mode, or 47002 in OLV2 mode, when no
+  port is given.</li>
   <li><strong>Source setup</strong>: CSV mode — <code>parseCsv()</code> (strict,
   line-numbered errors) then <code>buildFrames()</code> (group by <code>time_s</code>,
   satellite carry-forward, first frame must contain a <code>sat</code> row).
@@ -112,10 +144,15 @@ staleness gate quiet.</p>
   makes compose service names like <code>backend</code> work), connect the UDP socket.</li>
   <li><strong>Send loop</strong>: <code>steady_clock</code> pacing at
   <code>1/rate</code>; per cycle either <code>buildPackets()</code> (OLV1: chunk
-  &le;128, monotonic sequence, <code>proto::encode</code>) or
+  &le;128, monotonic sequence, <code>proto::encode</code>),
   <code>buildDisPdus()</code> (one big-endian Entity State PDU per entity, satellite
-  first; timestamps derived from the cycle counter so CSV loops stay monotone).
-  Send errors log and count but never abort.</li>
+  first; timestamps derived from the cycle counter so CSV loops stay monotone), or, in
+  OLV2 mode, <code>Olv2Batcher::push()</code> (one frame buffered per cycle, at
+  <code>t_epoch</code> = run-start wall clock + cycles&nbsp;/&nbsp;<code>rate_hz</code>,
+  same cycle-counter precedent as DIS) followed by <code>flush()</code> once
+  <code>olv2_points</code> frames are buffered, emitting one datagram per object id seen;
+  a partial batch flushes at normal end of run. Send errors log and count but never
+  abort.</li>
   <li><strong>Exit</strong>: after CSV pass (unless <code>--loop</code>) or
   <code>--duration</code>; prints <code>done: cycles= packets= bytes= send_errors=</code>.</li>
 </ol>
@@ -205,10 +242,15 @@ the bottom two rows is pure and Node-testable. Dashed: <code>sky.js &rarr; sun.j
         click-vs-drag picking (5&nbsp;px threshold), render loop, 1&nbsp;s UI tick.</td></tr>
     <tr><td><code>net.js</code></td><td><code>parseStateMessage()</code> (strict message
         validation, throws) and <code>createConnection()</code> (backoff reconnect
-        1&rarr;10&nbsp;s, injectable <code>wsFactory</code>, parse-error tolerance).</td></tr>
+        1&rarr;10&nbsp;s, injectable <code>wsFactory</code>, parse-error tolerance). Also
+        parses the optional <code>trailPoints</code> array (OLV2 only): absent &rarr;
+        <code>[]</code>, present &rarr; must be all-finite 5-element rows or the whole
+        message is rejected.</td></tr>
     <tr><td><code>model.js</code></td><td>Latest-snapshot store;
         <code>getListRows(filter, cap=1000)</code> sorted by id;
-        <code>secondsSinceLastState()</code> for staleness.</td></tr>
+        <code>secondsSinceLastState()</code> for staleness. Carries <code>trailPoints</code>
+        (default <code>[]</code>) through from the last <code>state</code> message
+        unmodified.</td></tr>
     <tr><td><code>settings.js</code></td><td>Validated, clamped settings store over
         <code>localStorage</code> (<code>olv.settings.v1</code>); defaults &larr; site
         config &larr; user; <code>onChange</code> notifications.</td></tr>
@@ -219,9 +261,11 @@ the bottom two rows is pure and Node-testable. Dashed: <code>sky.js &rarr; sun.j
     <tr><td><code>renderer.js</code></td><td>~1,500-line WebGL&nbsp;1 renderer: 4 GLSL
         programs (earth/line/points/marker) sharing a prepended fisheye GLSL block;
         globe (64&times;96 sphere, day/night shader), graticule, sky, Sun, trails
-        (per-object 64-sample rings), one points draw for &le;5,000 objects, overlay
-        labels/rings/chevrons; <code>pick()</code>; scene clock from
-        <code>serverTime</code>. Scene units: 1 = 1,000&nbsp;km.</td></tr>
+        (per-object 64-sample client-built rings by default; ids that have received OLV2
+        <code>trailPoints</code> are instead fed only from those server-sent samples, at a
+        512-sample cap, and skip the 1&nbsp;Hz client-built append to avoid duplicates), one
+        points draw for &le;5,000 objects, overlay labels/rings/chevrons; <code>pick()</code>;
+        scene clock from <code>serverTime</code>. Scene units: 1 = 1,000&nbsp;km.</td></tr>
     <tr><td><code>camera.js</code> / <code>sat_camera.js</code></td><td>Orbit camera;
         satellite nadir view matrix + equidistant fisheye projection
         (<code>SAT_FOV_DEG=170</code>) — the JS twin of the GLSL block
@@ -287,8 +331,11 @@ shell direction-preserved, so stars at 1e12&nbsp;m still render sensibly.</p>
   <text class="d-small" x="700" y="300" text-anchor="start">render @ rAF</text>
 </svg>
 <figcaption>Validation happens entirely on thread 1; serialization entirely on
-thread 2; the only synchronized moment is the <code>apply()</code>/<code>snapshot()</code>
-pair on the StateStore mutex.</figcaption>
+thread 2; the only synchronized moment is the <code>apply()</code>/<code>applyTrack()</code>
+(OLV2) and <code>snapshot()</code> pair on the StateStore mutex. The OLV2 path differs in one
+respect this diagram doesn't show: each datagram carries one <em>track's</em> batch of points
+rather than a full satellite+objects snapshot, so "seq=N" here maps onto a per-track sample
+time instead of a single global packet sequence.</figcaption>
 </figure>
 
 <div class="page-nav" id="page-nav"></div>

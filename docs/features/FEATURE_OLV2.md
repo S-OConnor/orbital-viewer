@@ -1,7 +1,10 @@
 # Feature: OLV2 Input Source — Per-Track Batched Time-Series Updates
 
-Status: **Phase 0 — decisions frozen, awaiting architect sign-off to start
-Phase 1.** §3–§7 are the **frozen contract**; implementation agents MUST NOT
+Status: **Complete — all phases (1-5) done (2026-09-26).** Normative
+operator-facing spec: `docs/PROTOCOL_OLV2.md`. §3–§7 are the **frozen contract**, and the committed headers
+(`include/olv/protocol_olv2.hpp`, `olv2_input_source.hpp`, the `StateStore`
+additions, `tools/simulator/src/olv2_builder.hpp`) are its source of truth
+where this summary abbreviates; implementation agents MUST NOT
 change them without architect sign-off. Companion to
 docs/features/FEATURE_INPUT_SOURCES.md (the pluggable `InputSource` seam this
 feature plugs into), docs/PROTOCOL_UDP.md (OLV1, **unchanged**), and
@@ -28,7 +31,7 @@ Every point carries the satellite position alongside the target position.
 |---|---|---|
 | D1 | Wire format / name | Architect's proposed layout accepted "for now"; magic and name **`OLV2`**. |
 | D2 | Ownship / satellite | The satellite in every message is **always the same one, and it is our ownship.** There is no separate ownship entity: OLV2's satellite block maps onto the existing primary satellite (`SatelliteState`, WS `satellite`, sat-view camera). **Consequence:** the originally proposed separate ownship block is removed from the wire format; no new entity kind reaches the store, the WS protocol, or the frontend. |
-| D3 | Batch semantics | **New update points only** — consecutive datagrams for one track never overlap. A datagram whose first point is not newer than the track's newest accepted point is a duplicate/reorder and is dropped whole as stale (§4.4). |
+| D3 | Batch semantics | **New update points only** — consecutive datagrams for one track never overlap. A datagram whose first point is not newer than the track's newest accepted point is a duplicate/reorder and is dropped whole as stale (§3.4). |
 | D4 | Time base | Absolute **UTC seconds since the Unix epoch** (f64, sub-second fraction allowed), stamped by the sender. `lastDataTime` in the WS protocol keeps its existing meaning: backend **receive** time of the last accepted datagram. |
 
 Architect defaults (not asked; reversible, flagged here for review):
@@ -194,8 +197,8 @@ struct TrailPoint {                 // one target sample, forwarded to clients
 };
 
 struct TrackUpdate {                // store-neutral; the OLV2 source translates into this
-  std::uint32_t sequence = 0;       // -> SatelliteState::seq
-  SatelliteState satellite;         // newest satellite sample (vel already estimated if needed)
+  SatelliteState satellite;         // newest satellite sample; seq = datagram sequence,
+                                    // vel already estimated if needed
   double satellite_t = 0.0;         // its sample time, for newest-wins across tracks
   SnapshotObject target;            // newest target sample, as an object row
   std::vector<TrailPoint> trail;    // every target sample, ascending t
@@ -209,8 +212,9 @@ struct Snapshot {                   // + one field
 class StateStore {
  public:
   // Counts one accepted datagram (udp_accepted, rate window, lastDataTime),
-  // upserts `target`, replaces the satellite iff satellite_t > stored sample
-  // time, appends `trail` to the pending buffer. No staleness check here —
+  // upserts `target`, replaces the satellite iff none is stored, the stored
+  // one came from apply(), or satellite_t > stored sample time; appends
+  // `trail` to the pending buffer. No staleness check here —
   // the caller (Olv2InputSource) owns §3.4.
   void applyTrack(const TrackUpdate& u, std::chrono::system_clock::time_point wall,
                   std::chrono::steady_clock::time_point mono);
@@ -292,6 +296,7 @@ class Olv2Batcher {
   // Records one frame at UTC epoch time t_epoch (must increase across calls).
   void push(const Frame& frame, double t_epoch);
   bool ready() const;                                      // points_per_datagram frames buffered
+  bool empty() const;                                      // nothing to flush
   // One datagram per object id seen in the buffered frames (objects missing
   // from some frames just carry fewer points); satellite sample taken from
   // each frame. Clears the buffer. `seq` incremented per datagram.
@@ -310,7 +315,13 @@ through unchanged (unlike DIS).
 No two agents own the same file. Architect writes all frozen headers and
 protocol docs.
 
-**Phase 1 — Freeze (architect).** `protocol_olv2.hpp` (full, it's the spec);
+**Phase 1 — Freeze (architect).** ✅ Done (2026-09-26). Build green under
+`-DOLV_WERROR=ON`, ctest 111/111; `makeInputSource` throws "input mode
+'olv2' is not implemented yet" until Phase 2 (DIS Phase 1 precedent). Also
+froze `tools/simulator/src/olv2_builder.hpp` (agent C owns only the `.cpp`).
+`StateStore::applyTrack` + the snapshot drain were implemented by the
+architect in Phase 1 (so agent B can link against them); agent A tests them.
+Delivered: `protocol_olv2.hpp` (full, it's the spec);
 `docs/PROTOCOL_OLV2.md` (normative, PROTOCOL_UDP.md structure);
 `state_store.hpp` + `olv2_input_source.hpp` + `input_source.hpp` declarations;
 `docs/PROTOCOL_WS.md` §2 `trailPoints`; CMake entries + empty test files
@@ -318,27 +329,65 @@ protocol docs.
 `tools/simulator/tests/test_olv2_builder.cpp`) so Phase 2 agents never share
 a CMakeLists.
 
-**Phase 2 — Parallel implementation.**
+**Phase 2 — Parallel implementation.** ✅ Done (2026-09-26). Four Sonnet
+agents, exclusive ownership honored (verified per agent via `git status`),
+each green under `-DOLV_WERROR=ON`. Delivered: `Olv2InputSource` + factory +
+`[input] olv2_bind/olv2_port` (A: 33 `ProtocolOlv2`, 10 `applyTrack`,
+4 `trailPoints` JSON tests; B: 13 `Olv2InputSource`, 8 config tests);
+`Olv2Batcher` + `--protocol olv2` + `[send] olv2_points` (C: 12 batcher,
+8 sim-config tests; the send loop was factored into a shared lambda, proven
+behavior-neutral by the Phase 5 byte comparison); `trailPoints` parse/model/
+server-fed renderer trails (D: 9 tests). No agent reported a defect in the
+frozen contract.
 
 | Agent | Model | Owns |
 |---|---|---|
-| A — store/WS | Sonnet | `src/state_store.cpp`, `src/json_writer.cpp`, `test/test_state_store.cpp`, `test/test_json_writer.cpp`, `test/test_protocol_olv2.cpp` |
+| A — store/WS | Sonnet | `src/json_writer.cpp`, `include/olv/json_writer.hpp` (comments), `test/test_state_store.cpp`, `test/test_json_writer.cpp`, `test/test_protocol_olv2.cpp` |
 | B — intake | Sonnet | `src/olv2_input_source.cpp`, `src/input_source.cpp`, `include/olv/config.hpp`, `src/config.cpp`, `config/backend.toml`, `test/test_olv2_input_source.cpp`, `test/test_config.cpp` |
-| C — simulator | Sonnet | `tools/simulator/src/{olv2_builder.*,sim_config.*,main.cpp}`, `config/simulator.toml`, `tools/simulator/tests/{test_olv2_builder,test_sim_config}.cpp` |
+| C — simulator | Sonnet | `tools/simulator/src/{olv2_builder.cpp,sim_config.*,main.cpp}`, `config/simulator.toml`, `tools/simulator/tests/{test_olv2_builder,test_sim_config}.cpp` |
 | D — frontend | Sonnet | `frontend/js/{net,model,renderer}.js`, `frontend/tests/{net_parse,model}.test.mjs`, `frontend/tests/validate_message.mjs` |
 
-**Phase 3 — Integration review (Opus).** Cross-check against §3–§7, style,
-`-DOLV_WERROR=ON` clean. Tooling: `tools/ws_probe.cpp` prints `trailPoints`
-count; `scripts/integration_test.sh` gains an OLV2 leg;
-`containers/compose.yaml` exposes `47002/udp`; `scripts/run_all.sh`
-passthrough.
+**Phase 3 — Integration review (Opus).** ✅ Done (2026-09-26). Every agent
+diff reviewed against §3–§7; full tree `-DOLV_WERROR=ON` clean and
+clang-format clean. `scripts/integration_test.sh` gained an OLV2 leg (fresh
+backend in `olv2` mode via config file + `olv_sim --protocol olv2 --rate 10`;
+asserts satellite, `trailPoints`, frontend-parser validity, `input_mode=olv2`,
+accepted and zero dropped datagrams) and now asserts OLV1 frames never carry
+`trailPoints`. Plan adjustments: `tools/ws_probe.cpp` needed no change (it
+only captures frames; `validate_message.mjs` now reports `maxTrailPoints`);
+`containers/compose.yaml` gained a commented OLV2 example rather than a
+default `47002/udp` mapping (matching DIS, whose 47001 is not mapped by
+default); `scripts/run_all.sh` has no input-mode knob (modes are chosen via
+the compose `command`/config), so it is unchanged.
 
-**Phase 4 — Docs (Sonnet).** README (feature bullet, run example, config
+**Phase 4 — Docs (Sonnet).** ✅ Done (2026-09-26): README, new
+`reference/protocol-olv2.html` + nav, `trailPoints` in the WS reference, and
+OLV2 threaded through the overview, user-guide, reference, and
+developer-guide pages; search index regenerated; all relative links resolve.
+Also corrected two pre-existing inaccuracies found along the way (backend
+tests run on GoogleTest, not `olv_test.hpp`; staleness is per-protocol, not
+"sequence-only"). Planned scope: README (feature bullet, run example, config
 rows), docs site (new `reference/protocol-olv2.html`, nav in
 `assets/docs.js`, CLI/config pages, regenerated search index),
 `THIRD_PARTY.md`/`sbom/*.cdx.json` unchanged (no new dependency).
 
-**Phase 5 — Verification.** `ctest` + `node --test` green; OLV2 smoke
+**Phase 5 — Verification.** ✅ Done (2026-09-26), all green:
+- Host (`-DOLV_WERROR=ON`): ctest 179/179 (backend_unit 177, sim_unit,
+  integration with both legs — OLV2 leg: 50 objects, 500 `trailPoints` in one
+  broadcast = 50 tracks × 10 points); `node --test` 177/177; clang-format clean.
+- Builder image (`scripts/build.sh` + `scripts/test.sh`, Rocky / Boost 1.74):
+  zero warnings, ctest 179/179.
+- OLV1 regression vs pre-feature `f716b66`: one recorded OLV1 stream
+  replayed from a fixed source port → debug log (80 lines) and WS state frame
+  (22113 bytes) byte-identical after masking wall-clock fields.
+- Simulator regression: OLV1 and DIS output for the example mission CSV
+  byte-identical to pre-feature (194224 / 595848 bytes).
+- DIS smoke: 315/315 accepted, no `trailPoints` key.
+- Outstanding: real-browser check of server-fed trails (headless browsers
+  are impractical on the dev host) — `olv_sim --generate 50 --protocol olv2
+  --rate 10` → `olv_backend --input-mode olv2` → open the frontend.
+
+Planned scope: `ctest` + `node --test` green; OLV2 smoke
 (`olv_sim --generate 50 --protocol olv2 --rate 10` → `olv_backend
 --input-mode olv2` → `olv_ws_probe`: received == accepted, satellite + 50
 objects, frames pass `validate_message.mjs`, `trailPoints` ≈ 10 per track per

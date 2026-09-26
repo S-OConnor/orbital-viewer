@@ -53,6 +53,7 @@ every tick, even before any UDP data has arrived.</p>
     [1001, 1, 6923371.4, 12000.0, -55000.2, 7611.0, 0.0, 0.0, 87, 0.0, 0],
     [2001, 5, 1113194.9, -4842330.0, 3985029.2, null, null, null, 95, 1450.0, 1]
   ],
+  "trailPoints": [[2001, 1790000000.125, 6923371.4, 12000.0, -55000.2]],
   "stats": { "udpReceived": 480, "udpAccepted": 478, "udpDropped": 2,
              "udpRateHz": 8.0, "wsClients": 1, "objectCount": 2,
              "broadcastSeq": 12 }
@@ -107,6 +108,33 @@ every tick, even before any UDP data has arrived.</p>
 <p>Row-array encoding is a deliberate size optimization: ~450&nbsp;KB vs ~800&nbsp;KB
 per broadcast at 5,000 objects compared with key/value objects.</p>
 
+<h2 id="trail-points"><code>trailPoints</code> (optional)</h2>
+<p>Present only when the backend runs the <a href="protocol-olv2.html">OLV2
+input mode</a> and target samples arrived since the previous broadcast. The
+key is <strong>omitted</strong> (not <code>[]</code>) when there are none, so
+OLV1 and DIS state frames are byte-unchanged. Placed after
+<code>objects</code>:</p>
+<pre><code class="language-json">"trailPoints": [[2001, 1790000000.125, 6923371.4, 12000.0, -55000.2],
+                [2001, 1790000000.225, 6923380.9, 12011.5, -55001.0]]
+</code></pre>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>#</th><th>Name</th><th>Type</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>0</td><td><code>id</code></td><td>u32</td><td>object id (matches an <code>objects</code> row id)</td></tr>
+    <tr><td>1</td><td><code>t</code></td><td>number</td><td>sample time, UTC seconds since the Unix epoch, rounded to 1&nbsp;ms</td></tr>
+    <tr><td>2&ndash;4</td><td><code>px, py, pz</code></td><td>number</td><td>ECEF meters, rounded to 0.1&nbsp;m</td></tr>
+  </tbody>
+</table>
+</div>
+<p>Semantics: a <strong>delta</strong> &mdash; every sample applied since the
+previous broadcast, each reported exactly once, grouped by arrival and
+ascending <code>t</code> within one track. It is not a history: a client that
+connects mid-stream builds trails from that point on. Clients use these
+samples, instead of the 1&nbsp;Hz <code>objects</code> positions, to draw
+trails for the ids they cover; the satellite trail stays client-built from
+<code>objects</code>/<code>satellite</code> at the broadcast rate.</p>
+
 <h2 id="client-rules">Required client behavior</h2>
 <ul>
   <li>Reconnect with backoff (1&nbsp;s doubling to a 10&nbsp;s cap — the reference
@@ -119,6 +147,9 @@ per broadcast at 5,000 objects compared with key/value objects.</p>
   <code>cat</code> outside 0&ndash;5 still parses, as <code>unknown</code>. The
   reference implementation (<code>parseStateMessage</code>) counts errors and
   keeps the connection alive.</li>
+  <li>An absent <code>trailPoints</code> parses as <code>[]</code>; a present
+  one MUST be an array of 5-element rows of finite numbers, else the message
+  is rejected (same strictness as <code>objects</code>).</li>
   <li>Client-side staleness: no <code>state</code> frame for &gt; 3&nbsp;s &rarr; show
   a stalled-connection indicator.</li>
 </ul>
@@ -133,6 +164,8 @@ per broadcast at 5,000 objects compared with key/value objects.</p>
 </ul>
 
 <p>Related: <a href="protocol-udp.html">OLV1 UDP input</a> ·
+<a href="protocol-dis.html">DIS input</a> ·
+<a href="protocol-olv2.html">OLV2 input (source of <code>trailPoints</code>)</a> ·
 <a href="../developer-guide/api.html#js-api">frontend parser API</a> ·
 <a href="cli.html#ws-probe">olv_ws_probe</a> for capturing frames</p>
 

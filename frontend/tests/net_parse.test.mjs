@@ -137,6 +137,56 @@ test('rejects satellite pos of length 2', () => {
   assert.throws(() => parseStateMessage(JSON.stringify(obj)));
 });
 
+// ---- trailPoints (OLV2-only, optional; docs/PROTOCOL_WS.md) --------------
+
+test('trailPoints absent parses as []', () => {
+  const parsed = parseStateMessage(JSON.stringify(sampleStateObj()));
+  assert.deepEqual(parsed.trailPoints, []);
+});
+
+test('parses valid trailPoints rows into {id, t, pos}', () => {
+  const obj = sampleStateObj();
+  obj.trailPoints = [
+    [2001, 1790000000.125, 6923371.4, 12000.0, -55000.2],
+    [2001, 1790000000.225, 6923380.9, 12011.5, -55001.0],
+  ];
+  const parsed = parseStateMessage(JSON.stringify(obj));
+  assert.deepEqual(parsed.trailPoints, [
+    { id: 2001, t: 1790000000.125, pos: [6923371.4, 12000.0, -55000.2] },
+    { id: 2001, t: 1790000000.225, pos: [6923380.9, 12011.5, -55001.0] },
+  ]);
+});
+
+test('rejects non-array trailPoints', () => {
+  const obj = sampleStateObj();
+  obj.trailPoints = 'nope';
+  assert.throws(() => parseStateMessage(JSON.stringify(obj)));
+});
+
+test('rejects trailPoints row of the wrong length', () => {
+  const obj = sampleStateObj();
+  obj.trailPoints = [[2001, 1790000000.125, 6923371.4, 12000.0]];
+  assert.throws(() => parseStateMessage(JSON.stringify(obj)));
+});
+
+test('rejects trailPoints row with a non-finite value', () => {
+  const obj = sampleStateObj();
+  obj.trailPoints = [[2001, 1790000000.125, 6923371.4, 12000.0, null]];
+  assert.throws(() => parseStateMessage(JSON.stringify(obj)));
+});
+
+test('rejects trailPoints row that is not an array', () => {
+  const obj = sampleStateObj();
+  obj.trailPoints = [{ id: 2001, t: 1, px: 0, py: 0, pz: 0 }];
+  assert.throws(() => parseStateMessage(JSON.stringify(obj)));
+});
+
+test('existing messages without trailPoints are otherwise unchanged', () => {
+  const parsed = parseStateMessage(JSON.stringify(sampleStateObj()));
+  assert.equal(parsed.objects.length, 2);
+  assert.deepEqual(parsed.stats, sampleStateObj().stats);
+});
+
 test('rejects hello with protocolVersion 2', () => {
   const text = JSON.stringify({
     type: 'hello',

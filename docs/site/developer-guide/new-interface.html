@@ -21,11 +21,13 @@
 
 <h1>Adding a New Interface</h1>
 <p class="lead">The complete, end-to-end procedure for adding a new external
-interface to the system — most commonly a new <em>input source</em> (a third wire
-protocol besides OLV1 and DIS), but the same discipline applies to a new output
-interface. This is the project's designed-for extension point: DIS was added
+interface to the system — most commonly a new <em>input source</em> (a new wire
+protocol alongside OLV1, DIS, and OLV2), but the same discipline applies to a new
+output interface. This is the project's designed-for extension point: DIS was added
 exactly this way, and <code>docs/features/FEATURE_INPUT_SOURCES.md</code> is the
-historical record of that work.</p>
+historical record of that work. OLV2 (<code>docs/features/FEATURE_OLV2.md</code>) is a
+second, independent worked example of the same recipe — <a href="#second-example">§9</a>
+covers the one process variation it introduced.</p>
 
 <h2 id="anatomy">1. Anatomy of an interface</h2>
 <p>In this codebase, an "interface" is not just a class — it is a bundle of five
@@ -47,37 +49,42 @@ artifacts that must ship together:</p>
 </ol>
 
 <figure class="diagram">
-<svg viewBox="0 0 840 250" role="img" aria-label="Where a new input source plugs in">
+<svg viewBox="0 0 840 300" role="img" aria-label="Where a new input source plugs in">
   <defs>
     <marker id="arr9" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="var(--diagram-stroke)"/>
     </marker>
   </defs>
-  <rect class="d-box" x="20" y="30" width="180" height="44"/>
-  <text class="d-small" x="110" y="57" text-anchor="middle">Olv1InputSource (default)</text>
-  <rect class="d-box" x="20" y="100" width="180" height="44"/>
-  <text class="d-small" x="110" y="127" text-anchor="middle">DisInputSource</text>
-  <rect class="d-box" x="20" y="170" width="180" height="44" stroke-dasharray="6 4"/>
-  <text class="d-small" x="110" y="197" text-anchor="middle">FooInputSource (yours)</text>
+  <rect class="d-box" x="20" y="20" width="180" height="40"/>
+  <text class="d-small" x="110" y="45" text-anchor="middle">Olv1InputSource (default)</text>
+  <rect class="d-box" x="20" y="75" width="180" height="40"/>
+  <text class="d-small" x="110" y="100" text-anchor="middle">DisInputSource</text>
+  <rect class="d-box" x="20" y="130" width="180" height="40"/>
+  <text class="d-small" x="110" y="155" text-anchor="middle">Olv2InputSource</text>
+  <rect class="d-box" x="20" y="195" width="180" height="44" stroke-dasharray="6 4"/>
+  <text class="d-small" x="110" y="222" text-anchor="middle">FooInputSource (yours)</text>
 
-  <rect class="d-box" x="300" y="100" width="180" height="44" rx="10"/>
-  <text class="d-small" x="390" y="120" text-anchor="middle" font-weight="600">InputSource</text>
-  <text class="d-small" x="390" y="136" text-anchor="middle">start() / stop()</text>
+  <rect class="d-box" x="300" y="120" width="180" height="44" rx="10"/>
+  <text class="d-small" x="390" y="140" text-anchor="middle" font-weight="600">InputSource</text>
+  <text class="d-small" x="390" y="156" text-anchor="middle">start() / stop()</text>
 
-  <rect class="d-box" x="580" y="100" width="230" height="44" rx="14"/>
-  <text class="d-small" x="695" y="120" text-anchor="middle" font-weight="600">StateStore</text>
-  <text class="d-small" x="695" y="136" text-anchor="middle">countReceived · countDropped · apply</text>
+  <rect class="d-box" x="580" y="120" width="230" height="44" rx="14"/>
+  <text class="d-small" x="695" y="140" text-anchor="middle" font-weight="600">StateStore</text>
+  <text class="d-small" x="695" y="156" text-anchor="middle">countReceived · countDropped · apply / applyTrack</text>
 
-  <line class="d-line" x1="200" y1="52" x2="298" y2="112" marker-end="url(#arr9)"/>
-  <line class="d-line" x1="200" y1="122" x2="298" y2="122" marker-end="url(#arr9)"/>
-  <line class="d-line" x1="200" y1="192" x2="298" y2="132" marker-end="url(#arr9)"/>
-  <line class="d-line" x1="480" y1="122" x2="578" y2="122" marker-end="url(#arr9)"/>
-  <text class="d-small" x="529" y="112" text-anchor="middle">the only write path</text>
+  <line class="d-line" x1="200" y1="40" x2="298" y2="130" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="200" y1="95" x2="298" y2="138" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="200" y1="150" x2="298" y2="146" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="200" y1="217" x2="298" y2="154" marker-end="url(#arr9)"/>
+  <line class="d-line" x1="480" y1="142" x2="578" y2="142" marker-end="url(#arr9)"/>
+  <text class="d-small" x="529" y="132" text-anchor="middle">the only write path</text>
 </svg>
 <figcaption>Every input source — existing or new — is a strategy behind
-<code>InputSource</code>, and may talk to the rest of the system only through the
-three StateStore methods. Everything downstream (WsServer, JSON, frontend) is
-untouched by a new interface.</figcaption>
+<code>InputSource</code>, and may talk to the rest of the system only through
+<code>countReceived</code>/<code>countDropped</code> plus <code>apply()</code> (OLV1,
+DIS) or an additive method like <code>applyTrack()</code> (OLV2, whose per-track batch
+shape doesn't fit <code>apply()</code>'s single-satellite-snapshot model). Everything
+downstream (WsServer, JSON, frontend) is untouched by a new interface.</figcaption>
 </figure>
 
 <h2 id="design-first">2. Write the spec first</h2>
@@ -92,18 +99,30 @@ untouched by a new interface.</figcaption>
       <li>Transport, byte order, one-message-per-datagram rules.</li>
       <li>The <em>accepted subset</em> (versions, message kinds) and what happens to
       everything else (drop-as-malformed vs ignore-as-received).</li>
-      <li>Field-by-field mapping to <code>StatePacket</code>/<code>ObjectRecord</code>,
+      <li>Field-by-field mapping to <code>StatePacket</code>/<code>ObjectRecord</code> (or
+      your own store-neutral update struct — see OLV2's <code>TrackUpdate</code>),
       including fixed values for fields your protocol can't express (DIS precedent:
-      confidence=100, intensity=0, flags=HAS_VELOCITY) and any lossy conversions
-      (DIS precedent: id folding, STAR&rarr;DEBRIS).</li>
-      <li>How the <strong>primary satellite</strong> is identified (config-driven,
-      like <code>dis_satellite_entity_id</code>) and whether its state is carried
-      forward.</li>
+      confidence=100, intensity=0, flags=HAS_VELOCITY; OLV2 precedent: no intensity field
+      at all — every OLV2 target reports intensity 0, a documented loss like DIS's) and
+      any lossy conversions (DIS precedent: id folding, STAR&rarr;DEBRIS; OLV2 has
+      neither — its ids and types pass through unchanged).</li>
+      <li>How the <strong>primary satellite</strong> is identified (config-driven, like
+      <code>dis_satellite_entity_id</code>, <em>or</em> structural, like OLV2's — every
+      datagram simply carries the one satellite, so there's no separate identifier to
+      configure) and whether its state is carried forward or, if your protocol's
+      datagrams interleave streams the way OLV2's per-track batches do, replaced only
+      when strictly newer.</li>
       <li>The <strong>ordered validation list</strong> with a named outcome per step,
       and the <strong>stats identity</strong> (<code>received == accepted +
-      malformed + stale</code>, or a documented inequality like DIS's).</li>
+      malformed + stale</code> — true for OLV1 <em>and</em> OLV2 — or a documented
+      inequality like DIS's).</li>
       <li>Staleness semantics, and how the shared OLV1 sequence gate is satisfied
-      (synthesized strictly-increasing sequence is the standard answer).</li>
+      (synthesized strictly-increasing sequence is the standard answer) &mdash;
+      <em>or</em>, if your protocol's update shape doesn't fit <code>apply()</code> at
+      all, document your own additive <code>StateStore</code> method and staleness rule
+      instead (OLV2 precedent: per-track newest-accepted-time, checked by the
+      <code>InputSource</code> itself before calling <code>applyTrack</code>, which has no
+      gate of its own).</li>
       <li>The config keys (§4 below), verbatim, with defaults and ranges.</li>
     </ul></li>
 </ul>
@@ -147,12 +166,21 @@ source obeys):</p>
   <li><strong>Validate in your spec's order</strong>, log every drop with its reason
   and source address (WARN for malformed, DEBUG for stale/filtered), and prefer
   reusing the existing <code>DropKind</code>s — DIS deliberately added none.</li>
-  <li><strong>Satisfy the sequence gate.</strong> Stamp <code>pkt.sequence =
-  ++seq_</code> per accepted message so <code>StateStore::apply</code>'s staleness
-  check never self-fires; do your protocol's own staleness before this point.</li>
+  <li><strong>Satisfy the sequence gate — or skip it.</strong> If you reuse
+  <code>apply()</code>, stamp <code>pkt.sequence = ++seq_</code> per accepted message so
+  its staleness check never self-fires, and do your protocol's own staleness before this
+  point. If your protocol's update shape doesn't fit <code>apply()</code>'s
+  single-satellite-snapshot model at all (OLV2: one track's batch of points, not a full
+  snapshot), add a new additive <code>StateStore</code> method instead (see
+  <code>applyTrack</code>) with no gate of its own — then the <em>caller</em> must do the
+  staleness check before calling it, exactly like <code>Olv2InputSource</code> does.</li>
   <li><strong>Carry the satellite forward</strong> if your protocol updates entities
-  individually: <code>apply()</code> replaces the satellite wholesale, so stamp the
-  last-known satellite state into every synthesized packet.</li>
+  individually and reuses <code>apply()</code>: it replaces the satellite wholesale, so
+  stamp the last-known satellite state into every synthesized packet. A protocol whose
+  own datagrams already include the satellite (OLV2) doesn't need this — it needs the
+  opposite problem solved instead: interleaved streams from different tracks, so the
+  satellite must be replaced only when the incoming sample is newer than the one
+  already stored, not unconditionally.</li>
   <li><strong>Contain third-party types.</strong> Decoder library includes and types
   stay inside the .cpp; wrap decode calls in try/catch and convert exceptions to
   <code>malformed</code> drops (the open-dis pattern).</li>
@@ -176,9 +204,12 @@ source obeys):</p>
 }
 </code></pre>
   Keys must be schema-checked <em>whenever present</em>, even if
-  <code>mode != "foo"</code> (the DIS keys behave this way). Add cross-field
+  <code>mode != "foo"</code> (the DIS and OLV2 keys both behave this way). Add cross-field
   invariants on the merged config (e.g. "mode=foo requires foo_whatever") after
-  both passes.</li>
+  both passes — but only where a field truly has no sensible default: DIS's
+  <code>mode = "dis"</code> requires <code>dis_satellite_entity_id</code> this way; OLV2
+  needed no such invariant, since its only two keys
+  (<code>olv2_bind</code>/<code>olv2_port</code>) both have one.</li>
   <li><strong>CLI:</strong> extend <code>--input-mode</code>'s accepted values and
   <code>printUsage</code>. Follow the DIS precedent: protocol-specific settings live
   in the config file only — don't grow a flag per key.</li>
@@ -195,38 +226,54 @@ source obeys):</p>
         <td>New <code>test/test_foo_input_source.cpp</code>: build raw
         protocol byte arrays in the test and drive <code>processDatagram()</code>.
         Cover: every drop reason, the accept path, mapping of each field, satellite
-        identification + carry-forward, staleness (first message, newer, older,
-        wraparound if applicable), and "synthesized sequence never self-stales".</td>
-        <td><code>test_dis_input_source.cpp</code> (~500 lines — the exhaustive example)</td></tr>
+        identification + carry-forward (or newest-wins, if your protocol's streams
+        interleave like OLV2's), staleness (first message, newer, older,
+        wraparound if applicable), and "synthesized sequence never self-stales" (or, for
+        an additive store method, "the caller's own staleness check actually gates the
+        store write").</td>
+        <td><code>test_dis_input_source.cpp</code> (~500 lines — the exhaustive example)
+        or <code>test_olv2_input_source.cpp</code> (13 cases — the additive-store-method
+        example)</td></tr>
     <tr><td>Config tests</td>
         <td>Extend <code>test_config.cpp</code>: each new key valid / wrong type /
         out of range / unknown-key still rejected; mode parsing; cross-field
-        invariant; precedence with <code>--config</code>.</td>
-        <td>the existing <code>dis_*</code> cases</td></tr>
+        invariant (if any); precedence with <code>--config</code>.</td>
+        <td>the existing <code>dis_*</code> and <code>olv2_*</code> cases</td></tr>
     <tr><td>Emitter (optional)</td>
         <td>If the simulator learns to emit the protocol
         (<code>--protocol foo</code>): a <code>foo_builder</code> in
         <code>olv_sim_lib</code> + marshal unit tests + a round-trip test
         (emit &rarr; processDatagram &rarr; expect equivalent state).</td>
-        <td><code>dis_builder.cpp</code> + its tests</td></tr>
+        <td><code>dis_builder.cpp</code> (one PDU per entity) or
+        <code>olv2_builder.cpp</code> (batches frames into per-track datagrams instead)
+        + their tests</td></tr>
     <tr><td>Integration</td>
         <td>A scenario in (or parallel to) <code>scripts/integration_test.sh</code>:
         backend in foo mode on random ports, drive it, capture frames with
         <code>olv_ws_probe</code>, re-validate with
         <code>validate_message.mjs</code>, grep the log for accepted/connected.</td>
-        <td>the existing script</td></tr>
+        <td>the script's existing OLV1 and OLV2 legs</td></tr>
     <tr><td>Regression</td>
         <td>Prove the default path is untouched: full existing suite green
         <em>unmodified</em>, and a default-config run's startup log line
         byte-identical to before your change.</td>
-        <td>the DIS feature's Phase-5 acceptance</td></tr>
+        <td>the DIS feature's Phase-5 acceptance (OLV2 additionally proved its new,
+        optional <code>trailPoints</code> WS field is omitted — not <code>[]</code> —
+        on every non-OLV2 frame)</td></tr>
   </tbody>
 </table>
 </div>
 
 <h2 id="deps">6. If the interface needs a third-party decoder</h2>
-<p>Follow the open-dis-cpp dependency pattern exactly — it is the repo's template
-for "one more compiled dependency without breaking the air gap":</p>
+<p>This section only applies if your protocol needs one. OLV2 needed none: its entire
+wire format lives in <code>protocol_olv2.hpp</code>, header-only, reusing
+<code>protocol.hpp</code>'s existing CRC-32/byte-order helpers rather than pulling in a
+library — the cheapest and most air-gap-friendly option when your protocol is simple
+enough to hand-roll (a first-party binary layout you fully control), as opposed to DIS,
+which follows the pattern below because IEEE 1278.1 is a large, existing standard not
+worth reimplementing. Follow the open-dis-cpp dependency pattern exactly if you do need
+one — it is the repo's template for "one more compiled dependency without breaking the
+air gap":</p>
 <ol>
   <li>Pin an exact upstream version; install via a
   <code>scripts/install_&lt;lib&gt;.sh</code> that sha256-verifies the tarball
@@ -259,13 +306,22 @@ format) has a smaller but analogous shape:</p>
   message and field table, like PROTOCOL_WS.md), version it explicitly, and give
   the integration test a capture-and-validate path for it.</li>
 </ul>
+<p>OLV2's <code>trailPoints</code> field is a small worked example of adding to an
+<em>existing</em> output rather than standing up a new one: an additive, optional array
+on the already-versioned WS <code>state</code> message (PROTOCOL_WS.md §2), with the key
+<strong>omitted</strong> (not sent as <code>[]</code>) whenever there's nothing to report
+— so <code>protocolVersion</code> never needed a bump, and OLV1/DIS frames stay
+byte-identical to before the field existed. Prefer this over a version bump whenever your
+addition is genuinely optional and old clients already ignore unknown keys.</p>
 
 <h2 id="checklist">8. Ship checklist</h2>
 <ol>
   <li>&#9744; <code>docs/PROTOCOL_&lt;NAME&gt;.md</code> (normative) +
   <code>docs/features/FEATURE_&lt;NAME&gt;.md</code> (design record)</li>
-  <li>&#9744; <code>FooInputSource</code> with private io thread, three-call contract,
-  all-or-nothing drops, public <code>processDatagram</code> seam</li>
+  <li>&#9744; <code>FooInputSource</code> with private io thread,
+  <code>countReceived</code>/<code>countDropped</code>/<code>apply</code> (or a new
+  additive <code>StateStore</code> method, OLV2-style) contract, all-or-nothing drops,
+  public <code>processDatagram</code> seam</li>
   <li>&#9744; <code>InputMode</code> + factory + strict config keys + cross-field
   invariants + sample TOML + usage text</li>
   <li>&#9744; Unit tests (pipeline + config), optional emitter + round-trip,
@@ -277,6 +333,23 @@ format) has a smaller but analogous shape:</p>
   <a href="../reference/cli.html">CLI</a>/<a href="../reference/configuration.html">config</a>
   references</li>
 </ol>
+
+<h2 id="second-example">9. OLV2: the same recipe, run twice</h2>
+<p>OLV2 (<code>docs/features/FEATURE_OLV2.md</code>) followed every step above a second
+time: frozen protocol spec and headers first, then implementation, tests, and docs —
+the same five-artifact bundle from §1, behind the same <code>InputSource</code> seam and
+the same acceptance bar (existing suite green, default path byte-identical). It adds one
+lesson DIS did not need:</p>
+<ul>
+  <li><strong>Not every protocol fits <code>apply()</code>.</strong> DIS's update shape
+  (one entity per PDU) fit the existing sequence gate with a synthesized sequence number;
+  OLV2's (one track's batch of 1&ndash;25 time-stamped points per datagram) did not, so it
+  added an additive <code>StateStore::applyTrack</code> — frozen together with the wire
+  format, before any implementation — and left <code>apply()</code> untouched.</li>
+</ul>
+<p>Because the interfaces were frozen first, OLV2's implementation phase could be split
+across independent owners (store/WS, intake, simulator, frontend) with non-overlapping
+files, followed by one integration review against the frozen contract.</p>
 
 <p>Shorter recipes for other extension types (object categories, config options,
 UI panels, CLI tools): <a href="extending.html">Extending the Software</a>.</p>

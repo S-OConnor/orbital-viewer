@@ -9,7 +9,8 @@ add_library(olv_core STATIC
   json_writer.cpp
   input_source.cpp
   olv1_input_source.cpp
-  dis_input_source.cpp)
+  dis_input_source.cpp
+  olv2_input_source.cpp)
 target_link_libraries(olv_core
   PUBLIC olv_proto Boost::headers Threads::Threads
   PRIVATE olv_warnings OpenDIS::OpenDIS6)

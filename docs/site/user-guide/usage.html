@@ -21,7 +21,7 @@
 
 <h1>Usage</h1>
 <p class="lead">Every major feature: the viewer UI, the simulator, the backend, DIS
-mode, and automation. Flag-by-flag tables live in the
+mode, OLV2 mode, and automation. Flag-by-flag tables live in the
 <a href="../reference/cli.html">Command-Line Reference</a>.</p>
 
 <h2 id="viewer">The viewer</h2>
@@ -156,6 +156,44 @@ build/dist/simulator/bin/olv_sim --generate 100 --protocol dis
   <li>Non-Entity-State PDUs and filtered exercises are counted as received but not
   as dropped — so in DIS mode <code>received &ge; accepted + dropped</code> is normal
   on a busy exercise network.</li>
+</ul>
+
+<h2 id="olv2">OLV2 input mode</h2>
+<p>Ingest per-track, batched time-series updates instead of OLV1 or DIS. Each OLV2
+datagram describes exactly <strong>one</strong> target track and carries 1&ndash;25
+new, time-stamped update points for it; every point also carries the satellite
+(ownship) position at that instant:</p>
+<pre><code class="language-sh"># 1. No config file is required — olv2_bind/olv2_port already default to a
+#    working "0.0.0.0"/47002, unlike DIS's dis_satellite_entity_id.
+build/dist/backend/bin/olv_backend --input-mode olv2
+
+# 2. Any OLV2 source on port 47002 now feeds the display. The bundled simulator
+#    can emit OLV2 itself:
+build/dist/simulator/bin/olv_sim --generate 100 --protocol olv2 --rate 10
+</code></pre>
+<p>Semantics worth knowing (full detail:
+<a href="../reference/protocol-olv2.html">OLV2 reference</a>):</p>
+<ul>
+  <li>The satellite in every OLV2 datagram <strong>is</strong> the ownship — there is
+  no separate ownship entity. It drives the same satellite panel and sat-view
+  camera as OLV1/DIS, with no frontend change beyond trails.</li>
+  <li>Batches are <strong>disjoint</strong>: a conforming sender only ever sends
+  points newer than the last point it sent for that track (never a sliding
+  window/resend). A datagram whose first point isn't newer than that track's
+  last accepted point is dropped whole as stale.</li>
+  <li><strong>Batch period vs. expiry:</strong> the backend expires a track not
+  refreshed within <code>expiry_seconds</code> (default 15&nbsp;s) of receive time.
+  A batch of <code>olv2_points</code> points at the sender's sample rate takes
+  <code>points &divide; rate</code> seconds to fill — keep that below 15&nbsp;s or
+  tracks blink out between datagrams (<code>olv_sim</code> warns above a
+  10&nbsp;s batch period).</li>
+  <li>No intensity on the wire — OLV2 targets always report intensity 0, a
+  documented loss like DIS. Confidence (0&ndash;100) and object/track ids, however,
+  pass through unchanged.</li>
+  <li>Every accepted point (not just the newest) reaches clients once, as the
+  WebSocket <code>trailPoints</code> field, so trails render at the source's true
+  sample rate rather than the 1&nbsp;Hz snapshot default — no new Settings toggle
+  is involved.</li>
 </ul>
 
 <h2 id="probe">WebSocket probe (<code>olv_ws_probe</code>)</h2>

@@ -489,3 +489,99 @@ OLV_TEST(cli_protocol_bad_value_is_rejected) {
   OLV_CHECK(!cfg.has_value());
   OLV_CHECK(contains(error, "--protocol"));
 }
+
+// ---- [send] protocol = "olv2" / olv2_points (docs/features/FEATURE_OLV2.md) -
+
+OLV_TEST(config_file_send_protocol_olv2_and_olv2_points) {
+  TempConfig cfg_file(
+      "[source]\nmode = \"generate\"\ngenerate_count = 10\n"
+      "[send]\nprotocol = \"olv2\"\nolv2_points = 17\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(cfg.protocol == SimConfig::Protocol::kOlv2);
+  OLV_CHECK_EQ(cfg.olv2_points, 17);
+}
+
+OLV_TEST(default_olv2_points_is_ten) {
+  SimConfig cfg;
+  OLV_CHECK_EQ(cfg.olv2_points, 10);
+}
+
+OLV_TEST(config_file_olv2_points_out_of_range) {
+  {
+    TempConfig cfg_file("[send]\nolv2_points = 0\n");
+    SimConfig cfg;
+    std::string error;
+    OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+    OLV_CHECK(contains(error, "send.olv2_points"));
+  }
+  {
+    TempConfig cfg_file("[send]\nolv2_points = 26\n");
+    SimConfig cfg;
+    std::string error;
+    OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+    OLV_CHECK(contains(error, "send.olv2_points"));
+  }
+}
+
+OLV_TEST(config_file_olv2_points_wrong_type) {
+  TempConfig cfg_file("[send]\nolv2_points = \"10\"\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(!olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK(contains(error, "send.olv2_points"));
+}
+
+OLV_TEST(config_file_send_protocol_olv2_valid_boundaries) {
+  TempConfig cfg_file("[send]\nolv2_points = 1\n");
+  SimConfig cfg;
+  std::string error;
+  OLV_CHECK(olv::sim::applySimConfigFile(cfg_file.str(), cfg, error));
+  OLV_CHECK_EQ(cfg.olv2_points, 1);
+
+  TempConfig cfg_file2("[send]\nolv2_points = 25\n");
+  SimConfig cfg2;
+  OLV_CHECK(olv::sim::applySimConfigFile(cfg_file2.str(), cfg2, error));
+  OLV_CHECK_EQ(cfg2.olv2_points, 25);
+}
+
+OLV_TEST(cli_protocol_flag_and_olv2_default_port) {
+  std::string error;
+  {
+    Args args({"--generate", "10", "--protocol", "olv2"});
+    auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+    OLV_CHECK(cfg.has_value());
+    OLV_CHECK(cfg->protocol == SimConfig::Protocol::kOlv2);
+    OLV_CHECK_EQ(cfg->dest_port, 47002);  // OLV2 default when no port given
+  }
+  {
+    Args args({"--generate", "10", "--protocol", "olv2", "--port", "47456"});
+    auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+    OLV_CHECK(cfg.has_value());
+    OLV_CHECK_EQ(cfg->dest_port, 47456);  // explicit port always wins
+  }
+  {
+    // dis/olv1 defaults stay unaffected by the olv2 addition.
+    Args dis_args({"--generate", "10", "--protocol", "dis"});
+    auto dis_cfg = olv::sim::parseSimArgs(dis_args.argc(), dis_args.data(), error);
+    OLV_CHECK(dis_cfg.has_value());
+    OLV_CHECK_EQ(dis_cfg->dest_port, 47001);
+
+    Args olv1_args({"--generate", "10"});
+    auto olv1_cfg = olv::sim::parseSimArgs(olv1_args.argc(), olv1_args.data(), error);
+    OLV_CHECK(olv1_cfg.has_value());
+    OLV_CHECK(olv1_cfg->protocol == SimConfig::Protocol::kOlv1);
+    OLV_CHECK_EQ(olv1_cfg->dest_port, 47000);
+  }
+}
+
+OLV_TEST(cli_protocol_olv2_respects_config_file_port) {
+  TempConfig cfg_file(
+      "[target]\nport = 49000\n[source]\nmode = \"generate\"\ngenerate_count = 5\n");
+  std::string error;
+  Args args({"--config", cfg_file.str(), "--protocol", "olv2"});
+  auto cfg = olv::sim::parseSimArgs(args.argc(), args.data(), error);
+  OLV_CHECK(cfg.has_value());
+  OLV_CHECK_EQ(cfg->dest_port, 49000);  // file-set port counts as explicit
+}

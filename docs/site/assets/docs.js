@@ -50,6 +50,7 @@
       { path: "reference/cli",           label: "Command-Line Reference" },
       { path: "reference/protocol-udp",  label: "OLV1 UDP Protocol" },
       { path: "reference/protocol-dis",  label: "DIS Input Protocol" },
+      { path: "reference/protocol-olv2", label: "OLV2 UDP Protocol" },
       { path: "reference/protocol-ws",   label: "WebSocket Protocol" },
       { path: "reference/file-formats",  label: "File Formats" },
       { path: "reference/glossary",      label: "Glossary & Acronyms" }

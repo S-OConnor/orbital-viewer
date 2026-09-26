@@ -27,7 +27,8 @@ descriptions.</p>
 
 <h2 id="new-input-source">Add a new input source (e.g. another protocol)</h2>
 <p>This is the designed-for extension — DIS was added exactly this way
-(<code>docs/features/FEATURE_INPUT_SOURCES.md</code> is the worked example). The
+(<code>docs/features/FEATURE_INPUT_SOURCES.md</code> is the worked example), and OLV2
+(<code>docs/features/FEATURE_OLV2.md</code>) followed the same recipe a second time. The
 condensed steps are below; the complete procedure — spec template, code skeleton,
 dependency plumbing, test matrix, and ship checklist — has its own page:
 <a href="new-interface.html"><strong>Adding a New Interface</strong></a>.</p>
@@ -36,22 +37,30 @@ dependency plumbing, test matrix, and ship checklist — has its own page:
   <code>InputSource</code>: own a private <code>io_context</code>, socket, and thread;
   make <code>start()</code>/<code>stop()</code> idempotent.</li>
   <li>Feed the store <em>only</em> through <code>countReceived</code>,
-  <code>countDropped</code>, <code>apply</code> — this keeps the Stats panel truthful
-  with zero frontend changes. Synthesize a strictly-increasing sequence if your
-  protocol lacks one (see <code>DisInputSource</code>).</li>
+  <code>countDropped</code>, and either <code>apply</code> or a new additive
+  <code>StateStore</code> method if your protocol's update shape doesn't fit
+  <code>apply()</code>'s single-satellite-snapshot model — this keeps the Stats panel
+  truthful with zero frontend changes. If you reuse <code>apply</code>, synthesize a
+  strictly-increasing sequence if your protocol lacks one (see
+  <code>DisInputSource</code>); if you add a new method, own your protocol's staleness
+  check yourself before calling it (see <code>Olv2InputSource</code>/
+  <code>StateStore::applyTrack</code>, added because OLV2's per-track batches don't fit
+  <code>apply()</code> at all).</li>
   <li>Expose a <code>processDatagram()</code>-style public test seam and write unit
   tests that drive it with crafted byte arrays.</li>
   <li>Extend <code>InputMode</code>, <code>parseInputMode</code>, and
   <code>makeInputSource()</code> in <code>input_source.{hpp,cpp}</code>; add config keys
   under <code>[input]</code> in <code>config.cpp</code> (flat <code>foo_*</code> keys —
   the TOML subset has one table level) with strict type/range checks; add
-  cross-field invariants on the merged config.</li>
+  cross-field invariants on the merged config only if a field has no sensible default
+  (DIS requires <code>dis_satellite_entity_id</code> this way; OLV2 needed no such
+  invariant — every <code>olv2_*</code> key has one).</li>
   <li>Write <code>docs/PROTOCOL_FOO.md</code> (accepted subset, mapping, validation
   order, stats identity) and add the commented keys to
   <code>config/backend.toml</code>.</li>
   <li>Verify the default path is untouched: the pre-existing tests must pass
   unmodified, and a default-config run should produce a byte-identical startup log
-  line (the DIS feature held itself to exactly this bar).</li>
+  line (both the DIS and OLV2 features held themselves to exactly this bar).</li>
 </ol>
 
 <h2 id="new-object-type">Add a new object category</h2>
@@ -65,7 +74,9 @@ dependency plumbing, test matrix, and ship checklist — has its own page:
   <li><strong>Backend:</strong> nothing else — the backend treats types opaquely.</li>
   <li><strong>Simulator:</strong> <code>csv_reader.cpp</code> name mapping,
   <code>generator.cpp</code> mix (if desired), <code>dis_builder.cpp</code> EntityType
-  mapping.</li>
+  mapping. <code>olv2_builder.cpp</code> needs no change — it carries an object's
+  existing <code>type</code>/<code>confidence</code>/<code>flags</code> through onto the
+  wire unchanged, since OLV2 reuses the OLV1 <code>ObjectType</code> enum directly.</li>
   <li><strong>Frontend:</strong> <code>net.js</code> category map;
   <code>renderer.js</code> <code>CAT</code> table (color/size/icon — add an atlas cell in
   <code>atlas.js</code> and extend its frozen-constant test);
@@ -154,6 +165,12 @@ backend log. Keep the whole run under the 120&nbsp;s CTest timeout and preserve 
   parser together; the integration test's frame-revalidation step is your
   cross-component safety net.</li>
 </ul>
+<p>The same rules apply to <code>protocol_olv2.hpp</code>/<code>docs/PROTOCOL_OLV2.md</code>
+(its own <code>kVersion</code>, its own <code>msg_type</code> space starting at
+<code>kTrackUpdate = 1</code>) — change it, <code>test_protocol_olv2.cpp</code>, and the
+frontend's <code>trailPoints</code> parsing together. Adding a header field OLV2 can't
+currently express (e.g. intensity) is a version bump, not a new key, since the layout has
+no room for one; PROTOCOL_OLV2.md §7 documents this explicitly.</p>
 
 <div class="note"><strong>The invariants to never break:</strong> (1) drops are
 all-or-nothing — never partially apply a packet; (2) every drop is counted and

@@ -37,7 +37,7 @@ void appendInt(std::string& s, long long v) {
 std::string buildStateMessage(const Snapshot& snap,
                               std::chrono::system_clock::time_point server_time, int ws_clients) {
   std::string s;
-  s.reserve(snap.objects.size() * 96 + 512);
+  s.reserve(snap.objects.size() * 96 + snap.trail_points.size() * 56 + 512);
 
   s += "{\"type\":\"state\",\"serverTime\":\"";
   s += iso8601Utc(server_time);
@@ -107,6 +107,28 @@ std::string buildStateMessage(const Snapshot& snap,
     s += ']';
   }
   s += "]";
+
+  // OLV2 only (docs/PROTOCOL_WS.md §2); key omitted entirely when empty so
+  // OLV1/DIS state frames stay byte-identical to pre-feature output.
+  if (!snap.trail_points.empty()) {
+    s += ",\"trailPoints\":[";
+    for (std::size_t i = 0; i < snap.trail_points.size(); ++i) {
+      const TrailPoint& tp = snap.trail_points[i];
+      if (i != 0) s += ',';
+      s += '[';
+      appendU64(s, tp.id);
+      s += ',';
+      appendFloat(s, tp.t, "%.3f");
+      s += ',';
+      appendFloat(s, tp.px, "%.1f");
+      s += ',';
+      appendFloat(s, tp.py, "%.1f");
+      s += ',';
+      appendFloat(s, tp.pz, "%.1f");
+      s += ']';
+    }
+    s += ']';
+  }
 
   s += ",\"stats\":{\"udpReceived\":";
   appendU64(s, snap.stats.udp_received);

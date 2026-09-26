@@ -143,7 +143,7 @@ bool applyConfigFile(const std::string& path, Config& cfg, std::string& error) {
     } else if (key == "input.mode") {
       if (value.type != toml::Value::Type::kString) return typeError(key, "string", value);
       if (!parseInputMode(value.s, cfg.input_mode)) {
-        error = path + ": " + key + " invalid input mode (olv1|dis): " + value.s;
+        error = path + ": " + key + " invalid input mode (olv1|dis|olv2): " + value.s;
         return false;
       }
     } else if (key == "input.dis_bind") {
@@ -176,6 +176,17 @@ bool applyConfigFile(const std::string& path, Config& cfg, std::string& error) {
         return false;
       }
       cfg.dis.satellite_entity_id = value.s;
+    } else if (key == "input.olv2_bind") {
+      if (value.type != toml::Value::Type::kString) return typeError(key, "string", value);
+      cfg.olv2.bind_address = value.s;
+    } else if (key == "input.olv2_port") {
+      if (value.type != toml::Value::Type::kInteger) return typeError(key, "integer", value);
+      if (!validPort(value.i)) {
+        error = path + ": " + key + " out of range (" + kPortRangeDesc +
+                "): " + std::to_string(value.i);
+        return false;
+      }
+      cfg.olv2.port = static_cast<std::uint16_t>(value.i);
     } else {
       error = path + ": unknown key \"" + key + "\"";
       return false;
@@ -264,7 +275,7 @@ std::optional<Config> parseArgs(int argc, const char* const* argv, std::string& 
       }
     } else if (arg == "--input-mode") {
       if (!parseInputMode(value, cfg.input_mode)) {
-        error = "invalid input mode (olv1|dis): " + std::string(value);
+        error = "invalid input mode (olv1|dis|olv2): " + std::string(value);
         return std::nullopt;
       }
     } else if (arg == "--expiry-seconds") {
@@ -320,7 +331,7 @@ void printUsage(const char* argv0) {
       "  --log-level LVL     debug|info|warn|error (default info)\n"
       "  --expiry-seconds N  object expiry window seconds, 1-3600 (default 15)\n"
       "  --broadcast-hz X    WebSocket broadcast rate, >0 and <=60 (default 1)\n"
-      "  --input-mode MODE   intake strategy: olv1|dis (default olv1)\n"
+      "  --input-mode MODE   intake strategy: olv1|dis|olv2 (default olv1)\n"
       "  --quiet             do not mirror log lines to stderr\n"
       "  --help              show this help and exit\n"
       "Precedence: defaults < --config file < flags (regardless of where\n"

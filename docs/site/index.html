@@ -37,9 +37,10 @@ Boost.Asio/Beast) validates, aggregates, and rebroadcasts the world state as
 WebSocket JSON at 1&nbsp;Hz. A dependency-free <strong>WebGL frontend</strong> renders
 the globe, the objects, an optional astronomically-correct sky, and a satellite
 point-of-view fisheye mode — plain HTML/CSS/JS, no frameworks, no build step.</p>
-<p>The backend can ingest either the first-party <a href="reference/protocol-udp.html">OLV1
-binary UDP protocol</a> (default) or <a href="reference/protocol-dis.html">IEEE&nbsp;1278.1
-DIS Entity State PDUs</a>, selected at boot.</p>
+<p>The backend can ingest the first-party <a href="reference/protocol-udp.html">OLV1
+binary UDP protocol</a> (default), <a href="reference/protocol-dis.html">IEEE&nbsp;1278.1
+DIS Entity State PDUs</a>, or <a href="reference/protocol-olv2.html">OLV2 batched
+per-track updates</a>, selected at boot.</p>
 
 <h2 id="start-here">Start here</h2>
 <div class="card-grid">
@@ -63,7 +64,7 @@ DIS Entity State PDUs</a>, selected at boot.</p>
   </div>
   <div class="card">
     <h3>&#128218; Reference</h3>
-    <p>Normative wire formats (OLV1, DIS, WebSocket JSON), every configuration key
+    <p>Normative wire formats (OLV1, DIS, OLV2, WebSocket JSON), every configuration key
     and CLI flag, file formats, ports, and glossary.</p>
     <a class="cta" href="reference/configuration.html">Reference &rarr;</a>
   </div>
@@ -116,7 +117,7 @@ from source</a> and <a href="user-guide/getting-started.html">Getting Started</a
         walkthrough, APIs, extension points, testing, debugging, coding standards,
         release process.</td></tr>
     <tr><td><a href="reference/configuration.html">Reference</a></td>
-        <td>Configuration keys, environment variables, CLI flags, the three wire
+        <td>Configuration keys, environment variables, CLI flags, the four wire
         protocols, file formats, ports, glossary.</td></tr>
   </tbody>
 </table>
@@ -124,9 +125,9 @@ from source</a> and <a href="user-guide/getting-started.html">Getting Started</a
 
 <div class="note"><strong>Note:</strong> the protocol pages in this site summarize and
 cross-link the <em>normative</em> specifications kept in the repository at
-<code>docs/PROTOCOL_UDP.md</code>, <code>docs/PROTOCOL_DIS.md</code>, and
-<code>docs/PROTOCOL_WS.md</code>. If this site and those files ever disagree, the
-Markdown specs win.</div>
+<code>docs/PROTOCOL_UDP.md</code>, <code>docs/PROTOCOL_DIS.md</code>,
+<code>docs/PROTOCOL_OLV2.md</code>, and <code>docs/PROTOCOL_WS.md</code>. If this site
+and those files ever disagree, the Markdown specs win.</div>
 
 <div class="page-nav" id="page-nav"></div>
 </main>

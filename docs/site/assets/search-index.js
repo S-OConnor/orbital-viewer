@@ -24,6 +24,13 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/api",
 "title": "API Documentation",
+"section": "olv/protocol_olv2.hpp — namespace olv::proto::olv2",
+"anchor": "protocol-olv2",
+"text": "API Documentation olv/protocol_olv2.hpp — namespace olv::proto::olv2"
+},
+{
+"page": "developer-guide/api",
+"title": "API Documentation",
 "section": "olv/toml.hpp — namespace olv::toml",
 "anchor": "toml-hpp",
 "text": "API Documentation olv/toml.hpp — namespace olv::toml"
@@ -73,6 +80,13 @@ window.SEARCH_INDEX = [
 {
 "page": "developer-guide/api",
 "title": "API Documentation",
+"section": "Encode and send an OLV2 track datagram (C++)",
+"anchor": "ex-encode-olv2",
+"text": "API Documentation Encode and send an OLV2 track datagram (C++)"
+},
+{
+"page": "developer-guide/api",
+"title": "API Documentation",
 "section": "Consume the WebSocket feed (JavaScript, outside the app)",
 "anchor": "ex-parse",
 "text": "API Documentation Consume the WebSocket feed (JavaScript, outside the app)"
@@ -97,6 +111,13 @@ window.SEARCH_INDEX = [
 "section": "StateStore::apply — the merge rules",
 "anchor": "apply-semantics",
 "text": "Architecture in Depth StateStore::apply — the merge rules"
+},
+{
+"page": "developer-guide/architecture",
+"title": "Architecture in Depth",
+"section": "StateStore::applyTrack — OLV2's additive path",
+"anchor": "applytrack-semantics",
+"text": "Architecture in Depth StateStore::applyTrack — OLV2's additive path"
 },
 {
 "page": "developer-guide/architecture",
@@ -449,6 +470,13 @@ window.SEARCH_INDEX = [
 "text": "Adding a New Interface 8. Ship checklist"
 },
 {
+"page": "developer-guide/new-interface",
+"title": "Adding a New Interface",
+"section": "9. OLV2: the same recipe, run twice",
+"anchor": "second-example",
+"text": "Adding a New Interface 9. OLV2: the same recipe, run twice"
+},
+{
 "page": "developer-guide/release-process",
 "title": "Release Process",
 "section": "",
@@ -587,6 +615,13 @@ window.SEARCH_INDEX = [
 "section": "DisInputSource",
 "anchor": "dis-source",
 "text": "Source Walkthrough DisInputSource"
+},
+{
+"page": "developer-guide/source-walkthrough",
+"title": "Source Walkthrough",
+"section": "Olv2InputSource",
+"anchor": "olv2-source",
+"text": "Source Walkthrough Olv2InputSource"
 },
 {
 "page": "developer-guide/source-walkthrough",
@@ -892,16 +927,16 @@ window.SEARCH_INDEX = [
 {
 "page": "overview/faq",
 "title": "FAQ",
-"section": "OLV1 or DIS — which input mode should I use?",
+"section": "OLV1, DIS, or OLV2 — which input mode should I use?",
 "anchor": "which-protocol",
-"text": "FAQ OLV1 or DIS — which input mode should I use?"
+"text": "FAQ OLV1, DIS, or OLV2 — which input mode should I use?"
 },
 {
 "page": "overview/faq",
 "title": "FAQ",
-"section": "Can the backend listen for OLV1 and DIS at the same time?",
+"section": "Can the backend listen for more than one input mode at the same time?",
 "anchor": "both-modes",
-"text": "FAQ Can the backend listen for OLV1 and DIS at the same time?"
+"text": "FAQ Can the backend listen for more than one input mode at the same time?"
 },
 {
 "page": "overview/faq",
@@ -1408,6 +1443,76 @@ window.SEARCH_INDEX = [
 "text": "DIS Input Protocol Simulator DIS emission (olv_sim --protocol dis)"
 },
 {
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "",
+"anchor": "",
+"text": "OLV2 UDP Protocol"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "General rules",
+"anchor": "rules",
+"text": "OLV2 UDP Protocol General rules"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Limits",
+"anchor": "limits",
+"text": "OLV2 UDP Protocol Limits"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Packet layout — TRACK_UPDATE (msg_type = 1)",
+"anchor": "layout",
+"text": "OLV2 UDP Protocol Packet layout — TRACK_UPDATE (msg_type = 1)"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Point (84 bytes)",
+"anchor": "point",
+"text": "OLV2 UDP Protocol Point (84 bytes)"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Target type",
+"anchor": "target-type",
+"text": "OLV2 UDP Protocol Target type"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Receiver validation (normative)",
+"anchor": "validation",
+"text": "OLV2 UDP Protocol Receiver validation (normative)"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Backend mapping (informative)",
+"anchor": "mapping",
+"text": "OLV2 UDP Protocol Backend mapping (informative)"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Configuration",
+"anchor": "config",
+"text": "OLV2 UDP Protocol Configuration"
+},
+{
+"page": "reference/protocol-olv2",
+"title": "OLV2 UDP Protocol",
+"section": "Versioning",
+"anchor": "versioning",
+"text": "OLV2 UDP Protocol Versioning"
+},
+{
 "page": "reference/protocol-udp",
 "title": "OLV1 UDP Protocol",
 "section": "",
@@ -1497,6 +1602,13 @@ window.SEARCH_INDEX = [
 "section": "Object row columns (fixed order, 11 columns)",
 "anchor": "rows",
 "text": "WebSocket Protocol Object row columns (fixed order, 11 columns)"
+},
+{
+"page": "reference/protocol-ws",
+"title": "WebSocket Protocol",
+"section": "trailPoints (optional)",
+"anchor": "trail-points",
+"text": "WebSocket Protocol trailPoints (optional)"
 },
 {
 "page": "reference/protocol-ws",
@@ -1802,6 +1914,13 @@ window.SEARCH_INDEX = [
 {
 "page": "user-guide/troubleshooting",
 "title": "Troubleshooting",
+"section": "OLV2 mode: datagrams arrive but tracks blink or don't appear",
+"anchor": "olv2-nothing",
+"text": "Troubleshooting OLV2 mode: datagrams arrive but tracks blink or don't appear"
+},
+{
+"page": "user-guide/troubleshooting",
+"title": "Troubleshooting",
 "section": "Display problems",
 "anchor": "display",
 "text": "Troubleshooting Display problems"
@@ -1889,6 +2008,13 @@ window.SEARCH_INDEX = [
 "section": "Tutorial 6 (advanced): scripted capture & validation pipeline",
 "anchor": "t6",
 "text": "Tutorials Tutorial 6 (advanced): scripted capture & validation pipeline"
+},
+{
+"page": "user-guide/tutorials",
+"title": "Tutorials",
+"section": "Tutorial 7 (advanced): end-to-end OLV2, and tuning its batch period",
+"anchor": "t7",
+"text": "Tutorials Tutorial 7 (advanced): end-to-end OLV2, and tuning its batch period"
 },
 {
 "page": "user-guide/usage",
@@ -1980,6 +2106,13 @@ window.SEARCH_INDEX = [
 "section": "DIS input mode",
 "anchor": "dis",
 "text": "Usage DIS input mode"
+},
+{
+"page": "user-guide/usage",
+"title": "Usage",
+"section": "OLV2 input mode",
+"anchor": "olv2",
+"text": "Usage OLV2 input mode"
 },
 {
 "page": "user-guide/usage",

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OLV2 UDP Protocol — Orbital LOS Viewer Docs</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body data-page="reference/protocol-olv2" data-root="..">
+<header class="site-header">
+  <button id="nav-toggle" aria-label="Toggle navigation">&#9776;</button>
+  <a class="brand" href="../index.html">&#128752; Orbital LOS Viewer</a>
+  <div class="spacer"></div>
+  <input id="search" type="search" placeholder="Search docs&hellip; ( / )" aria-label="Search documentation">
+</header>
+<div id="search-results"></div>
+<div class="layout">
+<nav class="sidebar" id="sidebar" aria-label="Site navigation"></nav>
+<main>
+<nav class="breadcrumbs" id="breadcrumbs"></nav>
+
+<h1>OLV2 UDP Protocol (version 1)</h1>
+<div class="note"><strong>Normative sources:</strong> <code>docs/PROTOCOL_OLV2.md</code>,
+and above it the reference implementation
+<code>include/olv/protocol_olv2.hpp</code>. If this page and the header
+disagree, the header wins. Design rationale:
+<code>docs/features/FEATURE_OLV2.md</code>.
+Enabled with <code>olv_backend --input-mode olv2</code>; default port
+<strong>47002/udp</strong>.</div>
+
+<p class="lead">OLV2 is a third, independent boot-selectable intake mode
+alongside <a href="protocol-udp.html">OLV1</a> and
+<a href="protocol-dis.html">DIS</a> — its own magic, its own version counter,
+its own listen port. A backend runs exactly one input mode at a time. Where
+OLV1 and DIS each describe <em>one instant</em> per datagram (a whole world
+snapshot, or one entity), <strong>each OLV2 datagram describes one target
+track with up to 25 new, time-stamped update points</strong>, and every point
+carries the satellite (ownship) state at that instant alongside the target's.</p>
+
+<h2 id="rules">General rules</h2>
+<ul>
+  <li>Transport UDP, one message per datagram; no fragmentation/reassembly at
+  the application layer.</li>
+  <li><strong>Little-endian</strong> — same byte order as OLV1 (the opposite
+  of DIS).</li>
+  <li><strong>No alignment.</strong> The layout is defined by byte offsets;
+  encoders/decoders serialize field-by-field, never a C struct memory
+  overlay.</li>
+  <li>Floats are IEEE&nbsp;754 <code>binary64</code>/<code>binary32</code>.
+  Coordinates are ECEF meters, velocities ECEF m/s.</li>
+  <li><strong>Time is transmitted per point</strong>, unlike OLV1 (no
+  timestamp; arrival = now) or DIS (time-of-hour ticks): each point carries
+  <code>f64</code> UTC seconds since the Unix epoch, stamped by the sender.
+  It orders points and drives staleness; the backend still stamps its own
+  receive time for <code>lastDataTime</code> and object expiry.</li>
+  <li><strong>The satellite is the ownship.</strong> A deployment has exactly
+  one satellite; every datagram, for every track, carries that same
+  satellite. There is no separate ownship entity — this maps directly onto
+  the existing primary satellite (satellite panel, sat-view camera), so
+  running OLV2 needs no frontend change beyond trails.</li>
+  <li><strong>Batches are disjoint.</strong> Each datagram carries only
+  points newer than every point previously sent for that track. A conforming
+  sender never resends points (no sliding window).</li>
+</ul>
+
+<h2 id="limits">Limits</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Constant</th><th>Value</th></tr></thead>
+  <tbody>
+    <tr><td><code>kMaxPoints</code></td><td>25</td></tr>
+    <tr><td><code>kHeaderSize</code></td><td>24 bytes</td></tr>
+    <tr><td><code>kPointSize</code></td><td>84 bytes</td></tr>
+    <tr><td><code>kCrcSize</code></td><td>4 bytes</td></tr>
+    <tr><td><code>kMinPacketSize</code> = 24 + 84 + 4</td><td><strong>112 bytes</strong></td></tr>
+    <tr><td><code>kMaxPacketSize</code> = 24 + 25&times;84 + 4</td><td><strong>2128 bytes</strong></td></tr>
+    <tr><td><code>kMaxCoordinateMeters</code> (validation bound, each axis)</td><td>1&times;10<sup>13</sup> m</td></tr>
+  </tbody>
+</table>
+</div>
+<p>A datagram with more than 17 points exceeds a 1500-byte MTU and will be
+IP-fragmented; acceptable on localhost/LAN (the deployment scope, same as
+OLV1's 6204-byte maximum). Senders MAY use fewer points per datagram
+(<code>olv_sim</code> <code>[send] olv2_points</code>) to stay under one MTU.</p>
+<p><strong>Batch period vs. expiry.</strong> The backend expires a track not
+refreshed within <code>[state] expiry_seconds</code> (default 15&nbsp;s) of
+<em>receive</em> time. A sender's batch period — points per datagram &divide;
+sample rate — MUST stay below that, or tracks disappear between datagrams
+(25 points at 1&nbsp;Hz = one datagram per 25&nbsp;s).</p>
+
+<h2 id="layout">Packet layout — TRACK_UPDATE (msg_type = 1)</h2>
+<pre><code class="language-sh">offset size type  field
+------ ---- ----  -----------------------------------------------------------
+0      4    u8[4] magic          'O','L','V','2'  (0x4F 0x4C 0x56 0x32)
+4      1    u8    version        1
+5      1    u8    msg_type       1 = TRACK_UPDATE
+6      2    u16   hdr_flags      reserved, MUST be 0
+8      4    u32   sequence       increments by 1 per DATAGRAM sent (wraps);
+                                 diagnostic only, NOT used for staleness
+12     4    u32   track_id       target identifier
+16     4    u32   sat_id         satellite (ownship) identifier
+20     1    u8    target_type    object type enum (docs/PROTOCOL_UDP.md &sect;3)
+21     1    u8    target_flags   bit1 HIGHLIGHT: source requests emphasis
+                                 all other bits reserved, send 0
+22     1    u8    confidence     0-100 (%); values &gt;100 are clamped by RX
+23     1    u8    point_count    N, 1-25
+24     84&times;N       points         see below; strictly ascending t
+24+84N 4    u32   crc32          CRC-32 (IEEE 802.3, reflected, poly
+                                 0x04C11DB7, init 0xFFFFFFFF, final XOR
+                                 0xFFFFFFFF -- i.e. zlib crc32) computed
+                                 over bytes [0, 24+84N)
+</code></pre>
+<p>Total datagram length MUST equal <code>24 + 84*point_count + 4</code>
+exactly.</p>
+
+<h2 id="point">Point (84 bytes)</h2>
+<pre><code class="language-sh">offset size type   field
+------ ---- ----   ----------------------------------------------------------
++0     8    f64    t              UTC seconds since the Unix epoch
++8     1    u8     point_flags    bit0 SAT_HAS_VEL: sat_vel fields are valid
+                                  bit1 TGT_HAS_VEL: tgt_vel fields are valid
+                                  bits 2-7 reserved, send 0
++9     3    u8[3]  reserved       send 0
++12    8    f64    sat_pos_x      ECEF meters
++20    8    f64    sat_pos_y
++28    8    f64    sat_pos_z
++36    8    f64    tgt_pos_x      ECEF meters
++44    8    f64    tgt_pos_y
++52    8    f64    tgt_pos_z
++60    4    f32    sat_vel_x      ECEF m/s; send 0 when SAT_HAS_VEL unset
++64    4    f32    sat_vel_y
++68    4    f32    sat_vel_z
++72    4    f32    tgt_vel_x      ECEF m/s; send 0 when TGT_HAS_VEL unset
++76    4    f32    tgt_vel_y
++80    4    f32    tgt_vel_z
+</code></pre>
+
+<h2 id="target-type">Target type</h2>
+<p><code>target_type</code> uses the OLV1 object type enum (0 <code>UNKNOWN</code>,
+1 <code>DEBRIS</code>, 2 <code>STAR</code>, 3 <code>COMET</code>,
+4 <code>SATELLITE</code>, 5 <code>GROUND_HOT</code>). Any other value is not
+an error: the receiver decodes it as <code>UNKNOWN</code> (0). OLV2 has no
+intensity field on the wire, so ground-hot temperature and star magnitude are
+not representable — the backend reports <code>intensity = 0</code> for every
+OLV2 target (a documented loss, like DIS).</p>
+
+<h2 id="validation">Receiver validation (normative)</h2>
+<p>A receiver MUST drop (never partially apply) a datagram when, checked in
+order:</p>
+<ol>
+  <li>length &lt; 112 (<code>kTooShort</code>) or &gt; 2128 (<code>kTooLong</code>)</li>
+  <li>magic &ne; <code>OLV2</code> (<code>kBadMagic</code>)</li>
+  <li>version &ne; 1 (<code>kBadVersion</code>)</li>
+  <li>msg_type &ne; 1 (<code>kBadMsgType</code>)</li>
+  <li>point_count = 0 or &gt; 25 (<code>kBadPointCount</code>)</li>
+  <li>length &ne; 24 + 84&middot;point_count + 4 (<code>kBadLength</code>)</li>
+  <li>CRC mismatch (<code>kBadCrc</code>)</li>
+  <li>any f32/f64 field, including <code>t</code>, is NaN or &plusmn;Inf (<code>kNonFinite</code>)</li>
+  <li>any position component with |value| &gt; 1e13 m (<code>kOutOfRange</code>)</li>
+  <li>any <code>t</code> &le; 0, or the points' <code>t</code> values are not
+  strictly ascending (<code>kBadTime</code>)</li>
+</ol>
+<p>Items 8 and 9 are evaluated point by point (point 0's item 8, then its item
+9, then point 1's &hellip;); item 10 is evaluated only after every point has
+passed 8 and 9. Unrecognized <code>target_type</code>, reserved
+<code>target_flags</code> bits, and reserved <code>point_flags</code> bits do
+not drop the datagram; they decode as <code>UNKNOWN</code> / 0.</p>
+<p>And additionally, at the input-source layer (stateful, not in
+<code>decode</code>):</p>
+<ol start="11">
+  <li><strong>Stale track batch:</strong> with <code>last[track_id]</code> =
+  the newest <code>t</code> accepted for that track, drop the datagram iff
+  <code>points[0].t &le; last[track_id]</code>. The first datagram for a
+  track is always accepted. A conforming sender (disjoint batches) never
+  trips this; it catches duplicated and reordered datagrams and
+  non-conforming sliding-window senders. Counted as <em>stale</em>.</li>
+</ol>
+<p>Every drop is counted per reason (<code>udpDropped</code> in the WebSocket
+stats = malformed + stale) and logged with the source address and reason,
+component tag <code>olv2</code> in the backend log.</p>
+
+<h2 id="mapping">Backend mapping (informative)</h2>
+<p>For each accepted datagram the backend:</p>
+<ul>
+  <li><strong>Target</strong> — upserts object <code>track_id</code> from the
+  <strong>newest</strong> point: position, velocity (<code>HAS_VELOCITY</code>
+  iff that point has TGT_HAS_VEL), <code>target_type</code>,
+  <code>confidence</code>, HIGHLIGHT from <code>target_flags</code>,
+  intensity 0. It appears as a normal row in the WebSocket <code>objects</code>
+  array.</li>
+  <li><strong>Satellite</strong> — takes the newest point's satellite position
+  as the primary satellite (<code>id</code> = <code>sat_id</code>,
+  <code>seq</code> = <code>sequence</code>), but only if that point's
+  <code>t</code> is newer than the satellite sample already held: datagrams
+  for different tracks interleave, and an older batch must not move the
+  satellite backwards. Velocity is the point's <code>sat_vel</code> when
+  SAT_HAS_VEL is set; otherwise it is estimated from the last two points'
+  positions (N &ge; 2), else 0 (the sat-view camera orients on it). A change
+  of <code>sat_id</code> is logged at warn and applied.</li>
+  <li><strong>Trail</strong> — forwards every point's <code>(t, tgt_pos)</code>
+  to clients once, as WebSocket <code>trailPoints</code> rows (see
+  <a href="protocol-ws.html#trail-points">WebSocket Protocol</a>).</li>
+</ul>
+
+<h2 id="config">Configuration</h2>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Component</th><th>Setting</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td>backend</td><td><code>[input] mode = "olv2"</code> / <code>--input-mode olv2</code></td><td><code>olv1</code></td></tr>
+    <tr><td>backend</td><td><code>[input] olv2_bind</code></td><td><code>"0.0.0.0"</code></td></tr>
+    <tr><td>backend</td><td><code>[input] olv2_port</code></td><td><code>47002</code></td></tr>
+    <tr><td>simulator</td><td><code>[send] protocol = "olv2"</code> / <code>--protocol olv2</code></td><td><code>olv1</code></td></tr>
+    <tr><td>simulator</td><td><code>[send] olv2_points</code> (points per datagram, 1-25)</td><td><code>10</code></td></tr>
+  </tbody>
+</table>
+</div>
+<p>With <code>protocol = "olv2"</code> and no explicit port, the simulator
+sends to 47002. Unlike DIS, OLV2 has no required config key — the mode flag
+alone is enough to run it, and there are no <code>--olv2-*</code> CLI flags;
+every <code>olv2_*</code> setting comes from the TOML config file or its
+default.</p>
+
+<h2 id="versioning">Versioning</h2>
+<p><code>version</code> bumps on any layout change. Receivers reject unknown
+versions. New message types may be added under the same version; receivers
+reject unknown <code>msg_type</code> values.</p>
+
+<p>Related: <a href="protocol-udp.html">OLV1 UDP</a> ·
+<a href="protocol-dis.html">DIS input</a> ·
+<a href="protocol-ws.html#trail-points"><code>trailPoints</code> in the
+WebSocket protocol</a> ·
+<a href="configuration.html#backend-toml">backend config</a></p>
+
+<div class="page-nav" id="page-nav"></div>
+</main>
+</div>
+<footer class="site-footer">Orbital LOS Viewer &mdash; MIT License.</footer>
+<script src="../assets/search-index.js"></script>
+<script src="../assets/docs.js"></script>
+</body>
+</html>

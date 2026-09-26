@@ -8,6 +8,11 @@
 // Formatting rules: positions %.1f (0.1 m), velocities %.2f, intensity %.1f,
 // udpRateHz %.2f. Objects are 11-column row arrays; velocity columns are
 // `null` when the record has no HAS_VELOCITY flag.
+//
+// `trailPoints` (docs/PROTOCOL_WS.md §2, OLV2 only): a `[id,t,px,py,pz]` row
+// array placed right after `objects`, with `t` %.3f and positions %.1f. The
+// key is omitted entirely when Snapshot::trail_points is empty, so OLV1 and
+// DIS state frames stay byte-identical to pre-feature output.
 
 #pragma once
 

@@ -13,7 +13,9 @@ function emptyCounts() {
  *                   getLastDataTime, secondsSinceLastState, getStats}
  *
  * getStats() is an additive extension beyond the PLAN.md §6 summary
- * signature (consistent with the brief: "the panels need it").
+ * signature (consistent with the brief: "the panels need it"). getSnapshot()
+ * additionally carries `trailPoints` (OLV2 only; default []; see
+ * docs/features/FEATURE_OLV2.md §6) for the renderer to consume as server-fed trails.
  */
 export function createModel() {
   let satellite = null;
@@ -21,6 +23,7 @@ export function createModel() {
   let lastDataTime = null;
   let serverTime = null;
   let stats = null;
+  let trailPoints = [];
   let lastAppliedAtMs = null;
 
   function applyState(msg, nowMs) {
@@ -30,11 +33,15 @@ export function createModel() {
     lastDataTime = msg.lastDataTime === undefined ? null : msg.lastDataTime;
     serverTime = msg.serverTime === undefined ? null : msg.serverTime;
     stats = msg.stats === undefined ? null : msg.stats;
+    // OLV2-only, optional (docs/PROTOCOL_WS.md "trailPoints"): a delta of
+    // samples since the previous broadcast, so it is REPLACED (not
+    // accumulated) each applyState, same as every other field here.
+    trailPoints = Array.isArray(msg.trailPoints) ? msg.trailPoints : [];
     lastAppliedAtMs = nowMs;
   }
 
   function getSnapshot() {
-    return { satellite, objects, lastDataTime, serverTime };
+    return { satellite, objects, lastDataTime, serverTime, trailPoints };
   }
 
   function getListRows(filter, cap = 1000) {

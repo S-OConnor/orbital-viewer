@@ -99,7 +99,7 @@ build/dist/backend/bin/olv_backend --ws-port 8766   # update frontend Settings t
 <ol>
   <li>Confirm the simulator is pointing at the right host/port
   (<code>--dest</code>/<code>--port</code> vs the backend's <code>--udp-port</code> —
-  and note DIS mode listens on 47001, not 47000).</li>
+  and note DIS mode listens on 47001 and OLV2 mode on 47002, not OLV1's 47000).</li>
   <li>Check the firewall (typical on Fedora-family hosts):
 <pre><code class="language-sh">sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp     # runtime only
 sudo firewall-cmd --permanent --add-port=47000/udp --add-port=8765/tcp
@@ -117,7 +117,7 @@ sudo firewall-cmd --reload
   <tbody>
     <tr><td><code>bad_magic</code> / <code>bad_version</code> / <code>bad_msg_type</code> /
         <code>too_short</code> / <code>too_long</code></td>
-        <td>Not a valid OLV1 packet</td><td>Wrong sender/protocol pointed at the port</td></tr>
+        <td>Not a valid packet for the configured mode</td><td>Wrong sender/protocol pointed at the port (OLV1 vs DIS vs OLV2)</td></tr>
     <tr><td><code>bad_length</code> / <code>bad_crc</code> / <code>too_many_objects</code></td>
         <td>Truncated, corrupted, or malformed-count datagram</td>
         <td>Network corruption; a non-OLV1 sender; IP fragmentation issues (try <code>--chunk 24</code>)</td></tr>
@@ -142,6 +142,28 @@ sudo firewall-cmd --reload
   actual EntityIDs.</li>
   <li><code>dropped bad_version</code> &rarr; source is emitting a DIS protocol version
   outside 5–7.</li>
+</ul>
+
+<h3 id="olv2-nothing">OLV2 mode: datagrams arrive but tracks blink or don't appear</h3>
+<ul>
+  <li><code>dropped stale</code> (counted as <code>udpDropped</code>, logged with
+  reason) &rarr; the datagram's first point isn't newer than the last point
+  accepted for that <code>track_id</code> — a duplicate, a reordered datagram, or a
+  non-conforming sliding-window sender. A conforming sender (disjoint batches)
+  never trips this.</li>
+  <li>Objects appear, then disappear, then reappear &rarr; the sender's batch
+  period (<code>olv2_points &divide; rate_hz</code>) is too close to or above the
+  backend's <code>expiry_seconds</code> (default 15&nbsp;s); lower
+  <code>olv2_points</code> or raise the rate. <code>olv_sim</code> warns at startup
+  once its own batch period exceeds 10&nbsp;s.</li>
+  <li>Satellite panel doesn't update &rarr; the backend only replaces the stored
+  satellite sample when a newer-timestamped point arrives (across all tracks);
+  confirm the sender's <code>t</code> values are genuine UTC epoch seconds, not,
+  e.g., seconds-since-boot.</li>
+  <li><code>dropped bad_time</code> &rarr; a point's <code>t</code> is &le; 0, or a
+  datagram's points are not strictly ascending in <code>t</code>.</li>
+  <li><code>dropped bad_crc</code> / <code>bad_length</code> / <code>bad_point_count</code>
+  &rarr; same causes as OLV1 (corruption, wrong protocol on the port, truncation).</li>
 </ul>
 
 <h2 id="display">Display problems</h2>

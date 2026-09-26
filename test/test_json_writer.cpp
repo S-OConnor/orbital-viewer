@@ -116,6 +116,85 @@ TEST(JsonWriter, json_stats_dropped_is_malformed_plus_stale) {
   EXPECT_TRUE(contains(msg, "\"broadcastSeq\":7"));
 }
 
+TEST(JsonWriter, json_trail_points_absent_when_empty) {
+  Snapshot snap;
+  SnapshotObject o;
+  o.id = 1;
+  snap.objects.push_back(o);  // trail_points left empty
+  const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 0);
+  EXPECT_FALSE(contains(msg, "trailPoints"));
+}
+
+TEST(JsonWriter, json_trail_points_present_formatted_and_ordered) {
+  Snapshot snap;
+  TrailPoint a;
+  a.id = 2001;
+  a.t = 1790000000.125;
+  a.px = 6923371.4;
+  a.py = 12000.0;
+  a.pz = -55000.2;
+  TrailPoint b;
+  b.id = 2001;
+  b.t = 1790000000.225;
+  b.px = 6923380.9;
+  b.py = 12011.5;
+  b.pz = -55001.0;
+  snap.trail_points = {a, b};  // insertion order must be preserved verbatim
+
+  const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 0);
+  const std::string expected = "\"trailPoints\":[[2001," + fmt(1790000000.125, "%.3f") + "," +
+                               fmt(6923371.4, "%.1f") + "," + fmt(12000.0, "%.1f") + "," +
+                               fmt(-55000.2, "%.1f") + "],[2001," + fmt(1790000000.225, "%.3f") +
+                               "," + fmt(6923380.9, "%.1f") + "," + fmt(12011.5, "%.1f") + "," +
+                               fmt(-55001.0, "%.1f") + "]]";
+  EXPECT_TRUE(contains(msg, expected));
+}
+
+TEST(JsonWriter, json_trail_points_placed_immediately_after_objects) {
+  Snapshot snap;
+  TrailPoint a;
+  a.id = 1;
+  snap.trail_points.push_back(a);
+  const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 0);
+
+  const auto objects_key = msg.find("\"objects\":[]");
+  const auto trail_key = msg.find("\"trailPoints\":");
+  const auto stats_key = msg.find("\"stats\":");
+  ASSERT_NE(objects_key, std::string::npos);
+  ASSERT_NE(trail_key, std::string::npos);
+  ASSERT_NE(stats_key, std::string::npos);
+  EXPECT_LT(objects_key, trail_key);
+  EXPECT_LT(trail_key, stats_key);
+  // No other key sits between the two: trailPoints starts right where the
+  // empty objects array ends.
+  EXPECT_EQ(trail_key, objects_key + std::string("\"objects\":[]").size() + 1);
+}
+
+TEST(JsonWriter, json_message_brackets_balanced_with_trail_points) {
+  Snapshot snap;
+  SnapshotObject o;
+  o.id = 2;
+  snap.objects.push_back(o);
+  TrailPoint tp;
+  tp.id = 2;
+  tp.t = 5.0;
+  snap.trail_points.push_back(tp);
+
+  const std::string msg = buildStateMessage(snap, std::chrono::system_clock::time_point{}, 1);
+  int braces = 0;
+  int brackets = 0;
+  for (char c : msg) {
+    if (c == '{') ++braces;
+    if (c == '}') --braces;
+    if (c == '[') ++brackets;
+    if (c == ']') --brackets;
+  }
+  EXPECT_EQ(braces, 0);
+  EXPECT_EQ(brackets, 0);
+  EXPECT_EQ(msg.front(), '{');
+  EXPECT_EQ(msg.back(), '}');
+}
+
 TEST(JsonWriter, json_hello_message) {
   const std::string msg = buildHelloMessage(std::chrono::system_clock::time_point{}, 1.0);
   EXPECT_TRUE(contains(msg, "\"type\":\"hello\""));

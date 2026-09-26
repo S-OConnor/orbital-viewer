@@ -40,9 +40,9 @@ level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file le
   <rect class="d-box" x="40" y="55" width="270" height="42"/>
   <text class="d-small" x="175" y="80" text-anchor="middle">async_receive_from loop (UDP)</text>
   <rect class="d-box" x="40" y="115" width="270" height="42"/>
-  <text class="d-small" x="175" y="140" text-anchor="middle">decode + validate (OLV1 or DIS)</text>
+  <text class="d-small" x="175" y="140" text-anchor="middle">decode + validate (OLV1, DIS, or OLV2)</text>
   <rect class="d-box" x="40" y="175" width="270" height="42"/>
-  <text class="d-small" x="175" y="200" text-anchor="middle">countReceived / countDropped / apply</text>
+  <text class="d-small" x="175" y="200" text-anchor="middle">countReceived / countDropped / apply or applyTrack</text>
   <line class="d-line" x1="175" y1="97" x2="175" y2="113" marker-end="url(#arr4)"/>
   <line class="d-line" x1="175" y1="157" x2="175" y2="173" marker-end="url(#arr4)"/>
 
@@ -70,8 +70,8 @@ level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file le
 <ul>
   <li><strong>Thread 1 (input)</strong> is spawned by <code>InputSource::start()</code>
   (<code>src/olv1_input_source.cpp:26</code> /
-  <code>dis_input_source.cpp:103</code>). Exactly one input source exists per process,
-  chosen by <code>Config::input_mode</code> at boot.</li>
+  <code>dis_input_source.cpp:103</code> / <code>olv2_input_source.cpp:40</code>). Exactly one
+  input source exists per process, chosen by <code>Config::input_mode</code> at boot.</li>
   <li><strong>Thread 2 (main)</strong> runs <code>ioc.run()</code> from
   <code>main.cpp:75</code>. The Beast acceptor, every session, and the broadcast
   timer all live on this one thread, so the <code>sessions_</code> set needs no
@@ -105,6 +105,30 @@ level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file le
   +1&nbsp;ms pruned), copies everything, and returns objects sorted ascending by id.</li>
 </ul>
 
+<h3 id="applytrack-semantics">StateStore::applyTrack — OLV2's additive path</h3>
+<p>OLV2's update shape (one track's batch of 1&ndash;25 points, not one satellite+objects
+snapshot) doesn't fit <code>apply()</code>'s sequence gate, so it gets its own method instead
+of reusing that one. <code>apply()</code> and its OLV1/DIS staleness rule are completely
+untouched; OLV1 and DIS never call <code>applyTrack</code>, and OLV2 never calls
+<code>apply</code>.</p>
+<ul>
+  <li><strong>No staleness check here.</strong> <code>Olv2InputSource</code> already dropped
+  stale datagrams (per-track <code>last_t_</code> comparison) before calling
+  <code>applyTrack</code> — this method always applies what it's given.</li>
+  <li><strong>Target: upsert by id,</strong> same as <code>apply()</code>'s object table.</li>
+  <li><strong>Satellite: newest-wins, not wholesale-replace.</strong> Because datagrams for
+  different tracks interleave, the satellite sample is only replaced when its <code>t</code>
+  is newer than the one already stored — an older track's batch arriving after a newer one
+  must not move the satellite backwards.</li>
+  <li><strong>Trail: appended to a pending buffer,</strong> capped at
+  <code>kMaxPendingTrailPoints = 125000</code> (oldest dropped past the cap).
+  <code>snapshot()</code> additionally <em>drains</em> that buffer into
+  <code>Snapshot::trail_points</code> — a delta, not a running history — which
+  <code>json_writer</code> serializes as the optional <code>trailPoints</code> WS field
+  (<a href="../reference/protocol-olv2.html">PROTOCOL_OLV2</a> §5,
+  <a href="../reference/protocol-ws.html">PROTOCOL_WS</a> §2).</li>
+</ul>
+
 <h3 id="input-seam">The InputSource strategy seam</h3>
 <pre><code class="language-cpp">class InputSource {
  public:
@@ -114,9 +138,12 @@ level) and the <a href="source-walkthrough.html">Source Walkthrough</a> (file le
 };
 std::unique_ptr&lt;InputSource&gt; makeInputSource(const Config&amp;, StateStore&amp;, Logger&amp;);
 </code></pre>
-<p>Both implementations feed the identical
-<code>countReceived / countDropped / apply</code> API, so the Stats panel means the
-same thing in both modes. The DIS implementation additionally:</p>
+<p>All three implementations feed <code>countReceived</code>/<code>countDropped</code>
+identically, so the Stats panel's received/accepted/dropped counters mean the same thing in
+every mode. OLV1 and DIS additionally share <code>apply()</code> (and its sequence-gate
+staleness); OLV2 instead calls the additive <code>applyTrack()</code>
+(<a href="#applytrack-semantics">above</a>), because its per-track batch shape doesn't fit
+<code>apply()</code>'s single-satellite-snapshot model. The DIS implementation additionally:</p>
 <ul>
   <li>parses the 12-byte PDU header manually (version/exercise/type/timestamp) before
   handing the body to open-dis-cpp's <code>EntityStatePdu::unmarshal</code> (wrapped in
@@ -129,6 +156,20 @@ same thing in both modes. The DIS implementation additionally:</p>
   state is stamped into every synthesized packet;</li>
   <li>synthesizes a strictly-increasing sequence per accepted PDU so the OLV1
   staleness gate in <code>apply()</code> never self-fires.</li>
+</ul>
+<p>The OLV2 implementation (<code>Olv2InputSource</code>) instead:</p>
+<ul>
+  <li>runs the fully stateless <code>proto::olv2::decode</code> (structural/CRC/finiteness/
+  range/time-order checks — no third-party decoder involved, unlike DIS) before its own
+  per-track staleness check (<code>last_t_[track_id]</code>, keyed by the datagram's own
+  target id, not a fold);</li>
+  <li>maps the <em>newest</em> point in an accepted datagram onto the target's object row and
+  the satellite sample, and <em>every</em> point onto trail data — one datagram can update
+  three different downstream views;</li>
+  <li>estimates satellite velocity by finite-differencing the last two points' positions when
+  the wire doesn't set <code>SAT_HAS_VEL</code> (needs &ge;2 points; 0 with a single point) —
+  a smaller-scope analogue of DIS's carry-forward problem, solved differently because every
+  OLV2 datagram already carries its own satellite sample.</li>
 </ul>
 
 <h2 id="memory">Memory ownership</h2>
@@ -162,7 +203,9 @@ same thing in both modes. The DIS implementation additionally:</p>
         <td>Constructors throw <code>boost::system::system_error</code>; caught in
         <code>main()</code>'s single try/catch, logged as <code>fatal:</code></td></tr>
     <tr><td>Malformed / stale packet</td><td>Count + log + drop; never fatal, never partial</td>
-        <td><code>DecodeError</code> pipeline, then <code>apply()</code>'s sequence gate</td></tr>
+        <td><code>DecodeError</code> pipeline, then <code>apply()</code>'s sequence gate
+        (OLV1/DIS) or <code>Olv2InputSource</code>'s per-track <code>last_t_</code> check
+        (OLV2)</td></tr>
     <tr><td>Slow WS client</td><td>Drop frames past 5 pending; keep connection</td>
         <td>Per-session outbox with rate-limited WARN</td></tr>
     <tr><td>Frontend parse error</td><td>Count + console log; connection stays up</td>
@@ -187,11 +230,12 @@ same thing in both modes. The DIS implementation additionally:</p>
 <ul>
   <li>Levels: <code>debug &lt; info &lt; warn &lt; error</code>; below-threshold lines are
   dropped. Info+ mirrors to stderr unless <code>--quiet</code>.</li>
-  <li>Components: <code>[main]</code> lifecycle, <code>[udp]</code>/<code>[dis]</code> intake
-  (accepted at debug, malformed at warn, stale/filtered at debug), <code>[ws]</code>
+  <li>Components: <code>[main]</code> lifecycle, <code>[udp]</code>/<code>[dis]</code>/<code>[olv2]</code>
+  intake (accepted at debug, malformed at warn, stale/filtered at debug;
+  <code>[olv2]</code> also logs a satellite-id change at warn), <code>[ws]</code>
   connections and outbox overflow.</li>
   <li>The startup line intentionally appends <code>input_mode=</code>/<code>config_file=</code>
-  only when non-default, keeping the default run byte-identical to pre-DIS versions
+  only when non-default, keeping the default run byte-identical to pre-DIS/pre-OLV2 versions
   (regression-tested property).</li>
 </ul>
 
@@ -213,7 +257,9 @@ else is <code>unknown key</code>. Cross-field invariants (e.g. DIS mode requires
   requestAnimationFrame loop + 1&nbsp;s UI tick.</li>
   <li><strong>Data path:</strong> <code>net.js</code> validates every message
   structurally (row length 11, category 1–5, all-or-none velocity, protocolVersion
-  1 on <code>hello</code>); <code>model.js</code> stores only the latest snapshot;
+  1 on <code>hello</code>; an optional <code>trailPoints</code> array — OLV2 only — must be
+  all-finite 5-element rows when present, else absent parses as <code>[]</code>);
+  <code>model.js</code> stores only the latest snapshot (incl. <code>trailPoints</code>);
   <code>renderer.setSnapshot</code> and <code>ui.updateData</code> consume it.</li>
   <li><strong>Reconnect:</strong> backoff 1&nbsp;&rarr;&nbsp;2&nbsp;&rarr;&nbsp;4&nbsp;&rarr;&nbsp;8&nbsp;&rarr;&nbsp;10&nbsp;s
   (capped); endpoint changes from Settings reconnect immediately; stale-socket
@@ -229,17 +275,18 @@ else is <code>unknown key</code>. Cross-field invariants (e.g. DIS mode requires
 
 <h2 id="patterns">Design patterns in use</h2>
 <ul>
-  <li><strong>Strategy</strong> — <code>InputSource</code> (OLV1 vs DIS intake).</li>
+  <li><strong>Strategy</strong> — <code>InputSource</code> (OLV1 vs DIS vs OLV2 intake).</li>
   <li><strong>Factory</strong> — <code>makeInputSource</code>; all frontend
   <code>createX()</code> constructors.</li>
   <li><strong>Snapshot/copy-on-read</strong> — <code>StateStore::snapshot()</code>
   decouples the lock from serialization.</li>
   <li><strong>Registrar/static-registration</strong> — <code>OLV_TEST</code> macro
-  self-registers test cases at static-init.</li>
+  self-registers test cases at static-init (the simulator suite; the backend suite now
+  self-registers via GoogleTest's own <code>TEST()</code> macro instead).</li>
   <li><strong>Dependency injection for testability</strong> — <code>wsFactory</code> in
   <code>net.js</code>, <code>storage</code> in <code>settings.js</code>,
   <code>fetchFn</code> in <code>site_config.js</code>,
-  <code>processDatagram()</code> as the DIS test seam.</li>
+  <code>processDatagram()</code> as the DIS and OLV2 test seam.</li>
   <li><strong>Lockstep dual implementation</strong> — the fisheye GLSL block is a
   byte-for-byte copy of <code>sat_camera.js</code> math; the TOML grammar exists in
   C++ and JS. Both are guarded by parallel test suites and loud comments.</li>

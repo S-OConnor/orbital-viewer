@@ -65,7 +65,9 @@ Formats</a>.</p>
 
 <h2 id="backend">Backend configuration</h2>
 <p>A complete <code>backend.toml</code> showing every key at its default (all keys
-optional; the two commented DIS keys are only needed in DIS mode):</p>
+optional; the two commented DIS keys are only needed in DIS mode, and the two
+<code>olv2_*</code> keys only in OLV2 mode — though those two already default to a
+working value and need not be set at all):</p>
 <pre><code class="language-toml">[network]
 udp_bind = "0.0.0.0"      # OLV1 UDP listen address
 udp_port = 47000          # OLV1 UDP listen port (1-65535)
@@ -84,21 +86,29 @@ level  = "info"             # debug | info | warn | error
 stderr = true               # mirror info+ lines to stderr
 
 [input]
-mode = "olv1"             # "olv1" (default) or "dis"
+mode = "olv1"             # "olv1" (default), "dis", or "olv2"
 dis_bind = "0.0.0.0"      # DIS listen address (dis mode only)
 dis_port = 47001          # DIS listen port
 # dis_exercise_id = 1             # optional filter 0-255; unset = accept all
 # dis_satellite_entity_id = "1:1:1"  # REQUIRED in dis mode; "site:app:entity"
+olv2_bind = "0.0.0.0"     # OLV2 listen address (olv2 mode only)
+olv2_port = 47002         # OLV2 listen port (distinct from OLV1's 47000 and DIS's 47001)
 </code></pre>
 <div class="note"><strong>DIS mode gotcha:</strong> <code>dis_satellite_entity_id</code>
 has <em>no CLI flag</em>. Running <code>--input-mode dis</code> without a config file
 that sets it is a startup error. The entity whose DIS EntityID matches all three
 parts becomes the primary satellite.</div>
+<div class="note"><strong>OLV2 mode, by contrast:</strong> there is no required key at
+all. <code>olv2_bind</code>/<code>olv2_port</code> already default to a working value,
+so <code>--input-mode olv2</code> alone is enough to run it — a config file is only
+needed to change the bind address/port from their defaults. The satellite in every
+OLV2 datagram is always the primary satellite (ownship); OLV2 has no separate
+satellite-selection key because it has no separate ownship entity.</div>
 
 <h2 id="simulator">Simulator configuration</h2>
 <pre><code class="language-toml">[target]
 host = "127.0.0.1"        # UDP destination (IP or hostname, e.g. "backend")
-port = 47000              # destination port (DIS default: 47001)
+port = 47000              # destination port (DIS default: 47001, OLV2 default: 47002)
 
 [source]
 mode = "csv"              # "csv" or "generate"
@@ -111,14 +121,20 @@ seed = 1                  # deterministic generator seed, 0-4294967295
 [send]
 rate_hz = 1.0             # update rate, 0 &lt; rate &lt;= 50
 chunk = 128               # max objects per packet, 1-128 (olv1 only)
-protocol = "olv1"         # "olv1" or "dis"
+protocol = "olv1"         # "olv1", "dis", or "olv2"
 dis_exercise_id = 1       # DIS emission: exercise id (0-255)
 dis_site = 1              # DIS emission: site id (0-65535)
 dis_satellite_entity_id = "1:1:1"  # DIS emission: satellite EntityID
+olv2_points = 10          # OLV2 emission: points per datagram, 1-25
 
 [output]
 quiet = false             # suppress per-cycle console line
 </code></pre>
+<div class="note">With <code>protocol = "olv2"</code> and no port set here or via
+<code>--port</code>, the destination defaults to 47002. Keep the batch period
+(<code>olv2_points &divide; rate_hz</code>) below the backend's
+<code>state.expiry_seconds</code> (default 15&nbsp;s), or tracks blink out between
+datagrams — <code>olv_sim</code> warns above a 10&nbsp;s batch period.</div>
 
 <h2 id="frontend">Frontend configuration</h2>
 <p><code>frontend/config.toml</code> sets <em>site defaults</em> — the values a fresh
@@ -156,6 +172,11 @@ error — the page logs a warning and continues with defaults.</p>
         exercise's satellite entity, and set <code>dis_exercise_id</code> to filter a
         shared network. Consider <code>logging.level = "debug"</code> initially to see
         filtered/ignored PDU lines.</td></tr>
+    <tr><td>OLV2 per-track batched ingest</td>
+        <td><code>[input] mode="olv2"</code> — no required key, unlike DIS's
+        <code>dis_satellite_entity_id</code>. On the sender, tune <code>[send]
+        olv2_points</code> so the batch period (points &divide; rate) stays below
+        <code>[state] expiry_seconds</code>, or tracks blink out between datagrams.</td></tr>
     <tr><td>Load / soak testing</td>
         <td>Simulator <code>--generate 5000 --duration 0</code>; consider backend
         <code>logging.level = "warn"</code> to keep the log small (accepted-packet

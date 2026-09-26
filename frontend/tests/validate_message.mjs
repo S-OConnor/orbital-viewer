@@ -8,14 +8,16 @@
 //
 // Behavior:
 //   - Any line that fails to parse: print "line <n>: <error>" to stderr,
-//     exit 1.
+//     exit 1. This includes malformed `trailPoints` (OLV2 only, optional —
+//     see docs/PROTOCOL_WS.md "trailPoints"), rejected the same way as a
+//     malformed `objects` row since parseStateMessage validates both.
 //   - Requires at least one 'state' frame with a non-null satellite;
 //     otherwise print an error and exit 1.
 //   - If --min-objects N is given, requires the maximum objects-per-frame
 //     across all state frames to be >= N; otherwise print an error and
 //     exit 1.
-//   - On success: print a one-line summary (frames, states, max objects)
-//     and exit 0.
+//   - On success: print a one-line summary (frames, states, max objects,
+//     max trailPoints) and exit 0.
 
 import { readFileSync } from 'node:fs';
 import { parseStateMessage } from '../js/net.js';
@@ -62,6 +64,7 @@ function main(argv) {
   let stateCount = 0;
   let sawStateWithSatellite = false;
   let maxObjects = 0;
+  let maxTrailPoints = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -78,6 +81,7 @@ function main(argv) {
       stateCount += 1;
       if (parsed.satellite !== null) sawStateWithSatellite = true;
       if (parsed.objects.length > maxObjects) maxObjects = parsed.objects.length;
+      if (parsed.trailPoints.length > maxTrailPoints) maxTrailPoints = parsed.trailPoints.length;
     }
   }
 
@@ -94,7 +98,9 @@ function main(argv) {
     process.exit(1);
   }
 
-  console.log(`frames=${frameCount} states=${stateCount} maxObjects=${maxObjects}`);
+  console.log(
+    `frames=${frameCount} states=${stateCount} maxObjects=${maxObjects} maxTrailPoints=${maxTrailPoints}`,
+  );
   process.exit(0);
 }
 

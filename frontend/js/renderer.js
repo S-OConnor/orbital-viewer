@@ -5,7 +5,9 @@
 // approximate Sun billboard (which also lights the globe), all tracked objects
 // as a single textured GL_POINTS draw of atlas icon sprites, the primary
 // satellite marker (satMarker atlas art) + 60 s velocity vector, age-faded
-// GL_LINES trails, and 2D-canvas labels / selection ring on the overlay.
+// GL_LINES trails (client-built at the ~1 Hz snapshot rate, or server-fed from
+// OLV2 `trailPoints` deltas at source sample rate — docs/PROTOCOL_WS.md), and
+// 2D-canvas labels / selection ring on the overlay.
 //
 // Two view modes (settings.viewMode, docs/FEATURE_SATVIEW.md): the default
 // 'orbit' free-orbit camera, and 'sat' — a first-person view from the primary
@@ -59,6 +61,10 @@ const EARTH_R = 6.371;   // Earth radius in units
 const SHELL = 120;       // distant objects (stars) clamp onto this radius
 const MAX_OBJECTS = 5000;
 const TRAIL_CAP = 64;    // ring-buffer samples kept per object
+// Server-fed trails (OLV2 `trailPoints`, docs/PROTOCOL_WS.md) use a much larger
+// cap than client-built ones: a 10 Hz track over a 30 s trailSeconds window
+// needs ~300 samples, and TRAIL_CAP=64 would truncate that to 6.4 s.
+const SERVER_TRAIL_CAP = 512;
 const SUN_DIST = 150;    // Sun billboard distance in units
 const SKY_DIST = 300;    // celestial-background shell (stars/Moon/planets), < FAR
 
@@ -724,7 +730,10 @@ export function createRenderer(glCanvas, overlayCanvas) {
 
   const renderObjects = []; // {id, cat, x, y, z} for visible objects (units, clamped)
   let satRender = null;     // {id, x, y, z} or null
-  const trails = new Map(); // id | 'sat:<id>' -> {cat, s:[{t,x,y,z}]}
+  // id | 'sat:<id>' -> {cat, s:[{t,x,y,z}], server?}. `server: true` marks a
+  // trail fed from OLV2 trailPoints (docs/PROTOCOL_WS.md); such trails skip
+  // the 1 Hz snapshot-position append (appendTrails) to avoid duplicates.
+  const trails = new Map();
 
   // Active-view decision for the current frame()/pick(), set at the top of each.
   // {fisheye, view, mvp, eye, aspectGl, aspectCss} — the draw helpers, overlay
@@ -913,11 +922,48 @@ export function createRenderer(glCanvas, overlayCanvas) {
   }
 
   function appendTrails(nowMs) {
+    // id -> cat lookup for this snapshot's objects, built once per call and
+    // used below both to stamp server-fed trail cat and (unchanged) by the
+    // client-built object loop.
+    const catById = new Map();
+    if (snapshot && Array.isArray(snapshot.objects)) {
+      for (const o of snapshot.objects) catById.set(o.id, o.cat);
+    }
+
+    // Server-fed trails (OLV2 `trailPoints`, docs/PROTOCOL_WS.md): each
+    // sample's `t` (UTC epoch seconds) is mapped onto the renderer's own
+    // trail clock via the scene's serverTime anchor, landing it alongside
+    // the client-built samples appended below (both keyed in nowMs terms).
+    // Skipped entirely when serverTime is missing/unparseable — there is
+    // nothing to anchor the mapping against.
+    const serverTimeMs = snapshot && snapshot.serverTime ? Date.parse(snapshot.serverTime) : NaN;
+    if (snapshot && Array.isArray(snapshot.trailPoints) && Number.isFinite(serverTimeMs)) {
+      for (const p of snapshot.trailPoints) {
+        let t = trails.get(p.id);
+        // Prefer this snapshot's object row for cat (a track just reported
+        // may have changed type); otherwise keep the trail's existing cat.
+        const cat = catById.has(p.id) ? catById.get(p.id) : (t ? t.cat : undefined);
+        if (!CAT[cat]) continue; // unknown to CAT, same as the object loop below
+        const tMs = nowMs - (serverTimeMs - p.t * 1000);
+        if (t && t.s.length && tMs <= t.s[t.s.length - 1].t) continue; // defensive monotonicity
+        if (!t) { t = { cat, s: [], server: true }; trails.set(p.id, t); }
+        t.cat = cat;
+        t.server = true;
+        const w = worldFromMeters(p.pos);
+        t.s.push({ t: tMs, x: w[0], y: w[1], z: w[2] });
+        if (t.s.length > SERVER_TRAIL_CAP) t.s.shift();
+      }
+    }
+
     if (snapshot && Array.isArray(snapshot.objects)) {
       for (const o of snapshot.objects) {
         if (!CAT[o.cat]) continue;
+        const existing = trails.get(o.id);
+        // Server-fed trail: the 1 Hz snapshot position would duplicate/
+        // zig-zag against the higher-rate trailPoints samples above.
+        if (existing && existing.server) continue;
         const w = worldFromMeters(o.pos);
-        let t = trails.get(o.id);
+        let t = existing;
         if (!t) { t = { cat: o.cat, s: [] }; trails.set(o.id, t); }
         t.cat = o.cat;
         t.s.push({ t: nowMs, x: w[0], y: w[1], z: w[2] });

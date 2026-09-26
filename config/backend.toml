@@ -35,7 +35,8 @@ expiry_seconds = 15
 [input]
 # Intake strategy selected at boot. "olv1" = the first-party OLV1 UDP binary
 # protocol (docs/PROTOCOL_UDP.md). "dis" = IEEE 1278.1 DIS Entity State PDUs
-# (docs/PROTOCOL_DIS.md).
+# (docs/PROTOCOL_DIS.md). "olv2" = the OLV2 per-track batched time-series
+# protocol (docs/PROTOCOL_OLV2.md).
 mode = "olv1"
 
 # The dis_* keys below are consulted only when mode = "dis"; they are still
@@ -54,6 +55,16 @@ dis_port = 47001
 # (three decimal 0-65535 values). Required when mode = "dis"; every other entity
 # becomes a tracked object. Uncomment and set when running DIS mode:
 # dis_satellite_entity_id = "1:1:1"
+
+# The olv2_* keys below are consulted only when mode = "olv2"; they are still
+# schema-checked whenever present (same flat-key reasoning as the dis_* group
+# above; see docs/PROTOCOL_OLV2.md).
+#
+# UDP listen address/port for incoming OLV2 TRACK_UPDATE datagrams. The
+# default port is distinct from OLV1's 47000 and DIS's 47001 so all three
+# modes' defaults can coexist on a host.
+olv2_bind = "0.0.0.0"
+olv2_port = 47002
 
 [logging]
 # Log file path (must be non-empty).

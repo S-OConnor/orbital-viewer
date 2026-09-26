@@ -214,6 +214,11 @@ clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
   <code>find_package(OpenDIS CONFIG)</code> / <code>OpenDIS::OpenDIS6</code> — no custom
   find-module. No package manager (vcpkg/Conan) is used anywhere — deliberate, for
   air-gap simplicity.</li>
+  <li><strong>OLV2</strong>: introduces <strong>no new third-party dependency</strong>.
+  <code>include/olv/protocol_olv2.hpp</code> is header-only and reuses
+  <code>protocol.hpp</code>'s CRC-32/byte-order helpers and <code>ObjectType</code>; it needs
+  no <code>find_package</code> entry, no installer script, and no <code>THIRD_PARTY.md</code>/
+  SBOM change.</li>
   <li><strong>Frontend</strong>: zero dependencies; no npm, no lockfiles.</li>
 </ul>
 

@@ -52,6 +52,10 @@
   <li><strong>Trails are the most expensive render feature.</strong> With 5,000 objects
   and 60&nbsp;s trails, the trail buffer rebuild dominates frame time on weak GPUs —
   shorten the duration or disable trails on low-end display machines.</li>
+  <li><strong>OLV2 trails render at the source's sample rate, not 1&nbsp;Hz.</strong>
+  Every accepted point is forwarded as a <code>trailPoints</code> row, so a
+  high-rate OLV2 sender feeds more trail samples per second than OLV1/DIS's 1&nbsp;Hz
+  snapshot-built trails — factor that into the same trail-cost tradeoff above.</li>
   <li><strong>Slow clients handle themselves.</strong> The per-session outbox drops
   frames past 5 pending rather than stalling the broadcaster — one struggling wall
   display cannot back-pressure the rest.</li>
@@ -65,7 +69,7 @@
 authentication by design</em>. It is built for trusted localhost/LAN segments.
 Treat that as a hard boundary, not a default to harden later.</div>
 <ul>
-  <li><strong>Never expose 47000/udp, 47001/udp, or 8765/tcp to untrusted
+  <li><strong>Never expose 47000/udp, 47001/udp, 47002/udp, or 8765/tcp to untrusted
   networks.</strong> Anyone who can reach the UDP port can inject track data
   (validation stops malformed packets, not well-formed lies); anyone who can reach
   the WebSocket can read the world state.</li>
@@ -78,6 +82,12 @@ Treat that as a hard boundary, not a default to harden later.</div>
   collection.</li>
   <li><strong>Exercise networks: set <code>dis_exercise_id</code>.</strong> On shared DIS
   segments this filters foreign exercises at the door.</li>
+  <li><strong>OLV2 senders: keep the batch period under expiry.</strong> There's no
+  authentication distinguishing a slow/misconfigured OLV2 sender from an attack, so
+  a batch period (<code>olv2_points &divide; rate_hz</code>) creeping toward or past
+  <code>expiry_seconds</code> looks the same either way — blinking tracks. Tune
+  <code>olv2_points</code> down (or the rate up) rather than raising
+  <code>expiry_seconds</code> to paper over it.</li>
   <li><strong>Supply chain:</strong> keep the committed SBOMs (<code>sbom/*.cdx.json</code>)
   current when dependencies change and feed them to your scanner (CycloneDX 1.5 —
   Grype/Trivy/Dependency-Track all accept it). The open-dis tarball is
@@ -96,7 +106,11 @@ Treat that as a hard boundary, not a default to harden later.</div>
   into images.</li>
   <li><strong>One data source per backend instance.</strong> The OLV1 staleness check
   assumes a single monotonic sequence stream; two simulators aimed at one backend
-  will mutually stale each other. Run one backend per source (distinct ports).</li>
+  will mutually stale each other. Run one backend per source (distinct ports). OLV2's
+  staleness is keyed per <code>track_id</code> rather than one global sequence, but
+  every OLV2 datagram still maps onto the same one shared satellite (there is no
+  separate ownship entity) — so this still isn't a way to merge two independent
+  satellites into one deployment.</li>
   <li><strong>Air-gapped sites:</strong> build/push the <code>olv-builder</code> image
   once (mirror the open-dis tarball via the <code>OLV_OPEN_DIS_URL</code> build arg
   and a <code>dnf</code> mirror), and mirror the runtime
@@ -116,6 +130,12 @@ Treat that as a hard boundary, not a default to harden later.</div>
   degradations (fixed confidence/intensity, folded ids, no stars) only when
   interoperating with standard tooling — see the
   <a href="../reference/protocol-dis.html">DIS reference</a>.</li>
+  <li>Use OLV2 when your source naturally produces per-track, irregularly-timed
+  samples (e.g. a tracker replaying historical passes, or several independent
+  sample rates per target) rather than OLV1's periodic full-snapshot model.
+  Position/velocity/confidence/ids are lossless like OLV1; the one documented
+  loss is intensity (always 0, like DIS) — see the
+  <a href="../reference/protocol-olv2.html">OLV2 reference</a>.</li>
   <li>Send velocity whenever you have it (<code>HAS_VELOCITY</code>): the sat-view's
   screen-up vector and the velocity vector display both use it.</li>
 </ul>

@@ -32,6 +32,7 @@
 #include "generator.hpp"
 #include "olv/dis_entity_id.hpp"
 #include "olv/protocol.hpp"
+#include "olv2_builder.hpp"
 #include "sim_config.hpp"
 
 namespace {
@@ -133,6 +134,7 @@ int main(int argc, char** argv) {
   std::uint64_t send_errors = 0;
   const std::size_t chunk = static_cast<std::size_t>(cfg.chunk);
   const bool dis_mode = cfg.protocol == SimConfig::Protocol::kDis;
+  const bool olv2_mode = cfg.protocol == SimConfig::Protocol::kOlv2;
 
   // DIS emit settings (--protocol dis): validated by parseSimArgs, so the
   // entity-id parse here cannot fail.
@@ -142,13 +144,24 @@ int main(int argc, char** argv) {
   olv::parseDisEntityId(cfg.dis_satellite_entity_id, dis_cfg.sat_site, dis_cfg.sat_application,
                         dis_cfg.sat_entity);
 
-  auto sendFrame = [&](const Frame& frame) {
-    // DIS timestamps must be monotone across the whole run (including CSV
-    // --loop wraps, where frame.t resets), so they derive from the cycle
-    // counter, not from frame.t.
-    const std::vector<std::vector<std::uint8_t>> packets =
-        dis_mode ? olv::sim::buildDisPdus(frame, dis_cfg, static_cast<double>(cycles) / cfg.rate_hz)
-                 : olv::sim::buildPackets(frame, chunk, seq);
+  // OLV2 emit settings (--protocol olv2): every frame's t_epoch is this
+  // run-start wall-clock time plus cycles/rate_hz, computed from the cycle
+  // counter (not frame.t) so CSV --loop keeps t_epoch monotone, matching the
+  // DIS timestamp precedent above.
+  std::optional<olv::sim::Olv2Batcher> olv2_batcher;
+  const double start_epoch =
+      std::chrono::duration<double>(std::chrono::system_clock::now().time_since_epoch()).count();
+  if (olv2_mode) {
+    olv2_batcher.emplace(static_cast<std::size_t>(cfg.olv2_points));
+    const double batch_period_s = static_cast<double>(cfg.olv2_points) / cfg.rate_hz;
+    if (batch_period_s > 10.0) {
+      std::cerr << "warning: olv2 batch period " << batch_period_s
+                << " s exceeds 10 s; the backend's object expiry (default 15 s) may drop "
+                   "tracks between batches\n";
+    }
+  }
+
+  auto sendPackets = [&](const std::vector<std::vector<std::uint8_t>>& packets) {
     for (const std::vector<std::uint8_t>& pkt : packets) {
       boost::system::error_code send_ec;
       socket.send(boost::asio::buffer(pkt), 0, send_ec);
@@ -168,6 +181,24 @@ int main(int argc, char** argv) {
       ++packets_sent;
       bytes_sent += pkt.size();
     }
+  };
+
+  auto sendFrame = [&](const Frame& frame) {
+    // DIS timestamps must be monotone across the whole run (including CSV
+    // --loop wraps, where frame.t resets), so they derive from the cycle
+    // counter, not from frame.t. OLV2 buffers frames and only emits
+    // datagrams once its batch is ready(), so `packets` here may be empty.
+    std::vector<std::vector<std::uint8_t>> packets;
+    if (dis_mode) {
+      packets = olv::sim::buildDisPdus(frame, dis_cfg, static_cast<double>(cycles) / cfg.rate_hz);
+    } else if (olv2_mode) {
+      const double t_epoch = start_epoch + static_cast<double>(cycles) / cfg.rate_hz;
+      olv2_batcher->push(frame, t_epoch);
+      if (olv2_batcher->ready()) packets = olv2_batcher->flush(seq);
+    } else {
+      packets = olv::sim::buildPackets(frame, chunk, seq);
+    }
+    sendPackets(packets);
     ++cycles;
     if (!cfg.quiet) {
       std::cout << "t=" << frame.t << " packets=" << packets.size()
@@ -196,6 +227,13 @@ int main(int argc, char** argv) {
       next_tick += period;
       std::this_thread::sleep_until(next_tick);
     }
+  }
+
+  // Normal end of run (duration elapsed, or CSV end without --loop): flush
+  // and send any partial OLV2 batch rather than discarding its buffered
+  // points. Never reached when the run only stops via a signal.
+  if (olv2_mode && !olv2_batcher->empty()) {
+    sendPackets(olv2_batcher->flush(seq));
   }
 
   std::cout << "done: cycles=" << cycles << " packets=" << packets_sent << " bytes=" << bytes_sent

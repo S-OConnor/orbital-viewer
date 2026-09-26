@@ -27,6 +27,10 @@ function isNumberArray3(v) {
   return Array.isArray(v) && v.length === 3 && v.every(isFiniteNumber);
 }
 
+function isNumberArray5(v) {
+  return Array.isArray(v) && v.length === 5 && v.every(isFiniteNumber);
+}
+
 function isPlainObject(v) {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
@@ -38,6 +42,8 @@ function isPlainObject(v) {
  * fields). Unknown `type` values are NOT silently ignored here — callers
  * (createConnection) are responsible for treating parse failures as
  * recoverable (log + count + keep connection alive); see PROTOCOL_WS.md §3.
+ * `state.trailPoints` (OLV2 only, optional) is parsed the same way: absent
+ * becomes `[]`; present rows become `{id, t, pos: [x, y, z]}`.
  */
 export function parseStateMessage(text) {
   const msg = JSON.parse(text);
@@ -93,6 +99,7 @@ function parseState(msg) {
   if (!isPlainObject(msg.stats)) {
     throw new Error('parseStateMessage: state.stats must be an object');
   }
+  const trailPoints = parseTrailPoints(msg.trailPoints);
   return {
     type: 'state',
     serverTime: msg.serverTime,
@@ -100,6 +107,7 @@ function parseState(msg) {
     satellite,
     objects,
     stats: msg.stats,
+    trailPoints,
   };
 }
 
@@ -157,6 +165,29 @@ function parseObjectRow(row, index) {
     throw new Error(`parseStateMessage: objects[${index}].flags must be a number`);
   }
   return { id, cat: catName, pos: [px, py, pz], vel, conf, intensity, flags };
+}
+
+// trailPoints (docs/PROTOCOL_WS.md "trailPoints (optional)"): present only for
+// the OLV2 input mode, a delta of target samples applied since the previous
+// broadcast. Absent -> []; present -> every row must be a 5-element array of
+// finite numbers `[id, t, px, py, pz]`, else the whole message is rejected
+// (same strictness as `objects`).
+function parseTrailPoints(trailPoints) {
+  if (trailPoints === undefined) return [];
+  if (!Array.isArray(trailPoints)) {
+    throw new Error('parseStateMessage: trailPoints must be an array');
+  }
+  return trailPoints.map(parseTrailPointRow);
+}
+
+function parseTrailPointRow(row, index) {
+  if (!isNumberArray5(row)) {
+    throw new Error(
+      `parseStateMessage: trailPoints[${index}] must be a 5-element array of finite numbers`,
+    );
+  }
+  const [id, t, px, py, pz] = row;
+  return { id, t, pos: [px, py, pz] };
 }
 
 const BACKOFF_DELAYS_MS = [1000, 2000, 4000, 8000, 10000];

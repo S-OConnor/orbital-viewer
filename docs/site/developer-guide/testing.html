@@ -40,10 +40,13 @@ pattern itself; an unquoted glob can behave differently across shells. The quote
 form is the project's canonical invocation.</div>
 
 <h2 id="cpp-unit">C++ unit tests</h2>
-<p>Framework: <code>test/support/olv_test.hpp</code> (~120 lines, zero third-party) —
-<code>OLV_TEST</code> self-registration, non-fatal <code>OLV_CHECK*</code> macros,
-<code>--list</code> support. See the <a href="api.html#test-api">API page</a> for
-macro semantics.</p>
+<p><code>olv_sim_tests</code> runs on the first-party <code>test/support/olv_test.hpp</code>
+framework (~120 lines, zero third-party) — <code>OLV_TEST</code> self-registration,
+non-fatal <code>OLV_CHECK*</code> macros, <code>--list</code> support (see the
+<a href="api.html#test-api">API page</a> for macro semantics). <code>olv_backend_tests</code>
+— every file below, including both OLV2 files — runs on GoogleTest
+(<code>TEST(Suite, case)</code>, <code>gtest_discover_tests</code>) instead, a repo-wide
+migration that predates and is unrelated to OLV2.</p>
 
 <h3 id="backend-tests">olv_backend_tests (CTest: <code>backend_unit</code>)</h3>
 <div class="table-wrap">
@@ -71,6 +74,22 @@ macro semantics.</p>
         object mapping, EntityType table, FNV fold + collisions, carry-forward,
         exercise filter, malformed/version rejection, per-entity timestamp staleness
         incl. zero and wraparound, synthesized sequence never self-stales.</td></tr>
+    <tr><td><code>test_protocol_olv2.cpp</code></td><td>OLV2 encode/decode round-trip
+        (1 and 25 points), exact byte-layout offsets, every §4 validation item via the
+        mutate-a-field-then-recompute-CRC pattern (incl. the checked <em>order</em>:
+        e.g. non-finite-before-out-of-range on the same point, bad-time only after every
+        point passes both), encode truncation/clamping/flag-masking,
+        <code>target_type</code> normalization, and <code>toString(DecodeError)</code>
+        text.</td></tr>
+    <tr><td><code>test_olv2_input_source.cpp</code></td><td>Builds raw OLV2 datagrams and
+        drives <code>processDatagram()</code>: object/satellite field mapping, per-track
+        staleness (first datagram always accepted, second stale datagram dropped,
+        staleness tracked independently per track), has-velocity flags taken from the
+        <em>newest</em> point only, satellite velocity source (wire vs.
+        finite-difference vs. zero with one point), newest-satellite-wins across
+        interleaved tracks, the <code>sat_id</code>-change warning, and that every
+        datagram — accepted, malformed, or stale — counts toward
+        <code>udpReceived</code>.</td></tr>
   </tbody>
 </table>
 </div>
@@ -78,7 +97,12 @@ macro semantics.</p>
 <h3 id="sim-tests">olv_sim_tests (CTest: <code>sim_unit</code>)</h3>
 <p>CSV happy path and malformed-row handling (each bad field class), frame grouping
 and satellite carry-forward, chunking edge cases (1, 128, &gt;128), sequence
-monotonicity, generator determinism, DIS builder marshaling.</p>
+monotonicity, generator determinism, DIS builder marshaling, and (in
+<code>test_olv2_builder.cpp</code>) OLV2 batcher marshaling — points-per-datagram
+clamping, ready/empty buffer transitions, one datagram per object id in ascending order,
+point counts matching frames containing that object, disjoint batches across
+successive flushes, and that every emitted datagram decodes cleanly with
+<code>proto::olv2::decode</code>.</p>
 
 <h3 id="run-one">Running a single case</h3>
 <pre><code class="language-sh">build/container/olv_backend_tests --list       # enumerate case names
@@ -110,7 +134,9 @@ node --test frontend/tests/net_parse.test.mjs    # one suite
 
 <h2 id="integration">Integration test (CTest: <code>integration</code>)</h2>
 <p><code>scripts/integration_test.sh</code> — the full pipeline on ephemeral random
-ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout:</p>
+ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout, run as two legs, each
+a fresh backend + simulator pair:</p>
+<p><strong>Leg 1 — OLV1 (default):</strong></p>
 <ol>
   <li>Writes a backend TOML with a <em>bogus</em> UDP port + debug logging, then
   overrides the port by CLI flag — proving defaults &lt; file &lt; flags precedence
@@ -119,13 +145,24 @@ ports (UDP 46000–47999, WS 18000–19999), 120&nbsp;s CTest timeout:</p>
   <li>Runs <code>olv_sim --generate 500 --rate 2 --duration 60</code>.</li>
   <li>Captures 6 frames with <code>olv_ws_probe</code> (30&nbsp;s timeout).</li>
   <li>Structural checks (<code>"type":"state"</code>, <code>satellite</code>,
-  <code>lastDataTime</code>), then — if Node is present — re-parses every frame with
+  <code>lastDataTime</code>, and — a regression guard — that no frame carries a
+  <code>trailPoints</code> key), then — if Node is present — re-parses every frame with
   the <em>real frontend parser</em>
   (<code>node frontend/tests/validate_message.mjs --min-objects 100</code>).</li>
   <li>Asserts the backend log recorded <code>accepted</code> packets and a
-  <code>client connected</code> event; prints <code>INTEGRATION PASS</code>.</li>
+  <code>client connected</code> event.</li>
 </ol>
-<p>A cleanup trap kills both processes and removes the temp dir on any exit path.</p>
+<p><strong>Leg 2 — OLV2:</strong> a second fresh backend, started with
+<code>[input] mode = "olv2"</code> in its config file (mode/port come from the file only —
+there are no <code>--olv2-*</code> flags), driven by
+<code>olv_sim --generate 50 --protocol olv2 --rate 10</code> (10 points/datagram at 10&nbsp;Hz
+= one batch per second). It asserts the captured frames carry a <code>satellite</code> and a
+<code>"trailPoints":[[</code> array, re-validates them with the same frontend parser, and
+greps the backend log for <code>input_mode=olv2</code>, at least one <code>accepted
+track=</code> line, and zero <code>dropped</code> lines.</p>
+<p>Each leg prints <code>leg olv1: pass</code> / <code>leg olv2: pass</code>, and the script
+finishes with <code>INTEGRATION PASS</code>. A cleanup trap kills both processes and removes
+the temp dir on any exit path.</p>
 
 <h2 id="system-regression">System &amp; regression testing</h2>
 <ul>

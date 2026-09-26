@@ -38,11 +38,13 @@ loop = true  # wrap to the first frame and keep going once the file ends
 rate_hz = 1.0  # cycles/second, (0,50]
 chunk = 128    # max objects per UDP packet, [1,128] (olv1 protocol only)
 
-# Wire protocol: "olv1" (default, docs/PROTOCOL_UDP.md) or "dis" (IEEE 1278.1
+# Wire protocol: "olv1" (default, docs/PROTOCOL_UDP.md), "dis" (IEEE 1278.1
 # DIS Entity State PDUs, one entity per datagram — pair with
-# `olv_backend --input-mode dis`). When "dis" is selected and no port is set
-# here or via --port, the destination port defaults to 47001 (the backend's
-# DIS default) instead of 47000.
+# `olv_backend --input-mode dis`), or "olv2" (docs/PROTOCOL_OLV2.md,
+# per-track batched updates — pair with `olv_backend --input-mode olv2`).
+# When "dis" is selected and no port is set here or via --port, the
+# destination port defaults to 47001 (the backend's DIS default) instead of
+# 47000; for "olv2" it defaults to 47002.
 protocol = "olv1"
 
 # ---- dis protocol only (still schema-checked whenever present) -------------
@@ -51,6 +53,12 @@ protocol = "olv1"
 # dis_satellite_entity_id = "1:1:1"  # satellite EntityID, "site:application:entity"
 #                                    # — must match the backend's
 #                                    # [input] dis_satellite_entity_id
+
+# ---- olv2 protocol only (still schema-checked whenever present) ------------
+# olv2_points = 10  # points per datagram, [1,25]. Batch period (points ÷
+#                    # rate_hz) should stay below the backend's
+#                    # [state] expiry_seconds (default 15 s), or tracks blink
+#                    # out between batches; olv_sim warns above 10 s.
 
 [output]
 quiet = false  # true suppresses the per-cycle status line

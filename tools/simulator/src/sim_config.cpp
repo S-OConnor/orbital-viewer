@@ -11,6 +11,7 @@
 
 #include "olv/dis_entity_id.hpp"
 #include "olv/protocol.hpp"
+#include "olv/protocol_olv2.hpp"
 #include "olv/toml.hpp"
 
 namespace olv::sim {
@@ -46,6 +47,9 @@ bool validSite(std::int64_t v) {
 bool validSatelliteEntityId(const std::string& s) {
   std::uint16_t site = 0, app = 0, entity = 0;
   return olv::parseDisEntityId(s, site, app, entity);
+}
+bool validOlv2Points(std::int64_t v) {
+  return v >= 1 && v <= static_cast<std::int64_t>(olv::proto::olv2::kMaxPoints);
 }
 
 bool parseInt64(const std::string& s, std::int64_t& out) {
@@ -156,8 +160,10 @@ bool applySimConfigFile(const std::string& path, SimConfig& cfg, std::string& er
       cfg.protocol = SimConfig::Protocol::kOlv1;
     } else if (v->s == "dis") {
       cfg.protocol = SimConfig::Protocol::kDis;
+    } else if (v->s == "olv2") {
+      cfg.protocol = SimConfig::Protocol::kOlv2;
     } else {
-      return fail("send.protocol", "must be \"olv1\" or \"dis\" (got \"" + v->s + "\")");
+      return fail("send.protocol", "must be \"olv1\", \"dis\", or \"olv2\" (got \"" + v->s + "\")");
     }
   }
   if (auto v = take("send.dis_exercise_id")) {
@@ -177,6 +183,11 @@ bool applySimConfigFile(const std::string& path, SimConfig& cfg, std::string& er
       return fail("send.dis_satellite_entity_id",
                   "must be \"site:application:entity\" (three decimal uint16s)");
     cfg.dis_satellite_entity_id = v->s;
+  }
+  if (auto v = take("send.olv2_points")) {
+    if (v->type != Value::Type::kInteger) return fail("send.olv2_points", "must be an integer");
+    if (!validOlv2Points(v->i)) return fail("send.olv2_points", "must be in [1,25]");
+    cfg.olv2_points = static_cast<int>(v->i);
   }
   if (auto v = take("output.quiet")) {
     if (v->type != Value::Type::kBoolean) return fail("output.quiet", "must be a boolean");
@@ -276,11 +287,13 @@ std::optional<SimConfig> parseSimArgs(int argc, const char* const* argv, std::st
       cfg.dest_port_set = true;
     } else if (a == "--protocol") {
       auto v = value();
-      if (!v || (*v != "olv1" && *v != "dis")) {
-        error = "--protocol: expected \"olv1\" or \"dis\"";
+      if (!v || (*v != "olv1" && *v != "dis" && *v != "olv2")) {
+        error = "--protocol: expected \"olv1\", \"dis\", or \"olv2\"";
         return std::nullopt;
       }
-      cfg.protocol = (*v == "dis") ? SimConfig::Protocol::kDis : SimConfig::Protocol::kOlv1;
+      cfg.protocol = (*v == "dis")    ? SimConfig::Protocol::kDis
+                     : (*v == "olv2") ? SimConfig::Protocol::kOlv2
+                                      : SimConfig::Protocol::kOlv1;
     } else if (a == "--rate") {
       auto v = value();
       double r = 0.0;
@@ -339,12 +352,14 @@ std::optional<SimConfig> parseSimArgs(int argc, const char* const* argv, std::st
     return std::nullopt;
   }
 
-  // DIS default port: when nothing set a port explicitly, follow the
-  // backend's distinct DIS default (47001 vs OLV1's 47000) so
-  // `olv_sim --protocol dis` reaches `olv_backend --input-mode dis` with
-  // both sides on defaults.
+  // DIS/OLV2 default port: when nothing set a port explicitly, follow the
+  // backend's distinct defaults (47001 DIS, 47002 OLV2, vs OLV1's 47000) so
+  // `olv_sim --protocol dis|olv2` reaches the matching `olv_backend
+  // --input-mode` with both sides on defaults.
   if (cfg.protocol == SimConfig::Protocol::kDis && !cfg.dest_port_set) {
     cfg.dest_port = 47001;
+  } else if (cfg.protocol == SimConfig::Protocol::kOlv2 && !cfg.dest_port_set) {
+    cfg.dest_port = 47002;
   }
 
   return cfg;
@@ -362,12 +377,15 @@ void printSimUsage(const char* argv0) {
       << "Options:\n"
       << "  --config PATH     Load a TOML config file (see config/simulator.toml).\n"
       << "  --dest IP         Destination address (default 127.0.0.1).\n"
-      << "  --port N          Destination UDP port (default 47000; 47001 with --protocol dis).\n"
+      << "  --port N          Destination UDP port (default 47000; 47001 with --protocol dis;\n"
+      << "                    47002 with --protocol olv2).\n"
       << "  --rate HZ         Cycles/second, 0 < HZ <= 50 (default 1.0).\n"
       << "  --loop            CSV mode only: wrap to the first frame and keep going.\n"
       << "  --chunk N         Max objects per packet, [1,128] (default 128; olv1 only).\n"
-      << "  --protocol P      Wire protocol: \"olv1\" (default) or \"dis\" (IEEE 1278.1\n"
-      << "                    Entity State PDUs; dis_* settings come from the config file).\n"
+      << "  --protocol P      Wire protocol: \"olv1\" (default), \"dis\" (IEEE 1278.1 Entity\n"
+      << "                    State PDUs), or \"olv2\" (per-track batched updates,\n"
+      << "                    olv2_points per datagram); dis_*/olv2_* settings come from\n"
+      << "                    the config file.\n"
       << "  --duration S      Generate mode only: run S seconds; 0 = forever (default 120).\n"
       << "  --seed N          Generate mode only: RNG seed (default 1).\n"
       << "  --quiet           Suppress per-cycle status lines.\n"

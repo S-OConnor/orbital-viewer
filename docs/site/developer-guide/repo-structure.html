@@ -60,6 +60,12 @@ for an engineer's first day on the project.</p>
         the OLV1 wire format</strong>: constants, <code>ObjectRecord</code>/<code>StatePacket</code>,
         <code>DecodeError</code>, CRC-32, <code>encode()</code>/<code>decode()</code>. Header-only;
         shared by backend, simulator, and tests via the <code>olv_proto</code> target.</td></tr>
+    <tr><td><code>include/olv/protocol_olv2.hpp</code></td><td><strong>Single source of truth for
+        the OLV2 wire format</strong> (one target track per datagram, 1&ndash;25 time-stamped
+        points): <code>Point</code>/<code>TrackPacket</code>, <code>DecodeError</code>,
+        <code>encode()</code>/<code>decode()</code>. Header-only; reuses <code>protocol.hpp</code>'s
+        CRC-32/byte helpers/<code>ObjectType</code> rather than duplicating them, and does not modify
+        that header. See <a href="../reference/protocol-olv2.html">PROTOCOL_OLV2</a>.</td></tr>
     <tr><td><code>include/olv/toml.hpp</code></td><td>First-party TOML-subset parser
         (header-only), mirrored by <code>frontend/js/toml.js</code>.</td></tr>
     <tr><td><code>include/olv/dis_entity_id.hpp</code></td><td><code>parseDisEntityId()</code> —
@@ -72,24 +78,37 @@ for an engineer's first day on the project.</p>
     <tr><td><code>include/olv/logger.hpp</code> + <code>src/logger.cpp</code></td><td>Thread-safe file logger, ISO-8601
         timestamps, level filtering, optional stderr mirroring.</td></tr>
     <tr><td><code>include/olv/state_store.hpp</code> + <code>src/state_store.cpp</code></td><td>The single mutex-protected shared
-        state: object table, satellite, counters, snapshot-with-pruning.</td></tr>
+        state: object table, satellite, counters, snapshot-with-pruning. Additive OLV2 surface:
+        <code>TrailPoint</code>/<code>TrackUpdate</code> and <code>applyTrack()</code> — upserts a
+        target row, replaces the satellite only when newer (tracks interleave), and buffers trail
+        samples that <code>snapshot()</code> drains into <code>Snapshot::trail_points</code>. The
+        existing <code>apply()</code> (OLV1/DIS) is untouched.</td></tr>
     <tr><td><code>include/olv/input_source.hpp</code> + <code>src/input_source.cpp</code></td><td><code>InputSource</code> strategy
-        interface + <code>makeInputSource()</code> boot-time factory.</td></tr>
+        interface + <code>makeInputSource()</code> boot-time factory (<code>InputMode::kOlv1</code> /
+        <code>kDis</code> / <code>kOlv2</code>).</td></tr>
     <tr><td><code>include/olv/olv1_input_source.hpp</code> + <code>src/olv1_input_source.cpp</code></td><td>Default input thread: async
         UDP receive &rarr; <code>proto::decode</code> &rarr; <code>StateStore::apply</code>.</td></tr>
     <tr><td><code>include/olv/dis_input_source.hpp</code> + <code>src/dis_input_source.cpp</code></td><td>DIS input thread: manual
         header parse, open-dis-cpp unmarshal, EntityID fold, satellite carry-forward,
         per-entity timestamp staleness.</td></tr>
+    <tr><td><code>include/olv/olv2_input_source.hpp</code> + <code>src/olv2_input_source.cpp</code></td><td>OLV2 input thread: async
+        UDP receive &rarr; <code>proto::olv2::decode</code> &rarr; per-track staleness
+        (<code>last_t_[track_id]</code>) &rarr; <code>StateStore::applyTrack</code>. Public
+        <code>processDatagram()</code> test seam, mirroring the other two sources.</td></tr>
     <tr><td><code>include/olv/json_writer.hpp</code> + <code>src/json_writer.cpp</code></td><td>Snapshot &rarr; WS JSON text
-        (<code>hello</code> + <code>state</code>), row-array encoding, fixed rounding.</td></tr>
+        (<code>hello</code> + <code>state</code>), row-array encoding, fixed rounding. Additionally
+        serializes the optional <code>trailPoints</code> array (OLV2 only; key omitted when the
+        drained buffer is empty, so OLV1/DIS frames are byte-identical to before).</td></tr>
     <tr><td><code>include/olv/ws_server.hpp</code> + <code>src/ws_server.cpp</code></td><td>Beast acceptor, sessions, 1&nbsp;Hz
         broadcast timer, per-session 5-frame outbox.</td></tr>
     <tr><td><code>tools/ws_probe.cpp</code></td><td><code>olv_ws_probe</code>: standalone WS
         capture client for the integration test (links only Boost).</td></tr>
-    <tr><td><code>test/</code></td><td>Seven unit-test files compiled into
+    <tr><td><code>test/</code></td><td>Nine unit-test files compiled into
         <code>olv_backend_tests</code> — see <a href="testing.html">Testing</a>.</td></tr>
-    <tr><td><code>test/support/olv_test.hpp</code></td><td>The shared (backend + simulator) ~120-line C++ test
-        framework (registration macros, check macros, runner).</td></tr>
+    <tr><td><code>test/support/olv_test.hpp</code></td><td>The ~120-line first-party C++ test
+        framework (registration macros, check macros, runner), used by <code>olv_sim_tests</code>.
+        <code>olv_backend_tests</code> (all nine files, including the two OLV2 ones) runs on
+        GoogleTest instead — a repo-wide migration that predates and is unrelated to OLV2.</td></tr>
   </tbody>
 </table>
 </div>
@@ -110,11 +129,16 @@ for an engineer's first day on the project.</p>
         world: circular-orbit satellite + mixed object population, analytic velocities.</td></tr>
     <tr><td><code>src/dis_builder.{hpp,cpp}</code></td><td>Frame &rarr; DIS Entity State PDUs
         (big-endian, one per entity, satellite first).</td></tr>
+    <tr><td><code>src/olv2_builder.{hpp,cpp}</code></td><td><code>Olv2Batcher</code>: buffers
+        frames and, on <code>flush()</code>, emits one OLV2 datagram per object id seen across the
+        buffer (one point per frame containing it) &mdash; the third encoding alongside OLV1
+        (<code>frame_builder.hpp</code>) and DIS. Pure std, no Boost/sockets, unit-tested by
+        decoding its own output with <code>proto::olv2::decode</code>.</td></tr>
     <tr><td><code>src/sim_config.{hpp,cpp}</code></td><td>CLI + TOML parsing for the
-        simulator; DIS destination-port defaulting.</td></tr>
+        simulator; DIS/OLV2 destination-port defaulting (47001/47002).</td></tr>
     <tr><td><code>data/example_mission.csv</code></td><td>61-frame bundled mission
         (regenerable via <code>scripts/make_example_csv.py</code>, fixed seed).</td></tr>
-    <tr><td><code>tests/</code></td><td>Four unit-test files &rarr; <code>olv_sim_tests</code>.</td></tr>
+    <tr><td><code>tests/</code></td><td>Five unit-test files &rarr; <code>olv_sim_tests</code>.</td></tr>
   </tbody>
 </table>
 </div>
@@ -155,10 +179,11 @@ for an engineer's first day on the project.</p>
     <tr><td><code>docs/PLAN.md</code></td><td>The plan of record: requirements, frozen
         interfaces, threading model, work breakdown. Normative for design intent.</td></tr>
     <tr><td><code>docs/PROTOCOL_UDP.md</code> / <code>PROTOCOL_DIS.md</code> /
-        <code>PROTOCOL_WS.md</code></td><td>Normative wire-format specs (code wins on
-        conflict; the responsible source file is named in each doc).</td></tr>
+        <code>PROTOCOL_OLV2.md</code> / <code>PROTOCOL_WS.md</code></td><td>Normative wire-format
+        specs (code wins on conflict; the responsible source file is named in each doc).</td></tr>
     <tr><td><code>docs/features/</code></td><td>Per-feature frozen design specs:
-        FEATURE_INPUT_SOURCES.md, FEATURE_SATVIEW.md (v0.3), FEATURE_SKY.md (v0.4).</td></tr>
+        FEATURE_INPUT_SOURCES.md, FEATURE_OLV2.md, FEATURE_SATVIEW.md (v0.3),
+        FEATURE_SKY.md (v0.4).</td></tr>
     <tr><td><code>docs/SBOM.md</code></td><td>SBOM contents, update checklist, and sample output.</td></tr>
     <tr><td><code>docs/site/</code></td><td>This documentation website.</td></tr>
     <tr><td><code>config/</code></td><td>Commented example TOML configs matching built-in
@@ -199,7 +224,7 @@ for an engineer's first day on the project.</p>
   </defs>
   <rect class="d-box" x="280" y="15" width="200" height="70"/>
   <text class="d-text" x="380" y="42" text-anchor="middle" font-weight="600">include/olv/</text>
-  <text class="d-small" x="380" y="62" text-anchor="middle">protocol.hpp · toml.hpp · dis_entity_id.hpp</text>
+  <text class="d-small" x="380" y="62" text-anchor="middle">protocol.hpp · protocol_olv2.hpp · toml.hpp · dis_entity_id.hpp</text>
 
   <rect class="d-box" x="40" y="150" width="150" height="55"/>
   <text class="d-text" x="115" y="182" text-anchor="middle">olv_backend</text>

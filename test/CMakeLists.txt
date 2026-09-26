@@ -10,7 +10,9 @@ add_executable(olv_backend_tests
   test_json_writer.cpp
   test_toml.cpp
   test_config.cpp
-  test_dis_input_source.cpp)
+  test_dis_input_source.cpp
+  test_protocol_olv2.cpp
+  test_olv2_input_source.cpp)
 # olv_net provides config.cpp for test_config.cpp (transitively pulls olv_core).
 target_link_libraries(olv_backend_tests
   PRIVATE olv_net olv_core GTest::gtest GTest::gtest_main olv_warnings)

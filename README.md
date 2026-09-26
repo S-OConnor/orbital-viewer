@@ -39,10 +39,14 @@ targets localhost/LAN use with no runtime internet access.
   labels on/off, sky (stars/Moon/planets) on/off, per-category visibility
   toggles, view mode, and WebSocket host/port with a reconnect button.
 - Boot-selectable backend input source: the first-party OLV1 UDP protocol
-  (default), or IEEE 1278.1 DIS Entity State PDUs
-  (`olv_backend --input-mode dis`); the simulator can emit either
-  (`olv_sim --protocol dis`). See
-  [docs/PROTOCOL_DIS.md](docs/PROTOCOL_DIS.md) and
+  (default), IEEE 1278.1 DIS Entity State PDUs
+  (`olv_backend --input-mode dis`), or OLV2 — a per-track, batched
+  time-series protocol where each datagram carries 1–25 new time-stamped
+  update points for one target plus the satellite (ownship) state
+  (`olv_backend --input-mode olv2`); the simulator can emit any of the three
+  (`olv_sim --protocol dis|olv2`). See
+  [docs/PROTOCOL_DIS.md](docs/PROTOCOL_DIS.md),
+  [docs/PROTOCOL_OLV2.md](docs/PROTOCOL_OLV2.md), and
   [docs/features/FEATURE_INPUT_SOURCES.md](docs/features/FEATURE_INPUT_SOURCES.md).
 
 ## Architecture
@@ -58,6 +62,8 @@ the backend's two threads, and no TLS/auth by design (see §11).
 - Binary UDP wire format (normative): [`docs/PROTOCOL_UDP.md`](docs/PROTOCOL_UDP.md)
 - DIS input mode — accepted PDU subset & mapping (normative):
   [`docs/PROTOCOL_DIS.md`](docs/PROTOCOL_DIS.md)
+- OLV2 input mode — per-track batched UDP wire format (normative):
+  [`docs/PROTOCOL_OLV2.md`](docs/PROTOCOL_OLV2.md)
 - WebSocket JSON format (normative): [`docs/PROTOCOL_WS.md`](docs/PROTOCOL_WS.md)
 
 ## Prerequisites
@@ -121,6 +127,11 @@ scripts/serve_frontend.sh 8000                            # then open http://loc
 # DIS mode requires it and it has no CLI flag)
 build/dist/backend/bin/olv_backend --config config/backend.toml --input-mode dis
 build/dist/simulator/bin/olv_sim --generate 100 --protocol dis   # emits DIS to port 47001
+
+# Or ingest OLV2 per-track batched updates instead (see docs/PROTOCOL_OLV2.md;
+# no required config key, unlike DIS — the mode flag alone is enough)
+build/dist/backend/bin/olv_backend --input-mode olv2
+build/dist/simulator/bin/olv_sim --generate 50 --protocol olv2 --rate 10   # emits OLV2 to port 47002
 
 # 5. Package the runtime images (refuses if build/dist doesn't match the last
 #    passing scripts/test.sh run — pass --untested to override)
@@ -189,11 +200,14 @@ falls back to defaults, so a bad deployment file never bricks the page.
 
 Configurable items include the backend's UDP/WebSocket bind addresses and
 ports, broadcast rate, object-expiry window, logging, and input mode
-(`[input] mode = "olv1" | "dis"` plus the DIS-only `dis_*` keys — see
-`docs/PROTOCOL_DIS.md` §8); the simulator's target host/port, data source
-(CSV path or synthetic generation), rate, chunking, seed, and wire protocol
-(`[send] protocol = "olv1" | "dis"`); and the frontend's default WebSocket
-host/port and display toggles (trails, labels, trail duration).
+(`[input] mode = "olv1" | "dis" | "olv2"` plus the DIS-only `dis_*` keys — see
+`docs/PROTOCOL_DIS.md` §8 — and the OLV2-only `olv2_bind`/`olv2_port` keys,
+default `0.0.0.0`/`47002` — see `docs/PROTOCOL_OLV2.md` §6); the simulator's
+target host/port, data source (CSV path or synthetic generation), rate,
+chunking, seed, and wire protocol (`[send] protocol = "olv1" | "dis" | "olv2"`,
+plus `olv2_points` = points per OLV2 datagram, default 10, range 1–25); and
+the frontend's default WebSocket host/port and display toggles (trails,
+labels, trail duration).
 
 The files are parsed by a small first-party TOML *subset* parser
 (`include/olv/toml.hpp`, mirrored in `frontend/js/toml.js`): comments,
@@ -211,7 +225,7 @@ build/dist/simulator/bin/olv_sim [options]
 |---|---|
 | `--csv PATH` | Replay a mission CSV file (see column format below) instead of synthesizing data. |
 | `--generate N` | Synthesize N tracked objects (up to `kMaxTrackedObjects` = 5000) plus a primary satellite instead of reading a CSV — used for load testing. |
-| `--protocol P` | Wire protocol: `olv1` (default, docs/PROTOCOL_UDP.md) or `dis` (IEEE 1278.1 Entity State PDUs, docs/PROTOCOL_DIS.md §9). With `dis` and no explicit `--port`, the destination port defaults to `47001` to match the backend's DIS default; the DIS-only settings (`dis_exercise_id`, `dis_site`, `dis_satellite_entity_id`) come from `config/simulator.toml`. |
+| `--protocol P` | Wire protocol: `olv1` (default, docs/PROTOCOL_UDP.md), `dis` (IEEE 1278.1 Entity State PDUs, docs/PROTOCOL_DIS.md §9), or `olv2` (per-track batched updates, docs/PROTOCOL_OLV2.md). With `dis`/`olv2` and no explicit `--port`, the destination port defaults to `47001`/`47002` to match the backend's respective default; the DIS-only settings (`dis_exercise_id`, `dis_site`, `dis_satellite_entity_id`) and the OLV2-only setting (`olv2_points`, points per datagram, default 10, range 1–25) come from `config/simulator.toml` — there are no `--dis-*`/`--olv2-*` flags. |
 | `--dest HOST` | UDP destination host/IP (e.g. `127.0.0.1`, or a container/compose service name such as `backend`). |
 | `--port N` | UDP destination port (matches the backend's `--udp-port`; protocol default `47000`). |
 | `--rate N` | Update rate in Hz (protocol target/default: 1 Hz). |
@@ -376,8 +390,10 @@ dependency, version, or asset changes. Contents and update checklist:
   object-type rejection, and wraparound-safe sequence-staleness rejection.
   Any failure drops the whole packet (never partially applied), increments a
   counter, and is logged — see `docs/PROTOCOL_UDP.md` §4 for the full,
-  normative ordered list (and `docs/PROTOCOL_DIS.md` §7 for the equivalent
-  ordered list in DIS input mode).
+  normative ordered list (`docs/PROTOCOL_DIS.md` §7 for the equivalent
+  ordered list in DIS input mode, and `docs/PROTOCOL_OLV2.md` §4 for OLV2,
+  which adds a stateful per-track staleness check after the structural
+  checks).
 
 ## Troubleshooting
 
@@ -427,7 +443,7 @@ dependency, version, or asset changes. Contents and update checklist:
 ├── tools/                               # ws_probe.cpp (integration-test WS client)
 │   └── simulator/                       # olv_sim (C++20), standalone-configurable
 ├── frontend/                            # plain HTML/CSS/JS, no frameworks
-├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
+├── docs/                                # PLAN, PROTOCOL_{UDP,DIS,OLV2,WS}, SBOM, features/, site/
 ├── config/                              # commented example backend.toml / simulator.toml
 ├── scripts/                             # build/test/package pipeline, run/serve helpers, integration test
 └── containers/                          # Dockerfile.builder/.backend/.simulator, Containerfile.frontend, compose.yaml

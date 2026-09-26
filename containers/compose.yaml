@@ -52,6 +52,13 @@ services:
     #   volumes:
     #     - ../config/backend.toml:/app/backend.toml:ro,Z
     #   command: ["--config", "/app/backend.toml"]
+    # Other input modes listen on their own UDP ports (DIS 47001, OLV2 47002 —
+    # docs/PROTOCOL_DIS.md, docs/PROTOCOL_OLV2.md), selected by the config
+    # file's [input] mode. For an OLV2 sender outside compose, set
+    # `mode = "olv2"` in the mounted file and add a port mapping:
+    #     - "47002:47002/udp"
+    # (the simulator below would then use
+    #  ["--generate", "50", "--protocol", "olv2", "--rate", "10", "--dest", "backend", "--duration", "0"]).
 
   frontend:
     build:

@@ -66,6 +66,56 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   <dd>CRC-32 (IEEE 802.3 reflected, zlib-compatible); compile-time table.</dd>
 </dl>
 
+<h3 id="protocol-olv2">olv/protocol_olv2.hpp — namespace <code>olv::proto::olv2</code></h3>
+<p>Header-only, wire format for the OLV2 per-track batched protocol
+(<a href="../reference/protocol-olv2.html">reference</a>). Reuses
+<code>proto::crc32</code>, the <code>proto::detail</code> byte helpers, <code>ObjectType</code>,
+<code>normalizeObjectType</code>, and <code>kMaxCoordinateMeters</code> from
+<code>olv/protocol.hpp</code> (not modified) rather than duplicating them.</p>
+<dl class="api">
+  <dt>constexpr limits</dt>
+  <dd><code>kMagic={'O','L','V','2'}</code>, <code>kVersion=1</code>,
+  <code>kHeaderSize=24</code>, <code>kPointSize=84</code>, <code>kCrcSize=4</code>,
+  <code>kMaxPoints=25</code>, <code>kMinPacketSize=112</code>,
+  <code>kMaxPacketSize=2128</code>.</dd>
+
+  <dt>enum class MsgType : uint8_t</dt>
+  <dd><code>kTrackUpdate=1</code>.</dd>
+
+  <dt>point flags</dt>
+  <dd><code>kPointSatHasVel=0x01</code>, <code>kPointTgtHasVel=0x02</code>; target flags reuse
+  <code>proto::kFlagHighlight</code>.</dd>
+
+  <dt>struct Point</dt>
+  <dd><code>t</code> (double, UTC epoch seconds), <code>flags</code>, <code>sat_px/py/pz</code>
+  and <code>tgt_px/py/pz</code> (double, ECEF m), <code>sat_vx/vy/vz</code> and
+  <code>tgt_vx/vy/vz</code> (float, m/s); <code>bool satHasVelocity() const</code>,
+  <code>bool tgtHasVelocity() const</code>.</dd>
+
+  <dt>struct TrackPacket</dt>
+  <dd><code>sequence</code> (per-datagram, diagnostic only — not used for staleness),
+  <code>track_id</code>, <code>sat_id</code>, <code>target_type</code>, <code>target_flags</code>,
+  <code>confidence</code> (0–100), <code>std::vector&lt;Point&gt; points</code>
+  (1..<code>kMaxPoints</code>, strictly ascending <code>t</code>).</dd>
+
+  <dt>std::vector&lt;uint8_t&gt; encode(const TrackPacket&amp;)</dt>
+  <dd>Serializes little-endian with trailing CRC-32; truncates beyond 25 points, clamps
+  confidence to 100, masks flags to their defined bits. Does not validate time ordering
+  (the receiver does).</dd>
+
+  <dt>DecodeError decode(const uint8_t* data, size_t len, TrackPacket&amp; out)</dt>
+  <dd>Stateless validation pipeline; returns <code>kNone</code> and fills <code>out</code>
+  only on full success. Error order:
+  <code>kTooShort, kTooLong, kBadMagic, kBadVersion, kBadMsgType, kBadPointCount,
+  kBadLength, kBadCrc, kNonFinite, kOutOfRange, kBadTime</code>. Per-track staleness
+  (item 11 of the spec) is <em>not</em> checked here — it's stateful and lives in
+  <code>Olv2InputSource</code>.</dd>
+
+  <dt>const char* toString(DecodeError)</dt>
+  <dd>snake_case reason strings, matching OLV1's <code>toString(DecodeError)</code> where the
+  reason is shared (e.g. <code>"bad_crc"</code>, <code>"out_of_range"</code>).</dd>
+</dl>
+
 <h3 id="toml-hpp">olv/toml.hpp — namespace <code>olv::toml</code></h3>
 <dl class="api">
   <dt>struct Value { Type type; std::string s; int64_t i; double f; bool b; }</dt>
@@ -94,20 +144,26 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
 <dl class="api">
   <dt>class InputSource { virtual void start(); virtual void stop(); }</dt>
   <dd>Strategy interface for the intake path; both methods idempotent. Implemented by
-  <code>Olv1InputSource</code> and <code>DisInputSource</code>; each owns a private
-  io_context + thread.</dd>
+  <code>Olv1InputSource</code>, <code>DisInputSource</code>, and <code>Olv2InputSource</code>;
+  each owns a private io_context + thread.</dd>
 
   <dt>std::unique_ptr&lt;InputSource&gt; makeInputSource(const Config&amp;, StateStore&amp;, Logger&amp;)</dt>
   <dd>Boot-time factory switching on <code>Config::input_mode</code>
-  (<code>kOlv1</code> default / <code>kDis</code>).</dd>
+  (<code>kOlv1</code> default / <code>kDis</code> / <code>kOlv2</code>).</dd>
 
   <dt>class StateStore</dt>
   <dd><code>StateStore(std::chrono::seconds expiry)</code>;
   <code>countReceived(bytes)</code>; <code>countDropped(DropKind)</code>;
   <code>ApplyResult apply(const StatePacket&amp;, wall_time, mono_time)</code>
-  (sequence gate, satellite replace, object upsert);
-  <code>Snapshot snapshot(mono_time)</code> (prune + full copy, objects sorted by
-  id). All methods take the single internal mutex.</dd>
+  (sequence gate, satellite replace, object upsert — OLV1/DIS only);
+  <code>void applyTrack(const TrackUpdate&amp;, wall_time, mono_time)</code> (OLV2 only,
+  additive: upserts the target row, replaces the satellite only if the update's sample
+  time is newer than the stored one, appends every trail point to a pending buffer capped
+  at <code>kMaxPendingTrailPoints = 125000</code>; no staleness check — the caller already
+  did it);
+  <code>Snapshot snapshot(mono_time)</code> (prune + full copy, objects sorted by id,
+  <em>and</em> drains the pending trail buffer into <code>Snapshot::trail_points</code>).
+  All methods take the single internal mutex.</dd>
 
   <dt>class Logger</dt>
   <dd><code>open(path, LogLevel, mirror_stderr)</code>;
@@ -124,8 +180,15 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   <dd>Public test seam: runs the full DIS pipeline without a live socket;
   <code>from</code> is used only in log lines.</dd>
 
+  <dt>Olv2InputSource::processDatagram(const uint8_t*, size_t, const std::string&amp; from)</dt>
+  <dd>Public test seam, same shape: runs one datagram through count &rarr;
+  <code>proto::olv2::decode</code> &rarr; per-track staleness &rarr; translate &rarr;
+  <code>applyTrack</code>, without a live socket; <code>from</code> is used only in log
+  lines.</dd>
+
   <dt>struct Config / parseArgs(argc, argv, error) / applyConfigFile(...)</dt>
-  <dd>Defaults &lt; TOML &lt; flags; strict schema; cross-field DIS invariant.
+  <dd>Defaults &lt; TOML &lt; flags; strict schema; cross-field DIS invariant (OLV2 has
+  none — every <code>olv2_*</code> key has a sensible default).
   Full key/flag tables: <a href="../reference/configuration.html">Configuration
   Reference</a> and <a href="../reference/cli.html">CLI Reference</a>.</dd>
 </dl>
@@ -135,7 +198,10 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   <dt>net.js — parseStateMessage(text) &rarr; {type, ...}</dt>
   <dd>Throws on any protocol violation (bad JSON, unknown type, row length &ne; 11,
   unknown category, partial velocity, hello protocolVersion &ne; 1). Categories map
-  1&rarr;debris, 2&rarr;star, 3&rarr;comet, 4&rarr;satellite, 5&rarr;groundHot.</dd>
+  1&rarr;debris, 2&rarr;star, 3&rarr;comet, 4&rarr;satellite, 5&rarr;groundHot. Also parses
+  the optional <code>trailPoints</code> array (present only in OLV2 mode): absent &rarr;
+  <code>[]</code>; present rows must be 5-element, all-finite, or the message is
+  rejected.</dd>
 
   <dt>net.js — createConnection({host, port, onState, onHello, onStatus, wsFactory})</dt>
   <dd><code>connect()</code>, <code>close()</code>, <code>setEndpoint(host, port)</code>
@@ -144,7 +210,8 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
 
   <dt>model.js — createModel()</dt>
   <dd><code>applyState(msg)</code>, <code>getSnapshot()</code> (incl.
-  <code>serverTime</code>), <code>getListRows(filter, cap=1000)</code>,
+  <code>serverTime</code> and <code>trailPoints</code>, default <code>[]</code>),
+  <code>getListRows(filter, cap=1000)</code>,
   <code>getCounts()</code>, <code>getStats()</code>,
   <code>secondsSinceLastState()</code>.</dd>
 
@@ -167,7 +234,9 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
   <dd><code>setSnapshot(snap)</code>, <code>setSettings(s)</code>,
   <code>setSelected(id|null)</code>, <code>frame(nowMs)</code>, <code>resize()</code>,
   <code>pick(x, y) &rarr; id|null</code> (12&nbsp;px radius, view-mode aware).
-  Throws if WebGL is unavailable.</dd>
+  Throws if WebGL is unavailable. <code>setSnapshot</code>'s <code>trailPoints</code> rows
+  (OLV2 only) feed a 512-sample server-fed trail per id, instead of the default
+  64-sample client-built ring.</dd>
 
   <dt>sat_camera.js</dt>
   <dd><code>satViewMatrix(posUnits, velUnits) &rarr; Float32Array(16)|null</code>
@@ -190,6 +259,12 @@ formats have their own <a href="../reference/protocol-udp.html">reference pages<
 </dl>
 
 <h2 id="test-api">Test framework (test/support/olv_test.hpp)</h2>
+<p>This first-party framework now backs only <code>olv_sim_tests</code> (incl.
+<code>test_olv2_builder.cpp</code>). <code>olv_backend_tests</code> — every file under
+<code>test/</code>, including the OLV2 files <code>test_protocol_olv2.cpp</code> and
+<code>test_olv2_input_source.cpp</code> — runs on GoogleTest (<code>TEST(Suite, case)</code>,
+<code>EXPECT_*</code>/<code>ASSERT_*</code>, <code>gtest_discover_tests</code>) instead, a
+repo-wide migration that predates OLV2.</p>
 <dl class="api">
   <dt>OLV_TEST(name) { ... }</dt>
   <dd>Declares, registers (static-init), and defines a test case.</dd>
@@ -225,6 +300,30 @@ pkt.object_total = 1;
 
 std::vector&lt;uint8_t&gt; wire = encode(pkt);   // 56 + 48 + 4 = 108 bytes
 // sendto(sock, wire.data(), wire.size(), ...) toward port 47000
+</code></pre>
+
+<h3 id="ex-encode-olv2">Encode and send an OLV2 track datagram (C++)</h3>
+<pre><code class="language-cpp">#include "olv/protocol_olv2.hpp"
+using namespace olv::proto::olv2;
+
+TrackPacket pkt;
+pkt.sequence = 1;
+pkt.track_id = 2001;         // becomes the WS object id
+pkt.sat_id = 1;
+pkt.target_type = 1;         // ObjectType::kDebris
+pkt.confidence = 95;
+
+Point p;
+p.t = 1790000000.125;        // UTC epoch seconds
+p.flags = kPointSatHasVel | kPointTgtHasVel;
+p.sat_px = 6921000.0; p.sat_py = 0.0;     p.sat_pz = 0.0;
+p.tgt_px = 6923371.4; p.tgt_py = 12000.0; p.tgt_pz = -55000.2;
+p.sat_vx = 0.f; p.sat_vy = 7600.f; p.sat_vz = 0.f;
+p.tgt_vx = 0.f; p.tgt_vy = 7611.f; p.tgt_vz = 0.f;
+pkt.points.push_back(p);      // 1..25 points per datagram; disjoint batches — never resend a point
+
+std::vector&lt;uint8_t&gt; wire = encode(pkt);   // 24 + 84*1 + 4 = 112 bytes
+// sendto(sock, wire.data(), wire.size(), ...) toward port 47002
 </code></pre>
 
 <h3 id="ex-parse">Consume the WebSocket feed (JavaScript, outside the app)</h3>

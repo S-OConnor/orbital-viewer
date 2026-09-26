@@ -463,3 +463,97 @@ TEST(Config, config_dis_unknown_key_rejected) {
   EXPECT_FALSE(applyConfigFile(tc.pathStr(), cfg, err));
   EXPECT_TRUE(err.find("input.dis_bogus") != std::string::npos);
 }
+
+// ---------------------------------------------------------------------------
+// [input] mode = "olv2" / olv2_* keys (docs/features/FEATURE_OLV2.md §5.4).
+// Flat keys under [input], same reasoning as the dis_* group above.
+// ---------------------------------------------------------------------------
+
+TEST(Config, config_input_mode_olv2_from_file) {
+  TempConfig tc("[input]\nmode = \"olv2\"\n");
+  Config cfg;
+  std::string err;
+  EXPECT_TRUE(applyConfigFile(tc.pathStr(), cfg, err));
+  EXPECT_EQ(cfg.input_mode, InputMode::kOlv2);
+}
+
+TEST(Config, config_input_mode_olv2_flag) {
+  auto argv = makeArgv({"--input-mode", "olv2"});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  EXPECT_TRUE(cfg.has_value());
+  EXPECT_EQ(cfg->input_mode, InputMode::kOlv2);
+}
+
+TEST(Config, config_olv2_full_group_sets_every_field) {
+  TempConfig tc(
+      "[input]\n"
+      "mode = \"olv2\"\n"
+      "olv2_bind = \"127.0.0.9\"\n"
+      "olv2_port = 47600\n");
+  Config cfg;
+  std::string err;
+  EXPECT_TRUE(applyConfigFile(tc.pathStr(), cfg, err));
+  EXPECT_EQ(err, std::string());
+  EXPECT_EQ(cfg.input_mode, InputMode::kOlv2);
+  EXPECT_EQ(cfg.olv2.bind_address, std::string("127.0.0.9"));
+  EXPECT_EQ(cfg.olv2.port, 47600);
+}
+
+TEST(Config, config_olv2_defaults_when_absent) {
+  TempConfig tc("[input]\nmode = \"olv1\"\n");
+  Config cfg;
+  const Config def;
+  std::string err;
+  EXPECT_TRUE(applyConfigFile(tc.pathStr(), cfg, err));
+  EXPECT_EQ(cfg.olv2.bind_address, def.olv2.bind_address);
+  EXPECT_EQ(cfg.olv2.bind_address, std::string("0.0.0.0"));
+  EXPECT_EQ(cfg.olv2.port, def.olv2.port);
+  EXPECT_EQ(cfg.olv2.port, 47002);
+}
+
+TEST(Config, config_olv2_port_wrong_type) {
+  TempConfig tc("[input]\nolv2_port = \"hi\"\n");
+  Config cfg;
+  std::string err;
+  EXPECT_FALSE(applyConfigFile(tc.pathStr(), cfg, err));
+  EXPECT_TRUE(err.find("input.olv2_port") != std::string::npos);
+  EXPECT_TRUE(err.find("integer") != std::string::npos);
+}
+
+TEST(Config, config_olv2_port_range) {
+  {
+    TempConfig tc("[input]\nolv2_port = 0\n");
+    Config cfg;
+    std::string err;
+    EXPECT_FALSE(applyConfigFile(tc.pathStr(), cfg, err));
+    EXPECT_TRUE(err.find("input.olv2_port") != std::string::npos);
+    EXPECT_TRUE(err.find("1-65535") != std::string::npos);
+  }
+  {
+    TempConfig tc("[input]\nolv2_port = 70000\n");
+    Config cfg;
+    std::string err;
+    EXPECT_FALSE(applyConfigFile(tc.pathStr(), cfg, err));
+    EXPECT_TRUE(err.find("input.olv2_port") != std::string::npos);
+    EXPECT_TRUE(err.find("1-65535") != std::string::npos);
+  }
+}
+
+TEST(Config, config_olv2_bind_wrong_type) {
+  TempConfig tc("[input]\nolv2_bind = 5\n");
+  Config cfg;
+  std::string err;
+  EXPECT_FALSE(applyConfigFile(tc.pathStr(), cfg, err));
+  EXPECT_TRUE(err.find("input.olv2_bind") != std::string::npos);
+  EXPECT_TRUE(err.find("string") != std::string::npos);
+}
+
+TEST(Config, config_input_mode_flag_invalid_olv2_typo_is_hard_error) {
+  auto argv = makeArgv({"--input-mode", "olv3"});
+  std::string err;
+  const auto cfg = parseArgs(static_cast<int>(argv.size()), argv.data(), err);
+  EXPECT_FALSE(cfg.has_value());
+  EXPECT_TRUE(err.find("input mode") != std::string::npos);
+  EXPECT_TRUE(err.find("olv3") != std::string::npos);
+}

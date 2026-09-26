@@ -44,8 +44,9 @@ error handling, class walkthroughs), see the
   <rect class="d-box" x="160" y="45" width="100" height="46"/>
   <text class="d-small" x="210" y="64" text-anchor="middle">frame_builder</text>
   <text class="d-small" x="210" y="79" text-anchor="middle">&le;128 obj/pkt</text>
-  <rect class="d-box" x="95" y="105" width="100" height="40"/>
-  <text class="d-small" x="145" y="129" text-anchor="middle">OLV1 / DIS encode</text>
+  <rect class="d-box" x="95" y="105" width="100" height="50"/>
+  <text class="d-small" x="145" y="124" text-anchor="middle">OLV1 / DIS /</text>
+  <text class="d-small" x="145" y="140" text-anchor="middle">OLV2 encode</text>
   <line class="d-line" x1="130" y1="68" x2="158" y2="68" marker-end="url(#arr2)"/>
   <line class="d-line" x1="210" y1="91" x2="160" y2="105" marker-end="url(#arr2)"/>
 
@@ -56,8 +57,9 @@ error handling, class walkthroughs), see the
   <rect class="d-box2" x="335" y="45" width="250" height="180"/>
   <text class="d-small" x="460" y="63" text-anchor="middle" font-weight="600">Thread 1 — input source (boot-selected)</text>
   <rect class="d-box" x="355" y="75" width="210" height="55"/>
-  <text class="d-small" x="460" y="96" text-anchor="middle">Olv1InputSource (default)</text>
-  <text class="d-small" x="460" y="112" text-anchor="middle">or DisInputSource (--input-mode dis)</text>
+  <text class="d-small" x="460" y="92" text-anchor="middle">Olv1InputSource (default)</text>
+  <text class="d-small" x="460" y="106" text-anchor="middle">or DisInputSource (--input-mode dis)</text>
+  <text class="d-small" x="460" y="120" text-anchor="middle">or Olv2InputSource (--input-mode olv2)</text>
   <rect class="d-box" x="355" y="150" width="210" height="55"/>
   <text class="d-small" x="460" y="171" text-anchor="middle">decode + validate</text>
   <text class="d-small" x="460" y="187" text-anchor="middle">CRC · NaN/Inf · range · staleness</text>
@@ -90,7 +92,7 @@ error handling, class walkthroughs), see the
 
   <!-- UDP arrow sim->backend -->
   <line class="d-line" x1="195" y1="125" x2="353" y2="102" marker-end="url(#arr2)"/>
-  <text class="d-mono" x="268" y="98" text-anchor="middle">UDP 47000/47001</text>
+  <text class="d-mono" x="268" y="98" text-anchor="middle">UDP 47000-47002</text>
 
   <!-- Browser -->
   <rect class="d-box2" x="320" y="420" width="560" height="185"/>
@@ -135,8 +137,10 @@ solid arrows are the main data path. This mirrors the normative Mermaid diagram 
   <tbody>
     <tr><td><code>olv_sim</code></td><td>C++20, Boost.Asio (socket only), open-dis-cpp</td>
         <td>Read a CSV mission or synthesize deterministic objects; group rows into
-        1&nbsp;Hz frames; chunk into &le;128-object packets; encode as OLV1 or DIS
-        and send over UDP at a paced rate.</td></tr>
+        1&nbsp;Hz frames; encode and send over UDP at a paced rate as OLV1 (chunked
+        into &le;128-object packets) or DIS (one PDU per entity) — or, in OLV2 mode,
+        batch each track's points (1&ndash;25 per datagram, <code>--protocol olv2</code>)
+        via <code>Olv2Batcher</code>.</td></tr>
     <tr><td><code>olv_backend</code></td><td>C++20, Boost.Asio + Beast, open-dis-cpp</td>
         <td>Receive datagrams on a dedicated thread; validate exhaustively; merge into
         the mutex-protected <code>StateStore</code>; broadcast JSON snapshots at 1&nbsp;Hz
@@ -161,18 +165,26 @@ solid arrows are the main data path. This mirrors the normative Mermaid diagram 
   <li><strong>Source:</strong> <code>olv_sim</code> produces one <em>frame</em> per update
   cycle (satellite state + object list). CSV rows sharing a <code>time_s</code> value form
   one frame; in generate mode, frames are computed analytically from circular-orbit math.</li>
-  <li><strong>Chunking:</strong> frames are split into packets of at most 128 objects
-  (<code>kMaxObjectsPerPacket</code>); each packet is self-contained and carries the
-  satellite state plus <code>object_total</code>, so packet loss never corrupts state.</li>
+  <li><strong>Chunking:</strong> in OLV1/DIS mode, frames are split into packets of at
+  most 128 objects (<code>kMaxObjectsPerPacket</code>); each packet is self-contained
+  and carries the satellite state plus <code>object_total</code>, so packet loss
+  never corrupts state. In OLV2 mode, chunking is per track instead of per frame:
+  each datagram carries one track's next 1&ndash;25 new, time-stamped points
+  (<code>olv2_points</code>); batches for different tracks are independent and a
+  sender never resends a point.</li>
   <li><strong>Transport:</strong> packets go out as UDP datagrams — OLV1 (little-endian,
-  CRC-32 trailer, port 47000) or DIS Entity State PDUs (big-endian, one PDU per
-  datagram, port 47001).</li>
+  CRC-32 trailer, port 47000), DIS Entity State PDUs (big-endian, one PDU per
+  datagram, port 47001), or OLV2 per-track batches (little-endian, CRC-32 trailer,
+  port 47002).</li>
   <li><strong>Validation:</strong> the backend's input thread runs the full ordered
   validation pipeline; any failure drops the entire packet, increments a per-reason
   counter, and is logged. Nothing is partially applied.</li>
-  <li><strong>State merge:</strong> accepted packets replace the satellite state
-  wholesale and upsert objects by id. Objects not refreshed within the expiry
-  window (default 15&nbsp;s) are pruned at snapshot time.</li>
+  <li><strong>State merge:</strong> accepted packets upsert objects by id. OLV1/DIS
+  packets replace the satellite state wholesale; OLV2 replaces it only when the
+  packet's newest point is newer than the sample already stored, since datagrams
+  for different tracks interleave. OLV2 additionally forwards every accepted point
+  to clients once as <code>trailPoints</code>. Objects not refreshed within the
+  expiry window (default 15&nbsp;s) are pruned at snapshot time.</li>
   <li><strong>Broadcast:</strong> every second (configurable up to 60&nbsp;Hz) the main
   thread takes a snapshot copy, serializes it once, and enqueues the shared string
   to every connected WebSocket session. Slow clients drop frames (never the
@@ -180,7 +192,8 @@ solid arrows are the main data path. This mirrors the normative Mermaid diagram 
   <li><strong>Render:</strong> the browser parses and validates each <code>state</code>
   message, stores the latest snapshot, and renders continuously at display refresh
   rate, interpolating the scene clock from <code>serverTime</code> for Sun/Moon/planet/
-  star positions.</li>
+  star positions and, for ids with <code>trailPoints</code>, drawing server-fed
+  trails at source sample rate instead of the 1&nbsp;Hz client-built default.</li>
 </ol>
 
 <h2 id="threading">Threading model (summary)</h2>
@@ -213,6 +226,10 @@ solid arrows are the main data path. This mirrors the normative Mermaid diagram 
     <tr><td>DIS (port 47001)</td><td>any DIS source &rarr; backend</td>
         <td>IEEE 1278.1 Entity State PDU, big-endian, versions 5–7</td>
         <td><code>docs/PROTOCOL_DIS.md</code> · <a href="../reference/protocol-dis.html">summary</a></td></tr>
+    <tr><td>OLV2 (port 47002)</td><td>sim &rarr; backend</td>
+        <td>Little-endian binary, 24&nbsp;B header + 84&nbsp;B/point + CRC-32; 1 track
+        and 1–25 time-stamped points per datagram</td>
+        <td><code>docs/PROTOCOL_OLV2.md</code> · <a href="../reference/protocol-olv2.html">summary</a></td></tr>
     <tr><td>WebSocket (port 8765)</td><td>backend &rarr; browser</td>
         <td>UTF-8 JSON text frames: <code>hello</code> once, then <code>state</code> @ 1&nbsp;Hz</td>
         <td><code>docs/PROTOCOL_WS.md</code> · <a href="../reference/protocol-ws.html">summary</a></td></tr>
@@ -235,12 +252,17 @@ solid arrows are the main data path. This mirrors the normative Mermaid diagram 
   <li><strong>Row-array JSON</strong> — object rows are 11-element arrays, roughly
   halving message size versus key/value objects at 5,000 objects (~450&nbsp;KB vs
   ~800&nbsp;KB per broadcast).</li>
-  <li><strong>Sequence-only staleness, no wire timestamps</strong> — receivers stamp
-  arrival time; a wraparound-safe signed-difference check rejects stale/duplicate
-  packets.</li>
-  <li><strong>Pluggable input source at one seam</strong> — the OLV1 and DIS paths are
-  strategy implementations behind the <code>InputSource</code> interface; everything
-  downstream of <code>StateStore</code> is identical in both modes.</li>
+  <li><strong>Per-protocol staleness, receiver-stamped arrival time</strong> — the
+  backend always stamps its own arrival time (it drives <code>lastDataTime</code> and
+  object expiry). Stale/duplicate rejection is protocol-specific: OLV1 carries no
+  wire timestamps and uses a wraparound-safe signed-difference check on the packet
+  sequence; DIS compares per-entity PDU timestamps; OLV2 compares each track's
+  first point time against the newest point already accepted for that track.</li>
+  <li><strong>Pluggable input source at one seam</strong> — the OLV1, DIS, and OLV2
+  paths are strategy implementations behind the <code>InputSource</code> interface;
+  everything downstream of <code>StateStore</code> is identical across all three
+  modes (OLV2 additionally populates the trail buffer that <code>snapshot()</code>
+  drains into <code>trailPoints</code>).</li>
   <li><strong>Loss tolerance without reassembly</strong> — each packet independently
   refreshes the satellite and merges its object chunk by id; there is no
   multi-packet reassembly state to corrupt.</li>

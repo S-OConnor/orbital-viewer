@@ -67,7 +67,7 @@ cmake --build build/container --target lint           # cppcheck
     <tr><td>Files</td><td>snake_case</td><td><code>state_store.cpp</code>, <code>dis_input_source.hpp</code></td></tr>
     <tr><td>JS functions/vars</td><td>camelCase; factories <code>createX</code></td><td><code>createRenderer</code>, <code>parseStateMessage</code></td></tr>
     <tr><td>JS constants</td><td>UPPER_SNAKE</td><td><code>SAT_FOV_DEG</code>, <code>STAR_CATALOG</code>, <code>TRAIL_CAP</code></td></tr>
-    <tr><td>TOML keys</td><td>snake_case, one table level</td><td><code>[input] dis_satellite_entity_id</code></td></tr>
+    <tr><td>TOML keys</td><td>snake_case, one table level</td><td><code>[input] dis_satellite_entity_id</code>, <code>[input] olv2_port</code></td></tr>
     <tr><td>CLI flags</td><td>kebab-case</td><td><code>--input-mode</code>, <code>--broadcast-hz</code></td></tr>
   </tbody>
 </table>
@@ -86,7 +86,9 @@ cmake --build build/container --target lint           # cppcheck
   GL only in the renderer cluster; the mutex only in <code>StateStore</code>.</li>
   <li><strong>Third-party isolation:</strong> open-dis-cpp headers are SYSTEM includes;
   its types don't leak past <code>dis_input_source.cpp</code> /
-  <code>dis_builder.cpp</code>.</li>
+  <code>dis_builder.cpp</code>. OLV2 needs no such isolation — it has no third-party
+  decoder; <code>protocol_olv2.hpp</code> is header-only first-party code that reuses
+  <code>protocol.hpp</code>'s CRC/byte helpers directly.</li>
   <li><strong>No exceptions for control flow:</strong> parse/validation paths return
   error enums or result structs; exceptions are reserved for constructor-time
   resource failures and third-party boundaries (caught immediately).</li>
@@ -99,8 +101,11 @@ cmake --build build/container --target lint           # cppcheck
   reference implementation, which wins on conflict.</li>
   <li><strong>Nontrivial features start as a frozen interface doc</strong> in
   <code>docs/features/</code> (see FEATURE_SATVIEW / FEATURE_SKY /
-  FEATURE_INPUT_SOURCES as templates) — module APIs, constants, and behavior are
-  agreed before implementation.</li>
+  FEATURE_INPUT_SOURCES / FEATURE_OLV2 as templates) — module APIs, constants, and
+  behavior are agreed before implementation. FEATURE_OLV2.md additionally records a
+  phased, multi-owner implementation plan (exclusive file ownership per owner, one
+  integration-review pass before docs) for scaling this same process across several
+  people working from the same frozen spec.</li>
   <li><strong>Comments state constraints, not narration.</strong> The codebase's
   best examples: the TOML grammar block in <code>toml.hpp</code>, the LOCKSTEP
   warning in <code>renderer.js</code>/<code>sat_camera.js</code>, the

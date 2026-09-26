@@ -80,7 +80,7 @@ backend broadcast rate (<code>--broadcast-hz</code>) up to 60&nbsp;Hz. 1&nbsp;Hz
 protocol's nominal target and what the UI's staleness heuristics assume; the
 integration test runs at 2&nbsp;Hz.</p>
 
-<h3 id="which-protocol">OLV1 or DIS — which input mode should I use?</h3>
+<h3 id="which-protocol">OLV1, DIS, or OLV2 — which input mode should I use?</h3>
 <p>Use <strong>OLV1</strong> (the default) with the bundled simulator: it is lossless
 and carries confidence, intensity, star types, and highlight flags. Use
 <strong>DIS</strong> when interoperating with existing IEEE&nbsp;1278.1 tooling.
@@ -89,11 +89,19 @@ confidence/intensity are fixed at 100/0, and the STAR category cannot be express
 (an entity type with no matching <code>(kind, domain)</code> row, including any that
 would be a star, decodes as UNKNOWN). See <a href="../reference/protocol-dis.html">the
 DIS reference</a>.</p>
+<p>Use <strong>OLV2</strong> when the source can batch several time-stamped samples
+per target into one datagram and you want trails drawn at the source sample rate
+instead of the default 1&nbsp;Hz client-built trails — each datagram carries one
+track plus the satellite (ownship) state for 1&ndash;25 points. OLV2 also has a
+documented loss: it has no intensity field on the wire, so every OLV2 target
+reports intensity 0. See <a href="../reference/protocol-olv2.html">the OLV2
+reference</a>.</p>
 
-<h3 id="both-modes">Can the backend listen for OLV1 and DIS at the same time?</h3>
+<h3 id="both-modes">Can the backend listen for more than one input mode at the same time?</h3>
 <p>No — the input source is a boot-time choice (<code>--input-mode</code> /
-<code>[input] mode</code>). Exactly one input source exists per process. Run two
-backend instances on different ports if you need both simultaneously.</p>
+<code>[input] mode</code>, one of <code>olv1</code>, <code>dis</code>, or
+<code>olv2</code>). Exactly one input source exists per process. Run multiple
+backend instances on different ports if you need more than one simultaneously.</p>
 
 <h2 id="dev-q">Development</h2>
 
@@ -110,9 +118,10 @@ runs entirely in the browser.</p>
 
 <h3 id="where-are-specs">Where are the authoritative protocol specs?</h3>
 <p>In the repository: <code>docs/PROTOCOL_UDP.md</code>, <code>docs/PROTOCOL_DIS.md</code>,
-<code>docs/PROTOCOL_WS.md</code> — with the further rule that the reference
-implementations (<code>include/olv/protocol.hpp</code>,
-<code>src/dis_input_source.cpp</code>, <code>src/json_writer.cpp</code>)
+<code>docs/PROTOCOL_OLV2.md</code>, <code>docs/PROTOCOL_WS.md</code> — with the further
+rule that the reference implementations (<code>include/olv/protocol.hpp</code>,
+<code>include/olv/protocol_olv2.hpp</code>, <code>src/dis_input_source.cpp</code>,
+<code>src/olv2_input_source.cpp</code>, <code>src/json_writer.cpp</code>)
 win over prose if they ever disagree. This site's
 <a href="../reference/protocol-udp.html">reference pages</a> summarize them.</p>
 

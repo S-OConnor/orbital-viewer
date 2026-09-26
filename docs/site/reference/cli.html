@@ -37,8 +37,10 @@ config-file values, regardless of argument order (two-pass parsing).</p>
     <tr><td><code>--log-level LVL</code></td><td>enum</td><td><code>info</code></td><td><code>debug|info|warn|error</code>, case-insensitive</td></tr>
     <tr><td><code>--expiry-seconds N</code></td><td>int</td><td><code>15</code></td><td>1–3600; object prune window</td></tr>
     <tr><td><code>--broadcast-hz X</code></td><td>float</td><td><code>1.0</code></td><td>&gt; 0 and &le; 60</td></tr>
-    <tr><td><code>--input-mode MODE</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis</code>; DIS additionally requires
-        <code>dis_satellite_entity_id</code> from a config file (no flag exists)</td></tr>
+    <tr><td><code>--input-mode MODE</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis|olv2</code>; DIS additionally requires
+        <code>dis_satellite_entity_id</code> from a config file (no flag exists); OLV2 needs no
+        required config key, just <code>olv2_bind</code>/<code>olv2_port</code> if the defaults
+        (<code>0.0.0.0</code>/<code>47002</code>) don't fit</td></tr>
     <tr><td><code>--quiet</code></td><td>flag</td><td>off</td><td>disable stderr mirroring (file logging unaffected)</td></tr>
     <tr><td><code>--help</code> / <code>-h</code></td><td>flag</td><td>—</td><td>print usage, exit 0</td></tr>
   </tbody>
@@ -56,11 +58,11 @@ port bind, fatal exception) · 2 bad arguments or config.</p>
     <tr><td><code>--generate N</code></td><td>int</td><td>—</td><td>1–5000 synthetic objects + primary satellite</td></tr>
     <tr><td><code>--config PATH</code></td><td>file</td><td>—</td><td>simulator.toml; flags win</td></tr>
     <tr><td><code>--dest HOST</code></td><td>string</td><td><code>127.0.0.1</code></td><td>IP or hostname (IPv4 preferred on resolve)</td></tr>
-    <tr><td><code>--port N</code></td><td>int</td><td><code>47000</code>; <code>47001</code> when <code>--protocol dis</code> and no explicit port</td><td>1–65535</td></tr>
+    <tr><td><code>--port N</code></td><td>int</td><td><code>47000</code>; <code>47001</code> when <code>--protocol dis</code>, or <code>47002</code> when <code>--protocol olv2</code>, and no explicit port</td><td>1–65535</td></tr>
     <tr><td><code>--rate HZ</code></td><td>float</td><td><code>1.0</code></td><td>&gt; 0 and &le; 50</td></tr>
     <tr><td><code>--loop</code></td><td>flag</td><td>off</td><td>CSV only: repeat forever</td></tr>
     <tr><td><code>--chunk N</code></td><td>int</td><td><code>128</code></td><td>1–128 objects/packet (OLV1 only); ~24 stays under one MTU</td></tr>
-    <tr><td><code>--protocol P</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis</code>; DIS emission params come from config/defaults (no <code>--dis-*</code> flags)</td></tr>
+    <tr><td><code>--protocol P</code></td><td>enum</td><td><code>olv1</code></td><td><code>olv1|dis|olv2</code>; DIS/OLV2 emission params come from config/defaults (no <code>--dis-*</code>/<code>--olv2-*</code> flags); OLV2 sends <code>[send] olv2_points</code> (default 10, 1&ndash;25) points per datagram</td></tr>
     <tr><td><code>--duration S</code></td><td>int</td><td><code>120</code></td><td>generate mode; &ge; 0, 0 = forever</td></tr>
     <tr><td><code>--seed N</code></td><td>int</td><td><code>1</code></td><td>0–4294967295; deterministic</td></tr>
     <tr><td><code>--quiet</code></td><td>flag</td><td>off</td><td>suppress per-cycle line (send errors still print)</td></tr>
@@ -214,6 +216,7 @@ node frontend/tests/validate_message.mjs FILE [--min-objects N]  # host
   <tbody>
     <tr><td><code>47000/udp</code></td><td>OLV1</td><td>backend OLV1 intake (simulator default destination)</td></tr>
     <tr><td><code>47001/udp</code></td><td>DIS</td><td>backend DIS intake (<code>--input-mode dis</code>)</td></tr>
+    <tr><td><code>47002/udp</code></td><td>OLV2</td><td>backend OLV2 intake (<code>--input-mode olv2</code>)</td></tr>
     <tr><td><code>8765/tcp</code></td><td>WebSocket</td><td>backend broadcast to browsers</td></tr>
     <tr><td><code>8000/tcp</code></td><td>HTTP</td><td>frontend (dev server / nginx container)</td></tr>
     <tr><td><code>8090/tcp</code></td><td>HTTP</td><td>this documentation site (<code>serve_docs.sh</code>)</td></tr>

@@ -31,11 +31,15 @@ repo's tooling supports today, and the assumptions involved.</p>
   and mirrored as <code>metadata.component.version</code> in both
   <code>sbom/*.cdx.json</code> files and the frontend's About text. These three must be bumped together.</li>
   <li><strong>Protocol versions</strong> are independent of the project version:
-  OLV1 wire version 1 (<code>kVersion</code> in <code>protocol.hpp</code>) and WS
+  OLV1 wire version 1 (<code>kVersion</code> in <code>protocol.hpp</code>), OLV2 wire
+  version 1 (<code>kVersion</code> in <code>protocol_olv2.hpp</code>, tracked separately
+  from OLV1's — the two protocols don't share a version counter), and WS
   <code>protocolVersion: 1</code>. They bump only on breaking layout changes;
   receivers reject unknown versions.</li>
   <li><strong>Feature versions</strong> (v0.3 sat-view, v0.4 sky) label additive
-  frontend feature specs in <code>docs/features/</code>, not releases.</li>
+  frontend feature specs in <code>docs/features/</code>, not releases — backend intake
+  features like DIS and OLV2 aren't labelled this way; they carry their own protocol
+  version instead (above).</li>
   <li><strong>Dependency pins:</strong> open-dis-cpp v1.2.0 is pinned by URL + SHA-256
   (<code>OPEN_DIS_VERSION</code>/<code>OPEN_DIS_SHA256</code> build args) in
   <code>containers/Dockerfile.builder</code> and echoed in
@@ -116,7 +120,10 @@ podman build -f containers/Containerfile.frontend -t olv-frontend:v0.2.0 .
   <tbody>
     <tr><td>New OLV1 message type</td><td>Old receivers reject it (<code>kBadMsgType</code>) — deploy receivers first</td><td>Interop callout</td></tr>
     <tr><td>OLV1 layout change</td><td>Wire version bump; mixed fleets stop interoperating</td><td>Breaking-change banner</td></tr>
+    <tr><td>New OLV2 message type</td><td>Old receivers reject it (<code>kBadMsgType</code>) — same rule as OLV1, deploy receivers first</td><td>Interop callout</td></tr>
+    <tr><td>OLV2 layout change (e.g. adding intensity)</td><td>Wire version bump; mixed fleets stop interoperating</td><td>Breaking-change banner</td></tr>
     <tr><td>WS JSON additive field</td><td>Frontend parser tolerates unknown <em>types</em>, but row shape is strict — additive object-row columns are <strong>breaking</strong></td><td>Breaking-change banner if rows change</td></tr>
+    <tr><td>WS <code>trailPoints</code> (new top-level key, OLV2)</td><td>Additive and optional; omitted (not <code>[]</code>) when there's nothing to report, so pre-existing OLV1/DIS frames stay byte-identical and old frontends (which ignore unknown keys) are unaffected</td><td>None — backward compatible</td></tr>
     <tr><td>New config key</td><td>Old configs keep working (defaults); <em>new</em> configs on old binaries fail (strict unknown-key)</td><td>Note minimum version for new keys</td></tr>
     <tr><td>Settings/localStorage shape</td><td>Coerce-with-default pattern means no migration needed for additive keys</td><td>None</td></tr>
   </tbody>
