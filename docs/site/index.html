@@ -70,11 +70,12 @@ DIS Entity State PDUs</a>, selected at boot.</p>
 </div>
 
 <h2 id="quick-start">60-second quick start</h2>
-<p>With Podman or Docker installed, one command brings up the whole stack
-(backend + looping example mission + nginx-served frontend):</p>
+<p>With Podman or Docker installed, build the images once, then one command brings up
+the whole stack (backend + looping example mission + nginx-served frontend):</p>
 <pre><code class="language-sh">git clone &lt;repo-url&gt; live-track-display-tool
 cd live-track-display-tool
-scripts/run_all.sh          # builds images on first run, waits for readiness
+scripts/build_all.sh        # builds + tests + packages the backend/simulator images
+scripts/run_all.sh --sim    # --sim also starts the simulator; waits for readiness
 # then open http://localhost:8000/
 </code></pre>
 <p>Prefer native binaries? See <a href="user-guide/installation.html#building-from-source">Building

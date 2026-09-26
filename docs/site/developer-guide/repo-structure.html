@@ -163,18 +163,26 @@ for an engineer's first day on the project.</p>
     <tr><td><code>docs/site/</code></td><td>This documentation website.</td></tr>
     <tr><td><code>config/</code></td><td>Commented example TOML configs matching built-in
         defaults.</td></tr>
-    <tr><td><code>scripts/</code></td><td><code>run_all.sh</code> (compose wrapper),
+    <tr><td><code>scripts/</code></td><td><code>build_builder.sh</code> /
+        <code>build.sh</code> / <code>test.sh</code> / <code>package.sh</code> /
+        <code>build_all.sh</code> (the container build/test/package pipeline),
+        <code>run_all.sh</code> (compose wrapper),
         <code>integration_test.sh</code>,
         <code>serve_frontend.sh</code>,
-        <code>make_example_csv.py</code>, <code>cleanup.sh</code>, <code>serve_docs.sh</code>.</td></tr>
+        <code>make_example_csv.py</code>, <code>cleanup.sh</code>, <code>serve_docs.sh</code>,
+        <code>_common.sh</code> (shared engine/compose detection, image names).</td></tr>
     <tr><td><code>containers/</code></td><td><code>Dockerfile.builder</code> (the
         Rocky Linux 10.2 build-environment image: toolchain + Boost + open-dis-cpp,
-        built once and pushed to a registry for offline builds),
-        <code>Dockerfile</code> (multi-stage; builds FROM the builder image, targets
-        <code>backend</code>, <code>simulator</code>, both Rocky Linux 10.2-minimal at
-        runtime), <code>Containerfile.frontend</code> (nginx), <code>compose.yaml</code>
-        (four services incl. an opt-in <code>builder</code> profile, bridge network,
-        port env vars).</td></tr>
+        built once by <code>scripts/build_builder.sh</code> and pushed to a registry for
+        offline builds), <code>Dockerfile.backend</code> / <code>Dockerfile.simulator</code>
+        (compile nothing — each just <code>COPY</code>s the binary
+        <code>scripts/build.sh</code> staged into <code>build/dist/&lt;component&gt;/</code>
+        into a Rocky Linux 10.2-minimal runtime image, built by
+        <code>scripts/package.sh</code>), <code>Containerfile.frontend</code> (nginx),
+        <code>compose.yaml</code> (backend/frontend/simulator services — backend and
+        simulator reference prebuilt images, only frontend is built by compose;
+        simulator is behind the <code>sim</code> profile, bridge network, port env
+        vars).</td></tr>
     <tr><td><code>sbom/</code></td><td>Hand-maintained CycloneDX 1.5 SBOMs (committed; edit
         directly per <code>docs/SBOM.md</code>).</td></tr>
   </tbody>

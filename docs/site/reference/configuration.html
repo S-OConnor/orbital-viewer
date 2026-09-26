@@ -117,10 +117,13 @@ the frontend is lenient (warn + defaults).</p>
     <tr><td><code>OLV_HTTP_PORT</code></td><td><code>compose.yaml</code> / <code>run_all.sh</code></td><td><code>8000</code></td><td>published host port &rarr; frontend container :80</td></tr>
     <tr><td><code>OLV_WS_PORT</code></td><td>same</td><td><code>8765</code></td><td>published host port &rarr; backend :8765</td></tr>
     <tr><td><code>OLV_UDP_PORT</code></td><td>same</td><td><code>47000</code></td><td>published host port &rarr; backend :47000/udp</td></tr>
+    <tr><td><code>OLV_ENGINE</code></td><td><code>scripts/_common.sh</code> (all scripts)</td><td>auto-detect (<code>podman</code> preferred)</td><td>container engine override, e.g. <code>docker</code></td></tr>
     <tr><td><code>OLV_COMPOSE</code></td><td><code>run_all.sh</code>, <code>cleanup.sh</code></td><td>auto-detect</td><td>compose command override (e.g. <code>"docker compose"</code>)</td></tr>
     <tr><td><code>OLV_OPEN_DIS_URL</code></td><td><code>Dockerfile.builder</code> build arg</td><td>GitHub release URL</td><td>mirror URL for the pinned tarball</td></tr>
-    <tr><td><code>OLV_BUILDER_IMAGE</code></td><td><code>compose.yaml</code> / <code>run_all.sh</code>, <code>Dockerfile</code> build arg</td><td><code>localhost/olv-builder:latest</code></td><td>prebuilt build-environment image to compile <code>backend</code>/<code>simulator</code> FROM</td></tr>
-    <tr><td><code>OLV_RUNTIME_IMAGE</code></td><td><code>compose.yaml</code>, <code>Dockerfile</code> build arg</td><td><code>docker.io/rockylinux/rockylinux:10.2-minimal</code></td><td>runtime base image for the <code>backend</code>/<code>simulator</code> stages</td></tr>
+    <tr><td><code>OLV_BUILDER_IMAGE</code></td><td><code>build.sh</code> / <code>test.sh</code> / <code>package.sh</code></td><td><code>localhost/olv-builder:latest</code></td><td>build-environment image to compile <code>backend</code>/<code>simulator</code> in (registry image skips <code>build_builder.sh</code> building it locally)</td></tr>
+    <tr><td><code>OLV_RUNTIME_IMAGE</code></td><td><code>package.sh</code>, <code>Dockerfile.backend</code>/<code>Dockerfile.simulator</code> build arg</td><td><code>docker.io/rockylinux/rockylinux:10.2-minimal</code></td><td>runtime base image for the <code>backend</code>/<code>simulator</code> images</td></tr>
+    <tr><td><code>OLV_BACKEND_IMAGE</code></td><td><code>package.sh</code>, <code>compose.yaml</code> / <code>run_all.sh</code></td><td><code>localhost/olv-backend:latest</code></td><td>backend runtime image tag/reference</td></tr>
+    <tr><td><code>OLV_SIM_IMAGE</code></td><td><code>package.sh</code>, <code>compose.yaml</code> / <code>run_all.sh</code></td><td><code>localhost/olv-sim:latest</code></td><td>simulator runtime image tag/reference</td></tr>
   </tbody>
 </table>
 </div>

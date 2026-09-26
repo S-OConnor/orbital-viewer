@@ -1,10 +1,10 @@
-# compose.yaml — run backend + frontend + simulator together.
+# compose.yaml — run backend + frontend (+ simulator with --profile sim).
 #
-# Usage (from the repo root):
-#   podman compose -f containers/compose.yaml up --build
-#   docker compose -f containers/compose.yaml up --build
+# Usage (from the repo root, after scripts/build_all.sh):
+#   podman compose -f containers/compose.yaml up                  # no simulator
+#   podman compose -f containers/compose.yaml --profile sim up    # with simulator
 #   # or the wrapper, which also waits for readiness and tears down on Ctrl-C:
-#   scripts/run_all.sh
+#   scripts/run_all.sh [--sim]
 #
 # Then open http://localhost:8000/ in a browser. The frontend's default
 # Settings -> WS host/port already points at localhost:8765, which is
@@ -16,16 +16,17 @@
 #   OLV_HTTP_PORT (default 8000). scripts/run_all.sh sets these from its
 #   --ws-port / --udp-port / --http-port flags.
 #
-# Build contexts are the repo root (".."), since the container files COPY
-# repo-relative paths (the whole tree for Dockerfile, scripts/ for
-# Dockerfile.builder, frontend/ for Containerfile.frontend).
+# Images: backend and simulator are NOT built by compose. They are the
+# runtime images produced by the build pipeline (scripts/build_all.sh, or
+# build_builder.sh -> build.sh -> test.sh -> package.sh), referenced by name:
+#   OLV_BACKEND_IMAGE (default localhost/olv-backend:latest)
+#   OLV_SIM_IMAGE     (default localhost/olv-sim:latest)
+# Set these to registry images to run prebuilt releases. Only the frontend
+# (static files, nothing compiled) is built here, from the repo root.
 #
-# Build environment: backend and simulator compile FROM the olv-builder image
-# (containers/Dockerfile.builder), which compose does not order before them.
-# Build it first via its opt-in profile (scripts/run_all.sh does this):
-#   podman compose -f containers/compose.yaml --profile builder build builder
-# or use one pulled from your registry by setting OLV_BUILDER_IMAGE (and
-# OLV_RUNTIME_IMAGE for the runtime base) before `up --build`.
+# Simulator: behind the "sim" profile, so a plain `up` runs backend + frontend
+# only and waits for real input. Add `--profile sim` (scripts/run_all.sh --sim)
+# to also replay the example mission into the backend.
 #
 # Networking: compose creates an internal network for these services by
 # default; the simulator reaches the backend by its service name ("backend")
@@ -33,29 +34,14 @@
 # between simulator and backend, only backend<->host and frontend<->host are
 # published below.
 #
-# Air-gap: all three images must be built (or already present) locally first
-# — see containers/Dockerfile.builder, containers/Dockerfile and
-# containers/Containerfile.frontend for their base-image/mirror notes. No
+# Air-gap: all images must be built (or already present) locally first — see
+# containers/Dockerfile.builder, Dockerfile.backend, Dockerfile.simulator and
+# Containerfile.frontend for their base-image/mirror notes. No
 # service reaches the internet at runtime.
 
 services:
-  # Build-only: the olv-builder image (toolchain + Boost + open-dis-cpp) that
-  # backend/simulator compile FROM. Behind a profile so `up` never runs it.
-  builder:
-    profiles: ["builder"]
-    image: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
-    build:
-      context: ..
-      dockerfile: containers/Dockerfile.builder
-
   backend:
-    build:
-      context: ..
-      dockerfile: containers/Dockerfile
-      target: backend
-      args:
-        OLV_BUILDER_IMAGE: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
-        OLV_RUNTIME_IMAGE: ${OLV_RUNTIME_IMAGE:-docker.io/rockylinux/rockylinux:10.2-minimal}
+    image: ${OLV_BACKEND_IMAGE:-localhost/olv-backend:latest}
     ports:
       - "${OLV_WS_PORT:-8765}:8765"
       - "${OLV_UDP_PORT:-47000}:47000/udp"
@@ -77,13 +63,8 @@ services:
       - olv-net
 
   simulator:
-    build:
-      context: ..
-      dockerfile: containers/Dockerfile
-      target: simulator
-      args:
-        OLV_BUILDER_IMAGE: ${OLV_BUILDER_IMAGE:-localhost/olv-builder:latest}
-        OLV_RUNTIME_IMAGE: ${OLV_RUNTIME_IMAGE:-docker.io/rockylinux/rockylinux:10.2-minimal}
+    image: ${OLV_SIM_IMAGE:-localhost/olv-sim:latest}
+    profiles: ["sim"]
     depends_on:
       - backend
     # Replay the bundled example mission on loop (the CSV is baked into the

@@ -59,49 +59,65 @@ how it builds and installs open-dis-cpp (the <code>OPEN_DIS_*</code> step). This
 path has no documented step-by-step; the container is the supported workflow.</div>
 
 <h2 id="building-from-source">Building the binaries</h2>
-<pre><code class="language-sh"># 1. Build the build-environment image once (or pull a prebuilt one — see
-#    OLV_BUILDER_IMAGE under Container environment variables below)
-docker build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
+<pre><code class="language-sh"># 1. Build the build-environment image once (or point OLV_BUILDER_IMAGE at a
+#    prebuilt/registry image and skip this — see Container environment
+#    variables below)
+scripts/build_builder.sh
 
-# 2. Build + test inside it — binaries land in ./build-docker on the host
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
-  sh -c 'cmake -S . -B build-docker -DCMAKE_BUILD_TYPE=Release && cmake --build build-docker -j"$(nproc)" && ctest --test-dir build-docker --output-on-failure'
+# 2. Compile + install into build/dist/{backend,simulator} (tests included,
+#    Release by default; runs offline, --network none)
+scripts/build.sh
+
+# 3. Run the test suite against that build tree (nothing is recompiled)
+scripts/test.sh
 
 # frontend logic tests run on the host (optional):
 node --test "frontend/tests/*.test.mjs"
+
+# Steps 1-3 (plus packaging, step 4-5 below) in one go, stopping at the
+# first failure:
+scripts/build_all.sh
 </code></pre>
-<div class="note">With <strong>Podman</strong>, drop <code>--user</code> — rootless
-Podman already maps the container's root user to you; add <code>:z</code> to the
-volume flag on SELinux hosts. <code>ctest</code> passes all three suites inside the
+<div class="note"><code>scripts/test.sh</code> passes all three suites inside the
 image; the integration test's frontend-parser sub-check is skipped there since
-Node isn't installed in <code>olv-builder</code> (run <code>ctest</code> on the host
-against the same <code>build-docker</code> tree, where Node is available, to
-exercise it).</div>
+Node isn't installed in <code>olv-builder</code> (run <code>ctest --test-dir
+build/container</code> on the host against the same build tree, where Node is
+available, to exercise it). <code>scripts/build.sh --clean</code> deletes
+<code>build/container</code> and <code>build/dist</code> first;
+<code>--debug</code> switches to <code>CMAKE_BUILD_TYPE=Debug</code>.</div>
 <p>Binaries land at:</p>
 <ul>
-  <li><code>build-docker/olv_backend</code> — the server</li>
-  <li><code>build-docker/olv_ws_probe</code> — test-support WebSocket capture client</li>
-  <li><code>build-docker/tools/simulator/olv_sim</code> — the simulator</li>
+  <li><code>build/dist/backend/bin/olv_backend</code> — the server</li>
+  <li><code>build/dist/simulator/bin/olv_sim</code> — the simulator</li>
+  <li><code>build/dist/simulator/share/olv/data/example_mission.csv</code> — the
+  bundled example mission, staged alongside the simulator</li>
+  <li><code>build/container/olv_ws_probe</code> — test-support WebSocket capture
+  client; not installed, so it only ever lives in the CMake build tree</li>
 </ul>
 <p>They need only glibc and libstdc++ to run (Boost is header-only, open-dis is
 linked statically), so they run directly on a compatible Linux host with no
 container involved at runtime; if the host's glibc is incompatible, run them the
-same way via <code>docker run</code>.</p>
-<p>Useful configure options (details in
+same way via <code>docker</code>/<code>podman run</code> (the pattern
+<code>scripts/build.sh</code> itself uses — see
+<code>scripts/_common.sh</code>'s <code>olv_builder_run</code>).</p>
+<p>Useful configure options, set via <code>scripts/build.sh</code>'s flags or by
+running <code>cmake</code> directly inside the container (details in
 <a href="../developer-guide/build-system.html">Build System</a>):</p>
 <div class="table-wrap">
 <table>
   <thead><tr><th>Option</th><th>Default</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>-DCMAKE_BUILD_TYPE</code></td><td><code>Release</code> (when unset)</td><td>optimization level</td></tr>
+    <tr><td><code>-DCMAKE_BUILD_TYPE</code></td><td><code>Release</code> (<code>scripts/build.sh --debug</code> for Debug)</td><td>optimization level</td></tr>
     <tr><td><code>-DOLV_BUILD_TESTS</code></td><td><code>ON</code></td><td>build unit tests + enable CTest</td></tr>
     <tr><td><code>-DOLV_WERROR</code></td><td><code>OFF</code></td><td>treat warnings as errors</td></tr>
     <tr><td><code>-DCMAKE_PREFIX_PATH=DIR</code></td><td>—</td><td>nonstandard open-dis-cpp install location (native build only; not needed inside <code>olv-builder</code>)</td></tr>
   </tbody>
 </table>
 </div>
-<p>There is no <code>make install</code> / packaging step: the deliverables are the two
-binaries plus the static <code>frontend/</code> directory.</p>
+<p>Packaging is a separate step (<code>scripts/package.sh</code>, §<a
+href="#containers">Container installation</a>) — <code>scripts/build.sh</code>'s own
+deliverable is the staged <code>build/dist/</code> tree plus the static
+<code>frontend/</code> directory.</p>
 
 <h2 id="containers">Container installation</h2>
 
@@ -109,40 +125,55 @@ binaries plus the static <code>frontend/</code> directory.</p>
 <pre><code class="language-sh">scripts/run_all.sh
 # then open http://localhost:8000/
 </code></pre>
-<p>This brings up all three services from <code>containers/compose.yaml</code> — the
-backend, the simulator replaying the example mission on loop at 1&nbsp;Hz, and the
-frontend served by nginx. It builds images on first run, waits until the backend
-accepts WebSocket connections (up to 30&nbsp;s), prints the URLs, then streams
-logs. A single <kbd>Ctrl-C</kbd> stops and removes the whole stack.</p>
-<pre><code class="language-sh">scripts/run_all.sh --build              # force image rebuild after code changes
+<p>This brings up the backend and frontend from <code>containers/compose.yaml</code>,
+using the <code>localhost/olv-backend</code>/<code>localhost/olv-sim</code> images
+already built by the pipeline below (or registry images, if
+<code>OLV_BACKEND_IMAGE</code>/<code>OLV_SIM_IMAGE</code> point at one) — it never
+compiles anything itself. It waits until the backend accepts WebSocket connections
+(up to 30&nbsp;s), prints the URLs, then streams logs. A single <kbd>Ctrl-C</kbd>
+stops and removes the whole stack.</p>
+<pre><code class="language-sh">scripts/run_all.sh --sim                # also start the simulator (replays the
+                                         # example mission on loop at 1 Hz)
+scripts/run_all.sh --build              # run scripts/build_all.sh first, then start
 scripts/run_all.sh --http-port 9000     # remap published host ports
 scripts/run_all.sh --ws-port 9765 --udp-port 48000
 </code></pre>
+<div class="note">Without <code>--sim</code>, only the backend and frontend come up
+and the page waits for real input — the simulator sits behind the compose
+<code>sim</code> profile.</div>
 
 <h3 id="manual-images">Building images manually</h3>
-<p>The build-environment image below is the same <code>olv-builder</code> image used to
-build the binaries directly in <a href="#building-from-source">Building the
-binaries</a> above.</p>
-<pre><code class="language-sh"># build-environment image (toolchain + Boost + open-dis-cpp) that backend/simulator
-# compile FROM — build once, or point OLV_BUILDER_IMAGE at a registry copy:
-podman build -f containers/Dockerfile.builder -t localhost/olv-builder:latest .
+<p>The five-step pipeline behind <code>scripts/run_all.sh --build</code>, spelled out
+(all via <code>scripts/build_all.sh</code>, or run individually):</p>
+<pre><code class="language-sh"># 1. build-environment image (toolchain + Boost + open-dis-cpp) — build once,
+#    or point OLV_BUILDER_IMAGE at a registry copy:
+scripts/build_builder.sh
 
-podman build -f containers/Dockerfile --target backend   -t olv-backend .
-podman build -f containers/Dockerfile --target simulator -t olv-sim .
-podman build -f containers/Containerfile.frontend -t olv-frontend .
+# 2. compile backend + simulator + tests inside it, stage the runtime files:
+scripts/build.sh
 
-# or all three via compose (docker compose works identically); this also
-# builds olv-builder first via its opt-in profile:
-podman compose -f containers/compose.yaml --profile builder build builder
-podman compose -f containers/compose.yaml up --build
+# 3. run the test suite against that build tree:
+scripts/test.sh
+
+# 4-5. build the backend/simulator runtime images from the staged trees
+#    (refuses if build/dist doesn't match the last passing test.sh run):
+scripts/package.sh
+
+# frontend image is built by compose itself, from the repo root:
+podman compose -f containers/compose.yaml build frontend
 </code></pre>
-<p>Image facts: backend/simulator compile in the <code>olv-builder</code>
-build-environment image (Rocky Linux 10.2 + gcc-c++/cmake/boost-devel/open-dis-cpp)
-and run in a Rocky Linux 10.2-minimal stage as non-root UID 10001 (no packages
-installed at runtime — Boost is header-only, open-dis is linked statically); the
-frontend image is nginx:alpine-slim serving <code>frontend/</code> at the web root with
-<code>docs/</code> copied in alongside it so in-app About links resolve. The build
-context excludes host build artifacts via <code>.dockerignore</code>.</p>
+<p>Image facts: backend/simulator compile inside the <code>olv-builder</code>
+build-environment image (Rocky Linux 10.2 + gcc-c++/cmake/boost-devel/open-dis-cpp,
+via <code>scripts/build.sh</code>, not a Dockerfile <code>RUN</code>) and the runtime
+images (<code>containers/Dockerfile.backend</code>/<code>Dockerfile.simulator</code>)
+just <code>COPY</code> the staged binary in, running in a Rocky Linux 10.2-minimal
+stage as non-root UID 10001 (no packages installed at runtime — Boost is header-only,
+open-dis is linked statically); the frontend image is nginx:alpine-slim serving
+<code>frontend/</code> at the web root with <code>docs/</code> copied in alongside it
+so in-app About links resolve. Each build context is scoped to what that image
+needs — <code>build/dist/backend/</code>, <code>build/dist/simulator/</code>, or the
+repo root for the frontend — and host build artifacts are excluded via
+<code>.dockerignore</code>.</p>
 
 <h3 id="env-vars">Container environment variables</h3>
 <div class="table-wrap">
@@ -152,10 +183,13 @@ context excludes host build artifacts via <code>.dockerignore</code>.</p>
     <tr><td><code>OLV_HTTP_PORT</code></td><td>8000</td><td>published host port for the frontend (container port 80)</td></tr>
     <tr><td><code>OLV_WS_PORT</code></td><td>8765</td><td>published host port for the WebSocket (container port 8765)</td></tr>
     <tr><td><code>OLV_UDP_PORT</code></td><td>47000</td><td>published host port for OLV1 UDP ingest (container port 47000/udp)</td></tr>
+    <tr><td><code>OLV_ENGINE</code></td><td>auto-detect (<code>podman</code> preferred)</td><td>container engine override, e.g. <code>docker</code></td></tr>
     <tr><td><code>OLV_COMPOSE</code></td><td>auto-detect</td><td>compose command override, e.g. <code>"docker compose"</code></td></tr>
     <tr><td><code>OLV_OPEN_DIS_URL</code></td><td>GitHub release</td><td>mirror URL for the open-dis-cpp tarball (<code>Dockerfile.builder</code> build arg)</td></tr>
-    <tr><td><code>OLV_BUILDER_IMAGE</code></td><td><code>localhost/olv-builder:latest</code></td><td>prebuilt build-environment image to compile <code>backend</code>/<code>simulator</code> FROM (registry image skips building it locally)</td></tr>
-    <tr><td><code>OLV_RUNTIME_IMAGE</code></td><td><code>docker.io/rockylinux/rockylinux:10.2-minimal</code></td><td>runtime base image for the <code>backend</code>/<code>simulator</code> stages</td></tr>
+    <tr><td><code>OLV_BUILDER_IMAGE</code></td><td><code>localhost/olv-builder:latest</code></td><td>build-environment image <code>scripts/build.sh</code>/<code>test.sh</code>/<code>package.sh</code> run against (registry image skips <code>build_builder.sh</code> building it locally)</td></tr>
+    <tr><td><code>OLV_RUNTIME_IMAGE</code></td><td><code>docker.io/rockylinux/rockylinux:10.2-minimal</code></td><td>runtime base image for the <code>backend</code>/<code>simulator</code> images</td></tr>
+    <tr><td><code>OLV_BACKEND_IMAGE</code></td><td><code>localhost/olv-backend:latest</code></td><td>backend runtime image <code>scripts/package.sh</code> tags / <code>compose.yaml</code> and <code>run_all.sh</code> run</td></tr>
+    <tr><td><code>OLV_SIM_IMAGE</code></td><td><code>localhost/olv-sim:latest</code></td><td>simulator runtime image, same role as <code>OLV_BACKEND_IMAGE</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -165,26 +199,32 @@ container-internal ports are fixed. <code>run_all.sh</code> sets them from its
 
 <h2 id="air-gapped">Air-gapped installation</h2>
 <ol>
-  <li>On a connected machine, build <code>containers/Dockerfile.builder</code> once
+  <li>On a connected machine, run <code>scripts/build_builder.sh</code> once
   (mirror the <code>dnf</code> repos, and pass the open-dis-cpp tarball mirror as
   <code>--build-arg OLV_OPEN_DIS_URL=...</code>; the pinned SHA-256 is still
   enforced), then
-  push the image to an internal registry along with a mirrored
-  <code>rockylinux:10.2-minimal</code> and <code>nginx:alpine-slim</code>.</li>
-  <li>On the offline machine, pull those images and point the build at them —
+  push the resulting <code>olv-builder</code> image to an internal registry along
+  with a mirrored <code>rockylinux:10.2-minimal</code> and <code>nginx:alpine-slim</code>.</li>
+  <li>On the offline machine, pull those images and point the pipeline at them —
   <code>OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:1.0.0</code> (and
-  <code>OLV_RUNTIME_IMAGE=...</code> for the runtime base) — see
-  <a href="#env-vars">Container environment variables</a>.</li>
+  <code>OLV_RUNTIME_IMAGE=...</code> for the runtime base) — then run
+  <code>scripts/build.sh</code>, <code>scripts/test.sh</code>, and
+  <code>scripts/package.sh</code> as usual; all three already run with
+  <code>--network none</code>. See <a href="#env-vars">Container environment
+  variables</a>.</li>
+  <li>Push the resulting <code>olv-backend</code>/<code>olv-sim</code> images with a
+  normal <code>podman tag</code>/<code>push</code>; to run registry images instead of
+  local ones, set <code>OLV_BACKEND_IMAGE</code>/<code>OLV_SIM_IMAGE</code> before
+  <code>scripts/run_all.sh</code>.</li>
   <li>Nothing else touches the network — at runtime the stack is fully offline. (A
   native/advanced build has the same open-dis-cpp tarball requirement; see the note
   under <a href="#prerequisites">Prerequisites</a>.)</li>
 </ol>
 
 <h2 id="verify">Verifying the installation</h2>
-<pre><code class="language-sh">./build-docker/olv_backend --help        # prints usage, exit 0
-./build-docker/tools/simulator/olv_sim --help
-docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
-  sh -c 'ctest --test-dir build-docker --output-on-failure'
+<pre><code class="language-sh">build/dist/backend/bin/olv_backend --help        # prints usage, exit 0
+build/dist/simulator/bin/olv_sim --help
+scripts/test.sh
 </code></pre>
 <p>Expected: <code>backend_unit</code>, <code>sim_unit</code>, and <code>integration</code>
 all pass (integration takes up to ~40&nbsp;s and requires free ephemeral ports).

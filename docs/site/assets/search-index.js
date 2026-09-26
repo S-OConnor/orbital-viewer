@@ -1116,6 +1116,41 @@ window.SEARCH_INDEX = [
 {
 "page": "reference/cli",
 "title": "Command-Line Reference",
+"section": "scripts/build_builder.sh",
+"anchor": "build-builder",
+"text": "Command-Line Reference scripts/build_builder.sh"
+},
+{
+"page": "reference/cli",
+"title": "Command-Line Reference",
+"section": "scripts/build.sh",
+"anchor": "build",
+"text": "Command-Line Reference scripts/build.sh"
+},
+{
+"page": "reference/cli",
+"title": "Command-Line Reference",
+"section": "scripts/test.sh",
+"anchor": "test",
+"text": "Command-Line Reference scripts/test.sh"
+},
+{
+"page": "reference/cli",
+"title": "Command-Line Reference",
+"section": "scripts/package.sh",
+"anchor": "package",
+"text": "Command-Line Reference scripts/package.sh"
+},
+{
+"page": "reference/cli",
+"title": "Command-Line Reference",
+"section": "scripts/build_all.sh",
+"anchor": "build-all",
+"text": "Command-Line Reference scripts/build_all.sh"
+},
+{
+"page": "reference/cli",
+"title": "Command-Line Reference",
 "section": "scripts/run_all.sh",
 "anchor": "run-all",
 "text": "Command-Line Reference scripts/run_all.sh"

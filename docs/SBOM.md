@@ -182,8 +182,9 @@ Edit `sbom/*.cdx.json` (and bump `metadata.timestamp`) whenever:
 [`syft`](https://github.com/anchore/syft) can generate CycloneDX SBOMs by
 scanning the filesystem/container image directly and is a reasonable
 alternative where available (e.g. `syft dir:. -o cyclonedx-json`), including
-against the built container images from `containers/Dockerfile` (and
-`containers/Dockerfile.builder`) and `containers/Containerfile.frontend`.
+against the built container images from `containers/Dockerfile.backend`,
+`containers/Dockerfile.simulator` (and `containers/Dockerfile.builder`) and
+`containers/Containerfile.frontend`.
 Its output is a useful cross-check, but the
 hand-maintained files in `sbom/` remain canonical: they encode
 project-specific knowledge a scanner can't infer (e.g. "Boost is header-only,

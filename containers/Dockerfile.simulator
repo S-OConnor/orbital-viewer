@@ -1,0 +1,38 @@
+# Dockerfile.simulator — olv_sim runtime image. Compiles nothing: it wraps
+# the binary that scripts/build.sh built (and scripts/test.sh tested) inside
+# olv-builder, plus the example mission data.
+#
+# Build context is the staged install tree, not the repo root:
+#   scripts/package.sh simulator
+# which runs:
+#   podman build -f containers/Dockerfile.simulator \
+#       --build-arg OLV_BUILDER_IMAGE=localhost/olv-builder:latest \
+#       -t localhost/olv-sim:latest build/dist/simulator
+# (docker build accepts the same flags.)
+#
+# Run:
+#   podman run --rm --network host localhost/olv-sim --dest 127.0.0.1 --port 47000
+#
+# Same runtime base and rationale as containers/Dockerfile.backend: glibc and
+# libstdc++ come with rockylinux 10.2-minimal, open-dis-cpp is static, and its
+# license is copied from olv-builder.
+
+ARG OLV_BUILDER_IMAGE=localhost/olv-builder:latest
+ARG OLV_RUNTIME_IMAGE=docker.io/rockylinux/rockylinux:10.2-minimal
+
+FROM ${OLV_BUILDER_IMAGE} AS builder
+
+FROM ${OLV_RUNTIME_IMAGE}
+
+RUN groupadd --gid 10001 olv && \
+    useradd --uid 10001 --gid olv --no-create-home --shell /usr/sbin/nologin olv
+
+COPY --from=builder /usr/local/share/doc/open-dis-cpp/ /usr/share/licenses/open-dis-cpp/
+COPY bin/olv_sim /app/olv_sim
+COPY share/olv/data/ /app/data/
+
+USER 10001
+WORKDIR /app
+
+ENTRYPOINT ["/app/olv_sim"]
+CMD ["--generate", "1000", "--dest", "backend", "--port", "47000", "--rate", "1", "--duration", "0"]

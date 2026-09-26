@@ -22,6 +22,9 @@ target_link_libraries(olv_net PUBLIC olv_core PRIVATE olv_warnings)
 
 add_executable(olv_backend main.cpp)
 target_link_libraries(olv_backend PRIVATE olv_net olv_warnings)
-# Keep the binary at build/olv_backend (docs, scripts, containers/Dockerfile).
+# Keep the binary at build/olv_backend (docs, scripts).
 set_target_properties(olv_backend PROPERTIES
   RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
+# `cmake --install <build> --component backend` stages the runtime image's
+# contents (scripts/build.sh -> build/dist/backend, containers/Dockerfile.backend).
+install(TARGETS olv_backend RUNTIME DESTINATION bin COMPONENT backend)

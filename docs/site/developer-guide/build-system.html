@@ -28,10 +28,11 @@ targets at the bottom. There is no separate <code>cmake/</code> directory —
 <code>tools/simulator/</code> inlines its own minimal copy of the same settings so it
 stays independently configurable. The frontend has no build step at all. The commands
 on this page assume the CMake configure/build happens inside the <code>olv-builder</code>
-container image (<code>containers/Dockerfile.builder</code>) via
-<code>docker run ... cmake ...</code> — see
+container image (<code>containers/Dockerfile.builder</code>), which is what
+<code>scripts/build.sh</code> does under the hood (<code>docker</code>/<code>podman
+run</code>, repo bind-mounted at <code>/src</code>, offline) — see
 <a href="../user-guide/installation.html#building-from-source">Installation: Building
-the binaries</a> for the exact invocation; a native toolchain also works (advanced,
+the binaries</a> for the full pipeline; a native toolchain also works (advanced,
 unsupported) if you already have Boost and an OpenDIS CMake package on
 <code>CMAKE_PREFIX_PATH</code>.</p>
 
@@ -144,9 +145,16 @@ package and the search paths tried.</p>
   with the three target file paths, 120&nbsp;s timeout, label <code>integration</code>.</li>
   <li><code>olv_backend</code>, <code>olv_ws_probe</code> and <code>olv_backend_tests</code>
   set <code>RUNTIME_OUTPUT_DIRECTORY</code> to the build root, so they still land at
-  <code>&lt;build-dir&gt;/olv_backend</code> etc. (<code>build-docker/</code> in the
+  <code>&lt;build-dir&gt;/olv_backend</code> etc. (<code>build/container/</code> in the
   documented container workflow); <code>olv_sim</code> lands in
-  <code>&lt;build-dir&gt;/tools/simulator/</code>.</li>
+  <code>&lt;build-dir&gt;/tools/simulator/</code>. <code>scripts/build.sh</code> then
+  runs <code>cmake --install --component backend|simulator</code> to stage the two
+  runtime binaries (plus the simulator's example CSV) into
+  <code>build/dist/backend/</code>/<code>build/dist/simulator/</code> — see
+  <code>install(TARGETS ... COMPONENT ...)</code> in <code>src/CMakeLists.txt</code> and
+  <code>tools/simulator/CMakeLists.txt</code>. <code>olv_ws_probe</code> and
+  <code>olv_backend_tests</code> have no install rule and stay in
+  <code>build/container/</code> only.</li>
   <li><strong>tools/simulator/CMakeLists.txt</strong> — <code>olv_sim_lib</code> static lib
   (everything except <code>main.cpp</code>, so tests link the real code),
   <code>olv_sim</code>, and <code>olv_sim_tests</code> (CTest <code>sim_unit</code>).</li>
@@ -174,12 +182,14 @@ package and the search paths tried.</p>
 </div>
 
 <h2 id="quality-targets">Quality targets</h2>
-<pre><code class="language-sh">cmake --build build-docker --target format         # clang-format -i over include/src/test/tools
-cmake --build build-docker --target format-check   # --dry-run --Werror (CI-suitable)
-cmake --build build-docker --target lint           # cppcheck warning/performance/portability, exit 1 on findings
+<pre><code class="language-sh">cmake --build build/container --target format         # clang-format -i over include/src/test/tools
+cmake --build build/container --target format-check   # --dry-run --Werror (CI-suitable)
+cmake --build build/container --target lint           # cppcheck warning/performance/portability, exit 1 on findings
 </code></pre>
-<p>(run each via <code>docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest
-sh -c '...'</code>, as in <a href="../user-guide/installation.html#building-from-source">Installation</a>).
+<p>(run each inside olv-builder the same way <code>scripts/build.sh</code> does —
+<code>docker</code>/<code>podman run --rm --network none --security-opt
+label=disable -v "$PWD":/src -w /src localhost/olv-builder:latest ...</code>, see
+<a href="../user-guide/installation.html#building-from-source">Installation</a>).
 Both no-op with a notice if the tool isn't installed — neither <code>clang-format</code>
 nor <code>cppcheck</code> are in the <code>olv-builder</code> image today; add them to a
 derived image, or run these targets from a native build, for real output. The
@@ -208,41 +218,55 @@ clang-tidy -p build src/*.cpp tools/simulator/src/*.cpp
 </ul>
 
 <h2 id="ctest">CTest &amp; CI integration</h2>
-<pre><code class="language-sh">ctest --test-dir build-docker --output-on-failure            # all three tests
-ctest --test-dir build-docker -R backend_unit                # one suite
-ctest --test-dir build-docker -L integration                 # by label
+<pre><code class="language-sh">ctest --test-dir build/container --output-on-failure            # all three tests
+ctest --test-dir build/container -R backend_unit                # one suite
+ctest --test-dir build/container -L integration                 # by label
 </code></pre>
-<p>(run inside the container, e.g. <code>docker run --rm -v "$PWD":/src -w /src
-localhost/olv-builder:latest sh -c 'ctest --test-dir build-docker ...'</code>.)</p>
+<p><code>scripts/test.sh</code> runs the first line inside olv-builder against the tree
+<code>scripts/build.sh</code> left in <code>build/container</code> (nothing is
+recompiled), and stamps <code>build/dist/.tested</code> on success; pass extra
+<code>ctest</code> flags after <code>--</code>, e.g. <code>scripts/test.sh -- -R
+backend_unit</code>, or run the lines above directly inside the container yourself
+(<code>docker</code>/<code>podman run --rm --network none --security-opt
+label=disable -v "$PWD":/src -w /src localhost/olv-builder:latest ctest
+--test-dir build/container ...</code>).</p>
 <div class="note"><strong>No CI pipeline exists yet.</strong> Everything a pipeline
-needs is already a clean, non-interactive command, run inside the
-<code>olv-builder</code> image:
-<code>cmake --build build-docker --target format-check lint</code>,
-<code>ctest --test-dir build-docker</code>, plus (on the host)
-<code>node --test "frontend/tests/*.test.mjs"</code>. A minimal CI job is literally
-those lines after configure — build/pull <code>olv-builder</code>, configure inside
-it, and run the three checks. See <a href="release-process.html">Release Process</a>.</div>
+needs is already a clean, non-interactive command:
+<code>scripts/build_all.sh</code> (build_builder → build → test → package) plus, on
+the host, <code>node --test "frontend/tests/*.test.mjs"</code>. A minimal CI job is
+literally that one script (skip step 1 by pointing <code>OLV_BUILDER_IMAGE</code> at a
+registry image) plus the Node test. See
+<a href="release-process.html">Release Process</a>.</div>
 
 <h2 id="containers-build">Container builds</h2>
-<p>Two files now split what used to be one: <code>containers/Dockerfile.builder</code>
-builds the <code>olv-builder</code> build-environment image — Rocky Linux 10.2 +
-<code>gcc-c++ cmake make boost-devel</code>, then
-open-dis-cpp built from the pinned tarball into <code>/usr/local</code> — meant to be built once on a
-connected machine and pushed to an internal registry. <code>containers/Dockerfile</code>'s
-<code>build</code> stage is <code>FROM ${OLV_BUILDER_IMAGE}</code> (default
-<code>localhost/olv-builder:latest</code>) and installs/fetches nothing itself; it
-<code>COPY . .</code>, configures with <code>-DOLV_BUILD_TESTS=OFF</code>, and builds
-only <code>olv_backend olv_sim</code>. The <code>backend</code> and <code>simulator</code>
-runtime targets (backend is the last stage, so it's also the default
-<code>docker build</code> target) copy a single binary each into
-<code>${OLV_RUNTIME_IMAGE}</code> (default <code>rockylinux:10.2-minimal</code>) with a
-non-root user (UID 10001) — no packages installed at runtime, since Boost is
-header-only and open-dis is linked statically. <code>compose.yaml</code> has a
-<code>builder</code> service behind the <code>builder</code> profile so
-<code>up</code> never builds it implicitly; <code>scripts/run_all.sh</code> builds it
-first unless <code>OLV_BUILDER_IMAGE</code> is already set. <code>Containerfile.frontend</code>
-is unchanged: a one-stage nginx:alpine-slim copy of <code>frontend/</code> and
-<code>docs/</code> — no toolchain at all.</p>
+<p>Three Dockerfiles now split what used to be one:
+<code>containers/Dockerfile.builder</code> builds the <code>olv-builder</code>
+build-environment image — Rocky Linux 10.2 + <code>gcc-c++ cmake make boost-devel</code>,
+then open-dis-cpp built from the pinned tarball into <code>/usr/local</code> — meant to
+be built once on a connected machine (<code>scripts/build_builder.sh</code>) and pushed
+to an internal registry (set <code>OLV_BUILDER_IMAGE</code> to skip rebuilding it
+locally). Compiling now happens outside any Dockerfile, via
+<code>scripts/build.sh</code>: a <code>docker</code>/<code>podman run</code> of
+<code>olv-builder</code> with the repo bind-mounted at <code>/src</code>
+(<code>--network none</code>), configuring with <code>-DOLV_BUILD_TESTS=ON</code> and
+installing the <code>backend</code>/<code>simulator</code> components into
+<code>build/dist/&lt;component&gt;/</code>. <code>containers/Dockerfile.backend</code>
+and <code>containers/Dockerfile.simulator</code> compile nothing — each is
+<code>FROM ${OLV_RUNTIME_IMAGE}</code> (default <code>rockylinux:10.2-minimal</code>),
+adds a non-root user (UID 10001), <code>COPY</code>s the matching
+<code>build/dist/&lt;component&gt;/</code> tree in as its build context (that's the
+only thing sent to the engine), and copies the open-dis-cpp license out of a
+<code>FROM ${OLV_BUILDER_IMAGE} AS builder</code> stage for BSD-2-Clause attribution.
+<code>scripts/package.sh</code> builds both, refusing to do so if
+<code>build/dist</code> doesn't match the last passing <code>scripts/test.sh</code> run
+(<code>--untested</code> overrides). <code>compose.yaml</code> no longer has a
+<code>builder</code> service or profile — it references the
+<code>localhost/olv-backend</code>/<code>localhost/olv-sim</code> images by name and
+never builds them; <code>scripts/run_all.sh --build</code> runs
+<code>scripts/build_all.sh</code> first when you want a rebuild.
+<code>Containerfile.frontend</code> is unchanged: a one-stage nginx:alpine-slim copy of
+<code>frontend/</code> and <code>docs/</code> — no toolchain at all, still built by
+<code>compose.yaml</code> directly.</p>
 
 <div class="page-nav" id="page-nav"></div>
 </main>

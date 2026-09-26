@@ -1,76 +1,74 @@
 #!/usr/bin/env bash
-# run_all.sh — one-command demo: run backend + simulator + frontend together
-# as a container stack via containers/compose.yaml. Images are built on first
-# run (or with --build); a single Ctrl-C tears the whole stack down.
+# run_all.sh — step 6: run the container stack via containers/compose.yaml:
+# backend + frontend, plus the simulator with --sim. A single Ctrl-C tears
+# the whole stack down.
 #
-# Usage: scripts/run_all.sh [--ws-port N] [--udp-port N] [--http-port N]
-#                           [--build] [-- <extra compose up args>]
+# Usage: scripts/run_all.sh [--sim] [--build] [--ws-port N] [--udp-port N]
+#                           [--http-port N] [-- <extra compose up args>]
+#   --sim     also start the simulator (compose profile "sim"), replaying
+#             tools/simulator/data/example_mission.csv on loop at 1 Hz
+#   --build   run scripts/build_all.sh first (build, test, package) and
+#             rebuild the frontend image
+#
+# The backend and simulator images come from the build pipeline
+# (scripts/build_all.sh); this script never compiles anything unless --build
+# is given. Set OLV_BACKEND_IMAGE / OLV_SIM_IMAGE to run registry images.
 #
 # Defaults match docs/PLAN.md: WS 8765, UDP 47000, frontend http 8000. Only
 # the *published host* ports change with those flags; the containers' internal
 # ports stay fixed, so the internal simulator->backend wiring is unaffected.
-# The simulator replays tools/simulator/data/example_mission.csv on loop at 1 Hz
-# (baked into the image; see containers/compose.yaml).
 #
-# Requires a container engine with compose support. Detection order:
-# 'podman compose', 'docker compose', 'podman-compose', 'docker-compose'.
-# Override with OLV_COMPOSE, e.g.  OLV_COMPOSE="docker compose" scripts/run_all.sh
-# Set OLV_BUILDER_IMAGE to use a prebuilt build-environment image (e.g. from
-# your registry) instead of building containers/Dockerfile.builder locally.
+# Engine/compose detection lives in scripts/_common.sh (OLV_ENGINE and
+# OLV_COMPOSE override it).
 
 set -u
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-COMPOSE_FILE="${ROOT}/containers/compose.yaml"
-PROJECT="olv"
+# shellcheck source=scripts/_common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
 # Exported so compose.yaml's ${OLV_*_PORT} host-port mappings pick them up.
 export OLV_WS_PORT=8765
 export OLV_UDP_PORT=47000
 export OLV_HTTP_PORT=8000
+WITH_SIM=0
 FORCE_BUILD=0
 EXTRA=()
 
 while [ $# -gt 0 ]; do
   case "$1" in
+    --sim)       WITH_SIM=1;         shift ;;
     --ws-port)   OLV_WS_PORT="$2";   shift 2 ;;
     --udp-port)  OLV_UDP_PORT="$2";  shift 2 ;;
     --http-port) OLV_HTTP_PORT="$2"; shift 2 ;;
     --build)     FORCE_BUILD=1;      shift ;;
     --)          shift; EXTRA+=("$@"); break ;;
-    *) echo "run_all.sh: unknown argument: $1" >&2; exit 1 ;;
+    *) olv_die "unknown argument: $1" ;;
   esac
 done
 
-# --- pick a compose command ------------------------------------------------
-COMPOSE=()
-if [ -n "${OLV_COMPOSE:-}" ]; then
-  # shellcheck disable=SC2206
-  COMPOSE=(${OLV_COMPOSE})
-elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-  COMPOSE=(podman compose)
-elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  COMPOSE=(docker compose)
-elif command -v podman-compose >/dev/null 2>&1; then
-  COMPOSE=(podman-compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE=(docker-compose)
-else
-  echo "run_all.sh: no compose tool found. Install podman or docker (with the" >&2
-  echo "            compose plugin), or set OLV_COMPOSE to a compose command." >&2
-  exit 1
-fi
-
-COMPOSE=("${COMPOSE[@]}" -p "${PROJECT}" -f "${COMPOSE_FILE}")
+olv_find_compose ||
+  olv_die "no compose tool found. Install podman or docker (with the compose plugin), or set OLV_COMPOSE."
 echo "== compose engine: ${COMPOSE[*]} =="
+
+# --- build pipeline (optional) / check the runtime images exist --------------
+if [ "${FORCE_BUILD}" -eq 1 ]; then
+  "$(dirname "${BASH_SOURCE[0]}")/build_all.sh" || olv_die "build pipeline failed"
+fi
+NEEDED=("${OLV_BACKEND_IMAGE}")
+[ "${WITH_SIM}" -eq 1 ] && NEEDED+=("${OLV_SIM_IMAGE}")
+for image in "${NEEDED[@]}"; do
+  # Registry images are pulled by compose; local ones must already exist.
+  if [[ "${image}" == localhost/* ]] && ! olv_image_exists "${image}"; then
+    olv_die "${image} not found; run scripts/build_all.sh (or pass --build)"
+  fi
+done
 
 LOGS_PID=""
 cleanup() {
   [ -n "${LOGS_PID}" ] && kill "${LOGS_PID}" 2>/dev/null
   echo
   echo "== stopping (compose down) =="
-  "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1 || true
+  # --profile sim so down also removes the simulator if it was started.
+  "${COMPOSE[@]}" --profile sim down --remove-orphans >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 # Exit on Ctrl-C/TERM so the EXIT trap (teardown) runs even if the signal
@@ -78,24 +76,16 @@ trap cleanup EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# --- build environment image (backend/simulator compile FROM it) -----------
-# Layer-cached, so this is quick after the first run. Skip it when
-# OLV_BUILDER_IMAGE names a prebuilt image (e.g. pulled from a registry).
-if [ -z "${OLV_BUILDER_IMAGE:-}" ]; then
-  echo "== building olv-builder (containers/Dockerfile.builder) =="
-  if ! "${COMPOSE[@]}" --profile builder build builder; then
-    echo "run_all.sh: building the olv-builder image failed" >&2
-    exit 1
-  fi
-fi
-
 # --- bring the stack up (detached; builds missing images) ------------------
+PROFILE_ARGS=()
+[ "${WITH_SIM}" -eq 1 ] && PROFILE_ARGS=(--profile sim)
 UP_ARGS=(up -d --remove-orphans)
 [ "${FORCE_BUILD}" -eq 1 ] && UP_ARGS+=(--build)
 
-echo "== starting stack (ws=${OLV_WS_PORT} udp=${OLV_UDP_PORT} http=${OLV_HTTP_PORT}) =="
-echo "   (first run builds images — this can take a few minutes)"
-if ! "${COMPOSE[@]}" "${UP_ARGS[@]}" "${EXTRA[@]}"; then
+SERVICES="backend + frontend"
+[ "${WITH_SIM}" -eq 1 ] && SERVICES="${SERVICES} + simulator"
+echo "== starting ${SERVICES} (ws=${OLV_WS_PORT} udp=${OLV_UDP_PORT} http=${OLV_HTTP_PORT}) =="
+if ! "${COMPOSE[@]}" "${PROFILE_ARGS[@]}" "${UP_ARGS[@]}" "${EXTRA[@]}"; then
   echo "run_all.sh: 'compose up' failed" >&2
   exit 1
 fi
@@ -125,6 +115,7 @@ Orbital LOS Viewer is running (containerized):
   Frontend:    http://localhost:${OLV_HTTP_PORT}/
   WebSocket:   ws://localhost:${OLV_WS_PORT}
   UDP (host):  127.0.0.1:${OLV_UDP_PORT}   (published; simulator->backend is internal)
+  Simulator:   $([ "${WITH_SIM}" -eq 1 ] && echo "replaying example_mission.csv" || echo "off (pass --sim to start it)")
 
 Open http://localhost:${OLV_HTTP_PORT}/ in a browser. The frontend defaults to
 WebSocket port 8765; if you passed --ws-port, set the new port under Settings.
@@ -136,6 +127,6 @@ EOF
 # interrupts the wait and triggers teardown (a foreground child would defer the
 # trap until it exits). On Ctrl-C in a real terminal the whole process group is
 # signaled, so the log-follow child dies too; cleanup() also kills it directly.
-"${COMPOSE[@]}" logs -f &
+"${COMPOSE[@]}" "${PROFILE_ARGS[@]}" logs -f &
 LOGS_PID=$!
 wait "${LOGS_PID}"

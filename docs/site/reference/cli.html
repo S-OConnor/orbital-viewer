@@ -89,20 +89,77 @@ port bind, fatal exception) · 2 bad arguments or config.</p>
 
 <h2 id="scripts">Scripts</h2>
 
-<h3 id="run-all">scripts/run_all.sh</h3>
-<pre><code class="language-sh">scripts/run_all.sh [--ws-port N] [--udp-port N] [--http-port N] [--build] [-- &lt;extra compose args&gt;]
+<h3 id="build-builder">scripts/build_builder.sh</h3>
+<pre><code class="language-sh">scripts/build_builder.sh [extra build args, e.g. --build-arg X=Y]
 </code></pre>
-<p>Containerized bring-up: auto-detects the compose engine
+<p>Step 1: builds the <code>olv-builder</code> build-environment image (toolchain,
+Boost, GoogleTest, open-dis-cpp) from <code>containers/Dockerfile.builder</code>,
+tagged <code>$OLV_BUILDER_IMAGE</code> (default <code>localhost/olv-builder:latest</code>).
+The only step in the pipeline that needs network access; point
+<code>OLV_BUILDER_IMAGE</code> at a registry image to skip it.</p>
+
+<h3 id="build">scripts/build.sh</h3>
+<pre><code class="language-sh">scripts/build.sh [--clean] [--debug]
+</code></pre>
+<p>Step 2: runs a <code>docker</code>/<code>podman run</code> of <code>olv-builder</code>
+with the repo bind-mounted at <code>/src</code> (<code>--network none</code>,
+<code>--security-opt label=disable</code>), configures/builds into
+<code>build/container/</code> (tests on, Release by default — <code>--debug</code> for
+Debug), then <code>cmake --install --component backend|simulator</code> stages the
+runtime files into <code>build/dist/backend/</code> and
+<code>build/dist/simulator/</code>. <code>--clean</code> deletes both trees first.</p>
+
+<h3 id="test">scripts/test.sh</h3>
+<pre><code class="language-sh">scripts/test.sh [--unit] [-- &lt;extra ctest args&gt;]
+</code></pre>
+<p>Step 3: runs <code>ctest</code> inside <code>olv-builder</code> against the build
+tree from <code>scripts/build.sh</code> — nothing is recompiled.
+<code>--unit</code> passes <code>-LE integration</code> to skip the end-to-end test.
+On success, stamps <code>build/dist/.tested</code> with checksums of the staged
+files, which <code>scripts/package.sh</code> checks against.</p>
+
+<h3 id="package">scripts/package.sh</h3>
+<pre><code class="language-sh">scripts/package.sh [--untested] [backend|simulator ...]
+</code></pre>
+<p>Steps 4-5: builds the <code>backend</code>/<code>simulator</code> runtime images
+(default both) from <code>containers/Dockerfile.backend</code>/<code>Dockerfile.simulator</code>,
+each using its own <code>build/dist/&lt;component&gt;/</code> directory as the build
+context. Tags <code>$OLV_BACKEND_IMAGE</code>/<code>$OLV_SIM_IMAGE</code> (default
+<code>localhost/olv-backend:latest</code>/<code>localhost/olv-sim:latest</code>),
+labelled with the git revision. Refuses to build from a <code>build/dist</code> that
+doesn't match the last passing <code>scripts/test.sh</code> run unless
+<code>--untested</code> is given.</p>
+
+<h3 id="build-all">scripts/build_all.sh</h3>
+<pre><code class="language-sh">scripts/build_all.sh [--clean] [--unit]
+</code></pre>
+<p>Runs steps 1-5 in order (<code>build_builder.sh</code> &rarr; <code>build.sh</code>
+&rarr; <code>test.sh</code> &rarr; <code>package.sh</code>), stopping at the first
+failure. Skips step 1 when <code>OLV_BUILDER_IMAGE</code> is already set (a
+prebuilt/registry builder image). <code>--clean</code>/<code>--unit</code> pass
+through to <code>build.sh</code>/<code>test.sh</code>.</p>
+
+<h3 id="run-all">scripts/run_all.sh</h3>
+<pre><code class="language-sh">scripts/run_all.sh [--sim] [--ws-port N] [--udp-port N] [--http-port N] [--build] [-- &lt;extra compose args&gt;]
+</code></pre>
+<p>Step 6: containerized bring-up — auto-detects the compose engine
 (<code>OLV_COMPOSE</code> &rarr; <code>podman compose</code> &rarr;
 <code>docker compose</code> &rarr; <code>podman-compose</code> &rarr;
 <code>docker-compose</code>), project name <code>olv</code>, exports the port env
-vars, builds the <code>olv-builder</code> image via its opt-in compose profile
-(<code>compose --profile builder build builder</code>) unless
-<code>OLV_BUILDER_IMAGE</code> is already set to a prebuilt image, then
-<code>up -d</code> (+<code>--build</code> with the flag), waits up to 30&nbsp;s
-for the WS port, prints URLs, streams logs. <kbd>Ctrl-C</kbd> (or any exit) tears the
-stack down. Exit 130/143 on INT/TERM; 1 if the backend never comes up (dumps its
-logs first).</p>
+vars, then <code>up -d</code> the backend and frontend services from
+<code>containers/compose.yaml</code> using whatever
+<code>localhost/olv-backend</code>/<code>localhost/olv-sim</code> (or registry)
+images already exist — it never builds them itself unless <code>--build</code> is
+given, in which case it runs <code>scripts/build_all.sh</code> first (and adds
+<code>--build</code> to the compose <code>up</code>, which only affects the
+compose-built frontend image). <code>--sim</code> adds the compose <code>sim</code>
+profile so the simulator container also comes up, replaying
+<code>example_mission.csv</code> on loop; without it only the backend and frontend
+start. Waits up to 30&nbsp;s for the WS port, prints URLs, streams logs.
+<kbd>Ctrl-C</kbd> (or any exit) tears the stack down (<code>--profile sim down</code>,
+so it's safe whether or not <code>--sim</code> was used). Exit 130/143 on INT/TERM; 1
+if the backend never comes up (dumps its logs first) or if a needed local image is
+missing.</p>
 
 <h3 id="integration-test">scripts/integration_test.sh</h3>
 <pre><code class="language-sh">scripts/integration_test.sh BACKEND_BIN SIM_BIN PROBE_BIN [REPO_ROOT]
@@ -131,19 +188,21 @@ your default browser.</p>
 <h3 id="cleanup">scripts/cleanup.sh</h3>
 <pre><code class="language-sh">scripts/cleanup.sh
 </code></pre>
-<p>Stops the compose stack (<code>down --remove-orphans</code>), force-stops any
+<p>Stops the compose stack (<code>--profile sim down --remove-orphans</code>, so the
+simulator container is removed too if it was running), force-stops any
 <code>olv_*</code> containers, and kills stray <code>run_all.sh</code> /
 <code>serve_frontend.sh</code> / dev-server processes.</p>
 
 <h2 id="quality">Build-tree quality targets</h2>
 <p>Run the <code>cmake</code>/<code>ctest</code> lines inside the <code>olv-builder</code>
-container (e.g. <code>docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest
-sh -c '...'</code> — see
+container, the same way <code>scripts/build.sh</code>/<code>test.sh</code> do (e.g.
+<code>docker</code>/<code>podman run --rm --network none --security-opt label=disable
+-v "$PWD":/src -w /src localhost/olv-builder:latest ...</code> — see
 <a href="../user-guide/installation.html#building-from-source">Installation</a>):</p>
-<pre><code class="language-sh">cmake --build build-docker --target format         # clang-format in place
-cmake --build build-docker --target format-check   # verify only (--Werror)
-cmake --build build-docker --target lint           # cppcheck
-ctest --test-dir build-docker [--output-on-failure] [-R name] [-L label]
+<pre><code class="language-sh">cmake --build build/container --target format         # clang-format in place
+cmake --build build/container --target format-check   # verify only (--Werror)
+cmake --build build/container --target lint           # cppcheck
+ctest --test-dir build/container [--output-on-failure] [-R name] [-L label]
 node --test "frontend/tests/*.test.mjs"                        # host
 node frontend/tests/validate_message.mjs FILE [--min-objects N]  # host
 </code></pre>

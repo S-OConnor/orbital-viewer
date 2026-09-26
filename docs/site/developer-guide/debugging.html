@@ -42,7 +42,7 @@ engineer's toolbox.</p>
 
 <h2 id="logging">Logging &amp; tracing</h2>
 <pre><code class="language-sh"># Everything the backend does, live:
-./build-docker/olv_backend --log-level debug --log-file dbg.log
+build/dist/backend/bin/olv_backend --log-level debug --log-file dbg.log
 tail -f dbg.log
 # debug level adds: every accepted packet (seq/objs/total/source),
 # stale drops, DIS filtered/ignored PDU lines.
@@ -65,19 +65,18 @@ sudo tcpdump -i lo -X udp port 47000
 # aren't 4F 4C 56 31 ("OLV1") is not an OLV1 packet.
 
 # WebSocket: capture frames as text
-./build-docker/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
+build/container/olv_ws_probe --host 127.0.0.1 --port 8765 --count 3 \
     --timeout 10 --out frames.jsonl
 python3 -m json.tool &lt;(head -1 frames.jsonl)     # pretty-print the hello
 node frontend/tests/validate_message.mjs frames.jsonl   # strict re-parse
 </code></pre>
 
 <h2 id="gdb">Native debugging (gdb/lldb)</h2>
-<pre><code class="language-sh"># Configure + build a Debug tree inside olv-builder (see Installation: Building
-# the binaries for the full docker run invocation):
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest \
-  sh -c 'cmake -S . -B build-dbg -DCMAKE_BUILD_TYPE=Debug && cmake --build build-dbg -j"$(nproc)"'
+<pre><code class="language-sh"># Configure + build a Debug tree (scripts/build.sh --debug builds inside
+# olv-builder and stages into build/dist/, same layout as a Release build):
+scripts/build.sh --debug
 # gdb itself runs on the host against the resulting binary:
-gdb --args ./build-dbg/olv_backend --udp-port 47000 --ws-port 8765
+gdb --args build/dist/backend/bin/olv_backend --udp-port 47000 --ws-port 8765
 </code></pre>
 <ul>
   <li>Remember the thread model: <code>info threads</code> shows the main (WS) thread
@@ -89,14 +88,18 @@ gdb --args ./build-dbg/olv_backend --udp-port 47000 --ws-port 8765
   anything that could block for a while; if both threads are stuck, one of them is
   holding it across something blocking, which the design forbids
   (<code>snapshot()</code> copies precisely to avoid this).</li>
-  <li>Unit tests are ordinary binaries: <code>gdb ./build-dbg/olv_backend_tests</code>
-  and break on a failing case's function (find names via <code>--list</code>).</li>
+  <li>Unit tests are ordinary binaries, built but not installed, so they stay in the
+  CMake build tree: <code>gdb build/container/olv_backend_tests</code> and break on a
+  failing case's function (find names via <code>--list</code>).</li>
 </ul>
 
 <h2 id="sanitizers">Sanitizers</h2>
-<p>No preconfigured sanitizer build exists; add flags at configure time (inside
-<code>olv-builder</code>, same volume-mount pattern as above):</p>
-<pre><code class="language-sh">docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest sh -c '
+<p>No preconfigured sanitizer build exists; add flags at configure time, in a
+separate tree from <code>scripts/build.sh</code>'s <code>build/container</code>
+(inside <code>olv-builder</code>, same bind-mount pattern
+<code>scripts/_common.sh</code>'s <code>olv_builder_run</code> uses):</p>
+<pre><code class="language-sh">docker run --rm --network none --security-opt label=disable \
+  --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest sh -c '
   cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug \
     -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
     -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" &amp;&amp;
@@ -136,8 +139,8 @@ model — worth running after any change to <code>state_store</code>,
 
 <h2 id="profiling">Profiling</h2>
 <pre><code class="language-sh"># Backend CPU profile under load (perf, Linux)
-perf record -g ./build-docker/olv_backend --quiet --log-file /dev/null &amp;
-./build-docker/tools/simulator/olv_sim --generate 5000 --rate 4 --duration 30
+perf record -g build/dist/backend/bin/olv_backend --quiet --log-file /dev/null &amp;
+build/dist/simulator/bin/olv_sim --generate 5000 --rate 4 --duration 30
 perf report
 # Expect hotspots in json_writer (serialization) and decode/crc32.
 </code></pre>

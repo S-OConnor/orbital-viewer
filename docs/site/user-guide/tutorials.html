@@ -25,7 +25,9 @@
 
 <h2 id="t1">Tutorial 1 (beginner): the containerized demo, explored</h2>
 <ol>
-  <li>Start: <code>scripts/run_all.sh</code> and open <code>http://localhost:8000/</code>.</li>
+  <li>Start: <code>scripts/run_all.sh --sim</code> (the <code>--sim</code> flag starts
+  the simulator, replaying the example mission — without it only the backend and
+  frontend come up) and open <code>http://localhost:8000/</code>.</li>
   <li>In the Objects panel, click the <em>debris</em> chip — the list filters to debris
   only; chips show live per-category counts.</li>
   <li>Click a debris row. Find its ring on the globe; open Settings, enable
@@ -53,7 +55,7 @@
   empty velocity triple means "no velocity"; <code>flags=2</code> sets HIGHLIGHT;
   the header line must match exactly.</li>
   <li>Run the backend, then replay:
-<pre><code class="language-sh">./build-docker/tools/simulator/olv_sim --csv mymission.csv --rate 1 --loop</code></pre></li>
+<pre><code class="language-sh">build/dist/simulator/bin/olv_sim --csv mymission.csv --rate 1 --loop</code></pre></li>
   <li>In the viewer: object 101 renders highlighted; 201 sits on Earth's surface,
   tinted by its 1450&nbsp;K intensity. The satellite panel tracks id 1.</li>
   <li>Malformed-input experiment: change a row's <code>type</code> to <code>7</code> and
@@ -67,8 +69,8 @@
   <li>Host A: open the firewall and start the backend bound to all interfaces
   (the default):
 <pre><code class="language-sh">sudo firewall-cmd --add-port=47000/udp --add-port=8765/tcp --add-port=8000/tcp
-./build-docker/olv_backend --log-file olv.log
-./build-docker/tools/simulator/olv_sim --generate 800 --duration 0 &amp;
+build/dist/backend/bin/olv_backend --log-file olv.log
+build/dist/simulator/bin/olv_sim --generate 800 --duration 0 &amp;
 scripts/serve_frontend.sh 8000
 </code></pre></li>
   <li>Host B: browse to <code>http://192.168.1.20:8000/frontend/</code>. The frontend
@@ -82,9 +84,9 @@ scripts/serve_frontend.sh 8000
 <h2 id="t4">Tutorial 4 (intermediate): capacity load test with live stats</h2>
 <ol>
   <li>Start the backend with debug logging:
-  <code>./build-docker/olv_backend --log-level debug --log-file load.log</code></li>
+  <code>build/dist/backend/bin/olv_backend --log-level debug --log-file load.log</code></li>
   <li>Drive it at the protocol ceiling:
-<pre><code class="language-sh">./build-docker/tools/simulator/olv_sim --generate 5000 --rate 1 --duration 300</code></pre>
+<pre><code class="language-sh">build/dist/simulator/bin/olv_sim --generate 5000 --rate 1 --duration 300</code></pre>
   5,000 objects means each cycle is split into 40 packets (128 objects max per
   packet), so expect the Stats panel's UDP rate to read ~40 packets/s.</li>
   <li>While it runs: toggle trails (heaviest render path), switch to SAT view, and
@@ -105,8 +107,8 @@ dis_port = 47001
 dis_satellite_entity_id = "1:1:1"
 </code></pre></li>
   <li>Start both ends:
-<pre><code class="language-sh">./build-docker/olv_backend --config config/backend.toml --log-level debug --log-file dis.log
-./build-docker/tools/simulator/olv_sim --generate 50 --protocol dis --duration 120
+<pre><code class="language-sh">build/dist/backend/bin/olv_backend --config config/backend.toml --log-level debug --log-file dis.log
+build/dist/simulator/bin/olv_sim --generate 50 --protocol dis --duration 120
 </code></pre>
   (With <code>--protocol dis</code> and no <code>--port</code>, the simulator targets
   47001 automatically.)</li>
@@ -129,12 +131,12 @@ dis_satellite_entity_id = "1:1:1"
 technique <code>scripts/integration_test.sh</code> uses:</p>
 <pre><code class="language-sh">#!/usr/bin/env bash
 set -euo pipefail
-./build-docker/olv_backend --udp-port 47555 --ws-port 18765 \
+build/dist/backend/bin/olv_backend --udp-port 47555 --ws-port 18765 \
     --log-file /tmp/check.log --quiet &amp; BACKEND=$!
 trap 'kill $BACKEND' EXIT
 sleep 1
-./build-docker/tools/simulator/olv_sim --generate 500 --port 47555 --rate 2 --duration 20 --quiet &amp;
-./build-docker/olv_ws_probe --host 127.0.0.1 --port 18765 \
+build/dist/simulator/bin/olv_sim --generate 500 --port 47555 --rate 2 --duration 20 --quiet &amp;
+build/container/olv_ws_probe --host 127.0.0.1 --port 18765 \
     --count 6 --timeout 30 --out /tmp/frames.jsonl
 node frontend/tests/validate_message.mjs /tmp/frames.jsonl --min-objects 100
 grep -q "client connected" /tmp/check.log

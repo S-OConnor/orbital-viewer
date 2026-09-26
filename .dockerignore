@@ -1,8 +1,9 @@
-# Files excluded from the container build context. containers/Dockerfile does
-# `COPY . .` over the repo root, so host-only artifacts must be kept out of
-# the image. Most important: a host `build/` dir carries a CMakeCache.txt with
-# absolute host paths, which breaks the in-image `cmake` configure. Honored by
-# both podman (.containerignore falls back to this) and docker.
+# Files excluded when the repo root is a container build context. Only
+# containers/Containerfile.frontend uses the repo root (it COPYs frontend/ and
+# docs/); the builder uses containers/ and the backend/simulator runtime
+# images use build/dist/<component>/ (see scripts/package.sh), so this just
+# keeps the frontend context small. Honored by both podman (.containerignore
+# falls back to this) and docker.
 build*/
 sbom/
 node_modules/

@@ -25,18 +25,24 @@ anything yet, do <a href="installation.html">Installation</a> first.</p>
 
 <h2 id="first-run-containers">First run — containers (recommended)</h2>
 <ol>
-  <li>From the repository root, run:
-<pre><code class="language-sh">scripts/run_all.sh</code></pre></li>
-  <li>Watch the output. Expected sequence:
+  <li>From the repository root, run (add <code>--sim</code> so there's something to
+  see — without it, only the backend and frontend come up and the page waits for
+  real input):
+<pre><code class="language-sh">scripts/run_all.sh --sim</code></pre></li>
+  <li>Watch the output. Expected sequence (assumes <code>scripts/build_all.sh</code>
+  has already built the <code>localhost/olv-backend</code>/<code>localhost/olv-sim</code>
+  images at least once — see <a href="installation.html">Installation</a> — since
+  <code>run_all.sh</code> doesn't compile anything unless you also pass
+  <code>--build</code>):
 <pre><code class="language-sh">== compose engine: podman compose -p olv -f .../containers/compose.yaml ==
-== starting stack (ws=8765 udp=47000 http=8000) ==
-   (first run builds images — this can take a few minutes)
+== starting backend + frontend + simulator (ws=8765 udp=47000 http=8000) ==
 == waiting for backend on port 8765 ....
 
 Orbital LOS Viewer is running (containerized):
   Frontend:    http://localhost:8000/
   WebSocket:   ws://localhost:8765
   UDP (host):  127.0.0.1:47000   (published; simulator-&gt;backend is internal)
+  Simulator:   replaying example_mission.csv
 
 Open http://localhost:8000/ in a browser. The frontend defaults to
 WebSocket port 8765; if you passed --ws-port, set the new port under Settings.
@@ -71,14 +77,15 @@ itself.</p>
 <h2 id="first-run-native">First run — binaries you built</h2>
 <p>Build them first — see
 <a href="installation.html#building-from-source">Installation: Building the
-binaries</a> (one Docker/Podman command builds the <code>olv-builder</code> image,
-another builds inside it; binaries land in <code>build-docker/</code>). Then three
-processes in three terminals (all from the repo root):</p>
+binaries</a> (<code>scripts/build_builder.sh</code> builds the <code>olv-builder</code>
+image, <code>scripts/build.sh</code> compiles inside it and stages the binaries into
+<code>build/dist/</code>). Then three processes in three terminals (all from the repo
+root):</p>
 <pre><code class="language-sh"># Terminal 1 — backend
-./build-docker/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
+build/dist/backend/bin/olv_backend --udp-port 47000 --ws-port 8765 --log-file olv_backend.log
 
 # Terminal 2 — simulator, replaying the example mission on loop
-./build-docker/tools/simulator/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
+build/dist/simulator/bin/olv_sim --csv tools/simulator/data/example_mission.csv --rate 1 --loop
 
 # Terminal 3 — static file server for the frontend
 scripts/serve_frontend.sh 8000
@@ -101,7 +108,7 @@ About modal's links into <code>docs/</code> resolve).</p>
   <li>Copy and edit the example config:
 <pre><code class="language-sh">cp config/backend.toml my-backend.toml
 # edit: [network] ws_port = 9000
-./build-docker/olv_backend --config my-backend.toml
+build/dist/backend/bin/olv_backend --config my-backend.toml
 </code></pre></li>
   <li>Reload the frontend. The status panel shows a stalled/disconnected state —
   it is still trying port 8765.</li>
@@ -126,21 +133,21 @@ About modal's links into <code>docs/</code> resolve).</p>
   <li><strong>Selection</strong>: click any object on the globe or in the list — it
   highlights in both places.</li>
   <li><strong>Load test</strong>: stop the simulator and run
-  <code>./build-docker/tools/simulator/olv_sim --generate 5000 --rate 1</code> — 5,000 objects,
+  <code>build/dist/simulator/bin/olv_sim --generate 5000 --rate 1</code> — 5,000 objects,
   the protocol maximum. The object list caps at 1,000 rows and says
   "showing 1000 of 5000".</li>
 </ol>
 
 <h2 id="verification">Verification steps</h2>
 <pre><code class="language-sh"># 1. Everything green?
-docker run --rm -v "$PWD":/src -w /src localhost/olv-builder:latest \
-  sh -c 'ctest --test-dir build-docker --output-on-failure'
+scripts/test.sh
 
 # 2. Is the backend accepting packets? (watch the log)
 tail -f olv_backend.log        # expect: accepted seq=... (at debug level)
 
-# 3. Is JSON flowing? Capture two frames with the probe:
-./build-docker/olv_ws_probe --host 127.0.0.1 --port 8765 --count 2 \
+# 3. Is JSON flowing? Capture two frames with the probe (built but not
+#    installed, so it stays in the CMake build tree):
+build/container/olv_ws_probe --host 127.0.0.1 --port 8765 --count 2 \
     --timeout 10 --out /tmp/frames.jsonl
 head -c 300 /tmp/frames.jsonl  # expect {"type":"hello",... then {"type":"state",...
 </code></pre>

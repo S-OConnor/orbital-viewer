@@ -55,6 +55,12 @@ target_link_libraries(olv_sim_lib PUBLIC olv_proto OpenDIS::OpenDIS6 PRIVATE olv
 
 add_executable(olv_sim src/main.cpp)
 target_link_libraries(olv_sim PRIVATE olv_sim_lib Boost::headers Threads::Threads olv_warnings)
+# `cmake --install <build> --component simulator` stages the runtime image's
+# contents (scripts/build.sh -> build/dist/simulator,
+# containers/Dockerfile.simulator); the example CSVs let --csv replay work
+# without a bind mount.
+install(TARGETS olv_sim RUNTIME DESTINATION bin COMPONENT simulator)
+install(DIRECTORY data/ DESTINATION share/olv/data COMPONENT simulator)
 
 if(OLV_BUILD_TESTS)
   add_executable(olv_sim_tests

@@ -71,10 +71,14 @@ them to a vulnerability scanner.
   `olv-builder` image once, on a connected machine — `containers/Dockerfile.builder`
   needs a mirrored `dnf` repository (for `gcc-c++ cmake make boost-devel`) and
   the open-dis-cpp tarball (pass `--build-arg OLV_OPEN_DIS_URL=<mirror-url>`).
-  After that, `containers/Dockerfile` builds `backend`/`simulator` fully
-  offline `FROM` that image plus a mirrored `rockylinux:10.2-minimal` runtime
-  base. See the comments at the top of `containers/Dockerfile.builder` and
-  `containers/Dockerfile` for exact commands.
+  After that, `scripts/build.sh` (compile), `scripts/test.sh`, and
+  `scripts/package.sh` (which builds `backend`/`simulator` fully offline
+  `FROM` that image plus a mirrored `rockylinux:10.2-minimal` runtime base,
+  via `containers/Dockerfile.backend`/`Dockerfile.simulator`) all run with
+  `--network none`; set `OLV_BUILDER_IMAGE` to the registry image to skip
+  rebuilding it locally. See the comments at the top of
+  `containers/Dockerfile.builder`, `Dockerfile.backend`, and
+  `Dockerfile.simulator` for exact commands.
 - Neither the backend nor the simulator nor the frontend makes any outbound
   network call at runtime; all traffic is UDP/WebSocket on localhost/LAN
   between the three processes (see README §11, Security scope).

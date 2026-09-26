@@ -45,9 +45,9 @@ Both are described here.</p>
   </tbody>
 </table>
 </div>
-<pre><code class="language-sh">cmake --build build-docker --target format         # fix in place
-cmake --build build-docker --target format-check   # verify (CI-suitable, --Werror)
-cmake --build build-docker --target lint           # cppcheck
+<pre><code class="language-sh">cmake --build build/container --target format         # fix in place
+cmake --build build/container --target format-check   # verify (CI-suitable, --Werror)
+cmake --build build/container --target lint           # cppcheck
 </code></pre>
 <p>(run inside the <code>olv-builder</code> container — see
 <a href="../user-guide/installation.html#building-from-source">Installation</a>.)</p>
@@ -112,9 +112,9 @@ cmake --build build-docker --target lint           # cppcheck
 <h2 id="review">Review checklist</h2>
 <p>No CI exists, so review carries the enforcement load. Before approving:</p>
 <ol>
-  <li><code>cmake --build build-docker --target format-check lint</code> (inside
+  <li><code>cmake --build build/container --target format-check lint</code> (inside
   <code>olv-builder</code>) — clean.</li>
-  <li><code>ctest --test-dir build-docker --output-on-failure</code> (inside
+  <li><code>ctest --test-dir build/container --output-on-failure</code> (inside
   <code>olv-builder</code>) and <code>node --test "frontend/tests/*.test.mjs"</code>
   (host) — green, including integration.</li>
   <li>New behavior has tests at the right layer (unit for logic, integration for

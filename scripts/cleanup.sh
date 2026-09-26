@@ -2,9 +2,9 @@
 # cleanup.sh — stop the project's container webservers and any leftover
 # run-script processes.
 #
-# 1. Tears down the "olv" compose stack (backend + frontend + simulator)
-#    started by scripts/run_all.sh, the same way run_all.sh's own EXIT trap
-#    would (compose down --remove-orphans).
+# 1. Tears down the "olv" compose stack (backend + frontend, and the
+#    simulator if it was started with --sim) started by scripts/run_all.sh,
+#    the same way run_all.sh's own EXIT trap would (compose down).
 # 2. Kills any still-running scripts/run_all.sh or scripts/serve_frontend.sh
 #    processes (and the http.server child serve_frontend.sh execs), in case
 #    the stack was started in a way that skipped the normal Ctrl-C teardown.
@@ -13,30 +13,15 @@
 
 set -u
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-COMPOSE_FILE="${ROOT}/containers/compose.yaml"
+# shellcheck source=scripts/_common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
+ROOT="${OLV_ROOT}"
 PROJECT="olv"
 
-# --- pick a compose command, same detection order as run_all.sh ------------
-COMPOSE=()
-if [ -n "${OLV_COMPOSE:-}" ]; then
-  # shellcheck disable=SC2206
-  COMPOSE=(${OLV_COMPOSE})
-elif command -v podman >/dev/null 2>&1 && podman compose version >/dev/null 2>&1; then
-  COMPOSE=(podman compose)
-elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1; then
-  COMPOSE=(docker compose)
-elif command -v podman-compose >/dev/null 2>&1; then
-  COMPOSE=(podman-compose)
-elif command -v docker-compose >/dev/null 2>&1; then
-  COMPOSE=(docker-compose)
-fi
-
-if [ "${#COMPOSE[@]}" -gt 0 ]; then
-  COMPOSE=("${COMPOSE[@]}" -p "${PROJECT}" -f "${COMPOSE_FILE}")
+if olv_find_compose; then
+  # --profile sim so the (optional) simulator container is removed too.
   echo "== stopping compose stack: ${COMPOSE[*]} down =="
-  "${COMPOSE[@]}" down --remove-orphans || true
+  "${COMPOSE[@]}" --profile sim down --remove-orphans || true
 else
   echo "== no compose tool found; skipping compose down ==" >&2
 fi

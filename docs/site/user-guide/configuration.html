@@ -145,7 +145,8 @@ error — the page logs a warning and continues with defaults.</p>
   <thead><tr><th>Scenario</th><th>Recommendation</th></tr></thead>
   <tbody>
     <tr><td>Single-machine demo</td>
-        <td>Defaults everywhere. Containers: just <code>scripts/run_all.sh</code>.</td></tr>
+        <td>Defaults everywhere. Containers: <code>scripts/run_all.sh --sim</code>
+        (add <code>--sim</code> to also start the simulator).</td></tr>
     <tr><td>Backend on another LAN host</td>
         <td>Leave <code>ws_bind = "0.0.0.0"</code>; set the frontend's
         <code>websocket.host</code> to the backend host (or let users set it in

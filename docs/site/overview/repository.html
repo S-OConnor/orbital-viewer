@@ -46,8 +46,8 @@ platforms and toolchains are supported, and the complete third-party picture.</p
 │   └── tests/                      # node:test suites + validate_message.mjs
 ├── docs/                           # PLAN, PROTOCOL_{UDP,DIS,WS}, SBOM, features/, site/
 ├── config/                         # commented example backend.toml / simulator.toml
-├── scripts/                        # run_all, integration test, serve helpers, ...  
-├── containers/                     # Dockerfile.builder, Dockerfile, Containerfile.frontend, compose.yaml
+├── scripts/                         # build/test/package pipeline, run_all, integration test, serve helpers, ...
+├── containers/                     # Dockerfile.builder/.backend/.simulator, Containerfile.frontend, compose.yaml
 └── sbom/                           # hand-maintained CycloneDX SBOMs (backend + frontend)
 </code></pre>
 <p>Per-directory detail: <a href="../developer-guide/repo-structure.html">Developer
@@ -140,9 +140,11 @@ assets with their SHA-256). Strategy: <code>docs/SBOM.md</code>; full license ta
   <code>olv-builder</code> image once on a connected machine — needs a <code>dnf</code>
   mirror and the open-dis-cpp tarball (or a mirror URL as a build arg). Offline
   machines then only need <code>olv-builder</code> and a mirrored
-  <code>rockylinux:10.2-minimal</code> runtime image to build
-  <code>containers/Dockerfile</code>'s <code>backend</code>/<code>simulator</code> targets;
-  see <code>containers/Dockerfile.builder</code> for exact commands.</li>
+  <code>rockylinux:10.2-minimal</code> runtime image; <code>scripts/build.sh</code>,
+  <code>scripts/test.sh</code>, and <code>scripts/package.sh</code> (which builds
+  <code>containers/Dockerfile.backend</code>/<code>Dockerfile.simulator</code>) all
+  run with <code>--network none</code>; see <code>containers/Dockerfile.builder</code>
+  for exact commands.</li>
 </ul>
 
 <h2 id="ci">CI/CD status</h2>

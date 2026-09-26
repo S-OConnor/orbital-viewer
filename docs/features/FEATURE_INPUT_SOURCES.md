@@ -30,9 +30,12 @@ component) landed with the Phase 2 code.
 > nonstandard prefixes use `-DCMAKE_PREFIX_PATH=DIR`. The container story also
 > moved: `containers/Containerfile.cpp` was replaced by
 > `containers/Dockerfile.builder` (a Rocky Linux 10.2 build-environment image,
-> built once and pushed to an internal registry) and `containers/Dockerfile`
-> (Rocky Linux 10.2-minimal runtime stages that build FROM it). Every mention
-> of `cmake/open_dis_cpp.cmake`, `open_dis_cpp`, `libopendis6.a`,
+> built once and pushed to an internal registry) plus, later, a pair of
+> Rocky Linux 10.2-minimal runtime images — `containers/Dockerfile.backend`
+> and `containers/Dockerfile.simulator` — that copy in binaries staged by
+> `scripts/build.sh` rather than compiling FROM the builder image themselves
+> (see `scripts/build_builder.sh`/`build.sh`/`test.sh`/`package.sh`). Every
+> mention of `cmake/open_dis_cpp.cmake`, `open_dis_cpp`, `libopendis6.a`,
 > `-DOLV_OPEN_DIS_PREFIX`, or `containers/Containerfile.cpp` below is
 > historical. `scripts/install_open_dis.sh` itself was later folded into
 > `containers/Dockerfile.builder` (same pin, sha256 check, and upstream CMake

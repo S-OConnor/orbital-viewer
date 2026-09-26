@@ -1,0 +1,43 @@
+# Dockerfile.backend — olv_backend runtime image. Compiles nothing: it wraps
+# the binary that scripts/build.sh built (and scripts/test.sh tested) inside
+# olv-builder.
+#
+# Build context is the staged install tree, not the repo root:
+#   scripts/package.sh backend
+# which runs:
+#   podman build -f containers/Dockerfile.backend \
+#       --build-arg OLV_BUILDER_IMAGE=localhost/olv-builder:latest \
+#       -t localhost/olv-backend:latest build/dist/backend
+# (docker build accepts the same flags.)
+#
+# Run:
+#   podman run --rm -p 8765:8765 -p 47000:47000/udp localhost/olv-backend
+#
+# Runtime base is rockylinux 10.2-minimal, the same release as olv-builder, so
+# the glibc/libstdc++ the binary was linked against are already present: Boost
+# is header-only and open-dis-cpp is linked statically, so nothing is
+# installed and nothing reaches the network. The one thing taken from
+# olv-builder is open-dis-cpp's license, which BSD-2-Clause requires to ship
+# with the statically linked binary.
+
+ARG OLV_BUILDER_IMAGE=localhost/olv-builder:latest
+ARG OLV_RUNTIME_IMAGE=docker.io/rockylinux/rockylinux:10.2-minimal
+
+FROM ${OLV_BUILDER_IMAGE} AS builder
+
+FROM ${OLV_RUNTIME_IMAGE}
+
+RUN groupadd --gid 10001 olv && \
+    useradd --uid 10001 --gid olv --no-create-home --shell /usr/sbin/nologin olv
+
+COPY --from=builder /usr/local/share/doc/open-dis-cpp/ /usr/share/licenses/open-dis-cpp/
+COPY bin/olv_backend /app/olv_backend
+
+USER 10001
+WORKDIR /app
+
+EXPOSE 8765
+EXPOSE 47000/udp
+
+ENTRYPOINT ["/app/olv_backend"]
+CMD ["--udp-port", "47000", "--ws-port", "8765", "--log-file", "/tmp/olv_backend.log"]

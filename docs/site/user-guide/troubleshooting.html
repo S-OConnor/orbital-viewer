@@ -71,8 +71,9 @@ prefix with <code>-DCMAKE_PREFIX_PATH=DIR</code> (or
 <a href="installation.html#air-gapped">air-gapped installation</a>.</p>
 
 <h3 id="stale-cache">Weird CMake errors after moving/copying the repo</h3>
-<p>A stale <code>build-docker/</code> directory with an old <code>CMakeCache.txt</code>
-from another path. Delete it and reconfigure.</p>
+<p>A stale <code>build/container/</code> directory with an old
+<code>CMakeCache.txt</code> from another path. <code>scripts/build.sh --clean</code>
+deletes it (and <code>build/dist/</code>) before reconfiguring.</p>
 
 <h2 id="runtime">Runtime problems</h2>
 
@@ -91,7 +92,7 @@ unwritable, port bind); the simulator always exits 1, for both kinds of failure.
 <pre><code class="language-sh">ss -tlnp | grep 8765            # who owns it
 scripts/cleanup.sh              # stops containerized stacks + stray processes
 # or run on a different port:
-./build-docker/olv_backend --ws-port 8766   # update frontend Settings to match
+build/dist/backend/bin/olv_backend --ws-port 8766   # update frontend Settings to match
 </code></pre>
 
 <h3 id="udp-blocked">Simulator packets never arrive (Stats stays at 0)</h3>
@@ -181,13 +182,12 @@ DevTools (corrupt JSON is tolerated and falls back to defaults automatically).</
   <li><strong>State reset:</strong> the backend keeps no persistent state — restarting
   it resets counters, sequence baseline, and the object table. The frontend's only
   persistence is <code>localStorage</code> settings.</li>
-  <li><strong>Rebuild from scratch:</strong> <code>rm -rf build-docker &amp;&amp; docker run
-  --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src localhost/olv-builder:latest
-  sh -c 'cmake -S . -B build-docker -DCMAKE_BUILD_TYPE=Release &amp;&amp; cmake --build
-  build-docker -j"$(nproc)"'</code>; containers: <code>scripts/run_all.sh --build</code>.</li>
-  <li><strong>Sanity baseline:</strong> <code>docker run --rm -v "$PWD":/src -w /src
-  localhost/olv-builder:latest sh -c 'ctest --test-dir build-docker
-  --output-on-failure'</code> — if <code>integration</code> passes, the entire
+  <li><strong>Rebuild from scratch:</strong> <code>scripts/build.sh --clean</code>
+  (deletes <code>build/container</code> and <code>build/dist</code>, then
+  reconfigures/rebuilds); containers: <code>scripts/run_all.sh --build</code> (also
+  reruns <code>scripts/test.sh</code>/<code>package.sh</code>).</li>
+  <li><strong>Sanity baseline:</strong> <code>scripts/test.sh</code> — if
+  <code>integration</code> passes, the entire
   sim &rarr; backend &rarr; WS &rarr; parser pipeline works on this machine, and the
   problem is configuration or environment.</li>
 </ul>

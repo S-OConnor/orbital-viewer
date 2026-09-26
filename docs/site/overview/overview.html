@@ -202,7 +202,7 @@ and the <a href="../developer-guide/architecture.html">detailed architecture</a>
     <tr><td>Replay a custom mission</td>
         <td>Author a CSV (see <a href="../reference/file-formats.html#csv">CSV format</a>) &rarr; <code>olv_sim --csv mission.csv --loop</code></td></tr>
     <tr><td>Verify the build</td>
-        <td><code>ctest --test-dir build-docker</code> (in <code>olv-builder</code>) + <code>node --test "frontend/tests/*.test.mjs"</code></td></tr>
+        <td><code>scripts/test.sh</code> + <code>node --test "frontend/tests/*.test.mjs"</code></td></tr>
   </tbody>
 </table>
 </div>
@@ -211,12 +211,14 @@ and the <a href="../developer-guide/architecture.html">detailed architecture</a>
 <p>Two supported deployment shapes, both localhost/LAN-scoped:</p>
 <ul>
   <li><strong>Containers</strong> (recommended for demos/ops): three OCI images —
-  backend and simulator built from <code>containers/Dockerfile</code> (Rocky Linux
-  10.2-minimal at runtime, non-root UID 10001, compiled FROM the
-  <code>containers/Dockerfile.builder</code> build-environment image), frontend from
-  <code>containers/Containerfile.frontend</code> (nginx:alpine-slim) — orchestrated by
-  <code>containers/compose.yaml</code> under Podman or Docker. Host ports are remappable
-  via <code>OLV_HTTP_PORT</code>/<code>OLV_WS_PORT</code>/<code>OLV_UDP_PORT</code>.</li>
+  backend and simulator (Rocky Linux 10.2-minimal at runtime, non-root UID 10001)
+  built by <code>scripts/package.sh</code> from <code>containers/Dockerfile.backend</code>/
+  <code>Dockerfile.simulator</code>, wrapping binaries compiled separately by
+  <code>scripts/build.sh</code> inside the <code>containers/Dockerfile.builder</code>
+  build-environment image; frontend from <code>containers/Containerfile.frontend</code>
+  (nginx:alpine-slim) — orchestrated by <code>containers/compose.yaml</code> under
+  Podman or Docker. Host ports are remappable via
+  <code>OLV_HTTP_PORT</code>/<code>OLV_WS_PORT</code>/<code>OLV_UDP_PORT</code>.</li>
   <li><strong>Native binaries</strong>: build with CMake, run the two executables
   directly, and serve <code>frontend/</code> with any static file server (it must be
   HTTP, not <code>file://</code>, because the frontend uses ES modules).</li>

@@ -11,30 +11,29 @@
 #                          package config, so the project's
 #                          find_package(OpenDIS CONFIG) finds it with no hints
 # The resulting binaries need only glibc + libstdc++ at runtime (open-dis is
-# linked statically), which is what containers/Dockerfile's runtime stages
-# ship.
+# linked statically), which is what the runtime images
+# (containers/Dockerfile.backend, containers/Dockerfile.simulator) ship.
 #
-# The image is meant to be built ONCE on a connected machine, pushed to an
-# internal registry (GitLab container registry, Harbor, ...), and then used to
-# build the project fully offline:
+# This image is the first step of the build pipeline (scripts/build_all.sh):
+#   1. scripts/build_builder.sh   build this image
+#   2. scripts/build.sh           docker/podman run it with the repo mounted at
+#                                 /src: compile into build/container, stage
+#                                 runtime files into build/dist/
+#   3. scripts/test.sh            run ctest in it against build/container
+#   4-5. scripts/package.sh       wrap build/dist/* into the runtime images
 #
-#   # connected machine (repo root is the build context)
-#   docker build -f containers/Dockerfile.builder \
-#       -t harbor.example.com/olv/olv-builder:1.0.0 .
-#   docker push harbor.example.com/olv/olv-builder:1.0.0
+# It is meant to be built ONCE on a connected machine and pushed to an
+# internal registry (GitLab container registry, Harbor, ...); steps 2-5 then
+# run fully offline (build and tests use --network none):
 #
-#   # offline machine: container images (backend/simulator targets)
-#   docker build -f containers/Dockerfile --target backend \
-#       --build-arg OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:1.0.0 \
-#       --build-arg OLV_RUNTIME_IMAGE=harbor.example.com/olv/rockylinux:10.2-minimal \
-#       -t harbor.example.com/olv/olv-backend:1.0.0 .
+#   # connected machine
+#   OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:1.0.0 scripts/build_builder.sh
+#   podman push harbor.example.com/olv/olv-builder:1.0.0
 #
-#   # offline machine: plain host binaries from a bind-mounted checkout
-#   docker run --rm --user "$(id -u):$(id -g)" -v "$PWD":/src -w /src \
-#       harbor.example.com/olv/olv-builder:1.0.0 \
-#       sh -c 'cmake -S . -B build-rocky && cmake --build build-rocky -j"$(nproc)"'
-#   (podman: drop --user, rootless podman already maps root to you; add :Z to
-#   the volume on SELinux hosts.)
+#   # offline machine
+#   export OLV_BUILDER_IMAGE=harbor.example.com/olv/olv-builder:1.0.0
+#   export OLV_RUNTIME_IMAGE=harbor.example.com/olv/rockylinux:10.2-minimal
+#   scripts/build_all.sh        # skips step 1 because OLV_BUILDER_IMAGE is set
 #
 # Building this image needs network access twice: dnf (Rocky BaseOS/AppStream
 # and EPEL) and the pinned open-dis-cpp release tarball from GitHub. On a restricted
